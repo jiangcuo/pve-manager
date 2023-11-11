@@ -10,9 +10,10 @@ my sub dir2text {
     my ($target_dir, $regexp) = @_;
 
     print STDERR "dir2text '${target_dir}${regexp}'...";
-    my $text = '';
+    my $text = "# output '${target_dir}${regexp}' file(s)\n";
     PVE::Tools::dir_glob_foreach($target_dir, $regexp, sub {
 	my ($file) = @_;
+	return if $file eq '.' || $file eq '..';
 	$text .=  "\n# cat $target_dir$file\n";
 	$text .= PVE::Tools::file_get_contents($target_dir.$file)."\n";
     });
@@ -75,6 +76,8 @@ my $init_report_cmds = sub {
 		'ip -details -4 route show',
 		'ip -details -6 route show',
 		'cat /etc/network/interfaces',
+		sub { dir2text('/etc/network/interfaces.d/', '.*') },
+		sub { dir2text('/etc/pve/sdn/', '.*') },
 	    ],
 	},
 	firewall => {
