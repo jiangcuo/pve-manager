@@ -1,3 +1,9 @@
+pve-manager (6.4-15) sid; urgency=medium
+
+  * Init for loongarch64
+
+ -- jiangcuo <jiangcuo@bingsin.com>  Sat, 11 Nov 2023 15:19:55 +0800
+
 pve-manager (6.4-14) buster; urgency=medium
 
   * pve6to7: ignore deb-src entries for security repo check

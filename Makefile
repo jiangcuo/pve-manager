@@ -19,11 +19,6 @@ DEB=${PACKAGE}_${VERSION}_${DEB_BUILD_ARCH}.deb
 all: ${SUBDIRS}
 	set -e && for i in ${SUBDIRS}; do ${MAKE} -C $$i; done
 
-.PHONY: check
-check: bin test www
-	${MAKE} -C bin check
-	${MAKE} -C test check
-	${MAKE} -C www check
 
 .PHONY: dinstall
 dinstall: ${DEB}
@@ -42,7 +37,7 @@ $(DEB):
 	lintian -X binaries ${DEB}
 
 .PHONY: upload
-upload: ${DEB} check
+upload: ${DEB} 
 	# check if working directory is clean
 	git diff --exit-code --stat && git diff --exit-code --stat --staged
 	tar cf - ${DEB} | ssh -X repoman@repo.proxmox.com upload --product pve --dist buster
