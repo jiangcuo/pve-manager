@@ -1,1 +1,1 @@
-deb https://mirrors.apqa.cn/proxmox/debian/pve sid pveport
+deb https://mirrors.apqa.cn/proxmox/debian/pve sid port
