@@ -260,7 +260,7 @@ sub build_influxdb_payload {
 	if (!ref($value) && $value ne '') {
 	    # value is scalar
 
-	    if (defined(my $v = prepare_value($value, $to_quote->{$key}))) {
+	    if (defined(my $v = prepare_value($value))) {
 		push @values, "$key=$v";
 	    }
 	} elsif (ref($value) eq 'HASH') {
@@ -305,10 +305,9 @@ sub get_recursive_values {
 }
 
 sub prepare_value {
-    my ($value, $force_quote) = @_;
+    my ($value) = @_;
 
-    # don't treat value like a number if quote is 1
-    if (!$force_quote && looks_like_number($value)) {
+    if (looks_like_number($value)) {
 	if (isnan($value) || isinf($value)) {
 	    # we cannot send influxdb NaN or Inf
 	    return undef;
