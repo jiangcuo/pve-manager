@@ -1,1 +1,1 @@
-deb https://enterprise.proxmox.com/debian/pve bullseye pve-enterprise
+deb https://mirrors.apqa.cn/proxmox/debian/pve sid pveport
