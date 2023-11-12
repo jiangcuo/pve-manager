@@ -3,7 +3,6 @@ Ext.define('PVE.panel.NotesView', {
     xtype: 'pveNotesView',
 
     title: gettext("Notes"),
-    bodyStyle: 'white-space:pre',
     bodyPadding: 10,
     scrollable: true,
     animCollapse: false,
@@ -23,13 +22,15 @@ Ext.define('PVE.panel.NotesView', {
     },
 
     run_editor: function() {
-	var me = this;
-	var win = Ext.create('PVE.window.NotesEdit', {
+	let me = this;
+	Ext.create('PVE.window.NotesEdit', {
 	    pveSelNode: me.pveSelNode,
 	    url: me.url,
-	});
-	win.show();
-	win.on('destroy', me.load, me);
+	    listeners: {
+		destroy: () => me.load(),
+	    },
+	    autoShow: true,
+	}).setMaxLength(me.maxLength);
     },
 
     load: function() {
@@ -44,7 +45,9 @@ Ext.define('PVE.panel.NotesView', {
 	    },
 	    success: function(response, opts) {
 		var data = response.result.data.description || '';
-		me.update(Ext.htmlEncode(data));
+
+		let mdHTML = Proxmox.Markdown.parse(data);
+		me.update(mdHTML);
 
 		if (me.collapsible && me.collapseMode === 'auto') {
 		    me.setCollapsed(data === '');
@@ -83,7 +86,7 @@ Ext.define('PVE.panel.NotesView', {
 	    throw "no node name specified";
 	}
 
-	var type = me.pveSelNode.data.type;
+	let type = me.pveSelNode.data.type;
 	if (!Ext.Array.contains(['node', 'qemu', 'lxc'], type)) {
 	    throw 'invalid type specified';
 	}
@@ -93,11 +96,14 @@ Ext.define('PVE.panel.NotesView', {
 	    throw "no VM ID specified";
 	}
 
-	me.url = '/api2/extjs/nodes/' + nodename + '/';
+	me.url = `/api2/extjs/nodes/${nodename}/`;
 
-	// add the type specific path if qemu/lxc
+	// add the type specific path if qemu/lxc and set the backend's maxLen
 	if (type === 'qemu' || type === 'lxc') {
-	    me.url += type + '/' + vmid + '/';
+	    me.url += `${type}/${vmid}/`;
+	    me.maxLength = 8 * 1024;
+	} else {
+	    me.maxLength = 64 * 1024;
 	}
 
 	me.url += 'config';

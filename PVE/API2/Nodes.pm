@@ -70,12 +70,6 @@ __PACKAGE__->register_method ({
     path => 'qemu',
 });
 
-# FIXME: move into capabilities/qemu
-__PACKAGE__->register_method ({
-    subclass => "PVE::API2::Qemu::CPU",
-    path => 'cpu',
-});
-
 __PACKAGE__->register_method ({
     subclass => "PVE::API2::LXC",
     path => 'lxc',
@@ -228,7 +222,6 @@ __PACKAGE__->register_method ({
 	    { name => 'ceph' },
 	    { name => 'certificates' },
 	    { name => 'config' },
-	    { name => 'cpu' },
 	    { name => 'disks' },
 	    { name => 'dns' },
 	    { name => 'firewall' },
@@ -906,12 +899,6 @@ __PACKAGE__->register_method ({
 	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
-	    upgrade => {
-		type => 'boolean',
-		description => "Deprecated, use the 'cmd' property instead! Run 'apt-get dist-upgrade' instead of normal shell.",
-		optional => 1,
-		default => 0,
-	    },
 	    cmd => {
 		type => 'string',
 		description => "Run specific command or default to login.",
@@ -964,7 +951,10 @@ __PACKAGE__->register_method ({
 	my ($user, undef, $realm) = PVE::AccessControl::verify_username($rpcenv->get_user());
 
 	raise_perm_exc("realm != pam") if $realm ne 'pam';
-	raise_perm_exc('user != root@pam') if $param->{upgrade} && $user ne 'root@pam';
+
+	if (defined($param->{cmd}) && $param->{cmd} eq 'upgrade' && $user ne 'root@pam') {
+	    raise_perm_exc('user != root@pam');
+	}
 
 	my $node = $param->{node};
 
@@ -976,10 +966,6 @@ __PACKAGE__->register_method ({
 
 	my ($port, $remcmd) = $get_vnc_connection_info->($node);
 
-	# FIXME: remove with 6.0
-	if ($param->{upgrade}) {
-	    $param->{cmd} = 'upgrade';
-	}
 	my $shcmd = get_shell_command($user, $param->{cmd}, $param->{'cmd-opts'});
 
 	my $timeout = 10;
@@ -1053,12 +1039,6 @@ __PACKAGE__->register_method ({
 	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
-	    upgrade => {
-		type => 'boolean',
-		description => "Deprecated, use the 'cmd' property instead! Run 'apt-get dist-upgrade' instead of normal shell.",
-		optional => 1,
-		default => 0,
-	    },
 	    cmd => {
 		type => 'string',
 		description => "Run specific command or default to login.",
@@ -1097,10 +1077,6 @@ __PACKAGE__->register_method ({
 
 	my ($port, $remcmd) = $get_vnc_connection_info->($node);
 
-	# FIXME: remove with 7.0
-	if ($param->{upgrade}) {
-	    $param->{cmd} = 'upgrade';
-	}
 	my $shcmd = get_shell_command($user, $param->{cmd}, $param->{'cmd-opts'});
 
 	my $realcmd = sub {
@@ -1139,7 +1115,7 @@ __PACKAGE__->register_method({
 	description => "Restricted to users on realm 'pam'. You also need to pass a valid ticket (vncticket).",
 	check => ['perm', '/nodes/{node}', [ 'Sys.Console' ]],
     },
-    description => "Opens a weksocket for VNC traffic.",
+    description => "Opens a websocket for VNC traffic.",
     parameters => {
 	additionalProperties => 0,
 	properties => {
@@ -1197,12 +1173,6 @@ __PACKAGE__->register_method ({
 	properties => {
 	    node => get_standard_option('pve-node'),
 	    proxy => get_standard_option('spice-proxy', { optional => 1 }),
-	    upgrade => {
-		type => 'boolean',
-		description => "Deprecated, use the 'cmd' property instead! Run 'apt-get dist-upgrade' instead of normal shell.",
-		optional => 1,
-		default => 0,
-	    },
 	    cmd => {
 		type => 'string',
 		description => "Run specific command or default to login.",
@@ -1229,17 +1199,17 @@ __PACKAGE__->register_method ({
 	my ($user, undef, $realm) = PVE::AccessControl::verify_username($authuser);
 
 	raise_perm_exc("realm != pam") if $realm ne 'pam';
-	raise_perm_exc('user != root@pam') if $param->{upgrade} && $user ne 'root@pam';
+
+	if (defined($param->{cmd}) && $param->{cmd} eq 'upgrade' && $user ne 'root@pam') {
+	    raise_perm_exc('user != root@pam');
+	}
 
 	my $node = $param->{node};
 	my $proxy = $param->{proxy};
 
 	my $authpath = "/nodes/$node";
 	my $permissions = 'Sys.Console';
-	# FIXME: remove with 6.0
-	if ($param->{upgrade}) {
-	    $param->{cmd} = 'upgrade';
-	}
+
 	my $shcmd = get_shell_command($user, $param->{cmd}, $param->{'cmd-opts'});
 
 	my $title = "Shell on '$node'";
@@ -1445,14 +1415,12 @@ __PACKAGE__->register_method({
     code => sub {
 	my ($param) = @_;
 
-	my $res = [];
-
 	my $list = PVE::APLInfo::load_data();
 
-	foreach my $template (keys %{$list->{all}}) {
-	    my $pd = $list->{all}->{$template};
-	    next if $pd->{'package'} eq 'pve-web-news';
-	    push @$res, $pd;
+	my $res = [];
+	for my $appliance (values %{$list->{all}}) {
+	    next if $appliance->{'package'} eq 'pve-web-news';
+	    push @$res, $appliance;
 	}
 
 	return $res;
@@ -1490,109 +1458,39 @@ __PACKAGE__->register_method({
 
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $user = $rpcenv->get_user();
+
 	my $node = $param->{node};
+	my $template = $param->{template};
 
 	my $list = PVE::APLInfo::load_data();
-
-	my $template = $param->{template};
-	my $pd = $list->{all}->{$template};
-
-	raise_param_exc({ template => "no such template"}) if !$pd;
+	my $appliance = $list->{all}->{$template};
+	raise_param_exc({ template => "no such template"}) if !$appliance;
 
 	my $cfg = PVE::Storage::config();
 	my $scfg = PVE::Storage::storage_check_enabled($cfg, $param->{storage}, $node);
 
-	die "unknown template type '$pd->{type}'\n"
-	    if !($pd->{type} eq 'openvz' || $pd->{type} eq 'lxc');
+	die "unknown template type '$appliance->{type}'\n"
+	    if !($appliance->{type} eq 'openvz' || $appliance->{type} eq 'lxc');
 
 	die "storage '$param->{storage}' does not support templates\n"
 	    if !$scfg->{content}->{vztmpl};
 
-	my $src = $pd->{location};
 	my $tmpldir = PVE::Storage::get_vztmpl_dir($cfg, $param->{storage});
-	my $dest = "$tmpldir/$template";
-	my $tmpdest = "$tmpldir/${template}.tmp.$$";
 
-	my $worker = sub  {
-	    my $upid = shift;
+	my $worker = sub {
+	    my $dccfg = PVE::Cluster::cfs_read_file('datacenter.cfg');
 
-	    print "starting template download from: $src\n";
-	    print "target file: $dest\n";
-
-	    my $check_hash = sub {
-		my ($template_info, $filename, $noerr) = @_;
-
-		my $digest;
-		my $expected;
-
-		eval {
-		    open(my $fh, '<', $filename) or die "Can't open '$filename': $!";
-		    binmode($fh);
-		    if (defined($template_info->{sha512sum})) {
-			$expected = $template_info->{sha512sum};
-			$digest = Digest::SHA->new(512)->addfile($fh)->hexdigest;
-		    } elsif (defined($template_info->{md5sum})) {
-			#fallback to MD5
-			$expected = $template_info->{md5sum};
-			$digest = Digest::MD5->new->addfile($fh)->hexdigest;
-		    } else {
-			die "no expected checksum defined";
-		    }
-		    close($fh);
-		};
-
-		die "checking hash failed - $@\n" if $@ && !$noerr;
-
-		return ($digest, $digest ? lc($digest) eq lc($expected) : 0);
-	    };
-
-	    eval {
-		if (-f $dest) {
-		    my ($hash, $correct) = &$check_hash($pd, $dest, 1);
-
-		    if ($hash && $correct) {
-			print "file already exists $hash - no need to download\n";
-			return;
-		    }
-		}
-
-		local %ENV;
-		my $dccfg = PVE::Cluster::cfs_read_file('datacenter.cfg');
-		if ($dccfg->{http_proxy}) {
-		    $ENV{http_proxy} = $dccfg->{http_proxy};
-		}
-
-		my @cmd = ('/usr/bin/wget', '--progress=dot:mega', '-O', $tmpdest, $src);
-		if (system (@cmd) != 0) {
-		    die "download failed - $!\n";
-		}
-
-		my ($hash, $correct) = &$check_hash($pd, $tmpdest);
-
-		die "could not calculate checksum\n" if !$hash;
-
-		if (!$correct) {
-		    my $expected = $pd->{sha512sum} // $pd->{md5sum};
-		    die "wrong checksum: $hash != $expected\n";
-		}
-
-		if (!rename($tmpdest, $dest)) {
-		    die "unable to save file - $!\n";
-		}
-	    };
-	    my $err = $@;
-
-	    unlink $tmpdest;
-
-	    if ($err) {
-		print "\n";
-		die $err if $err;
-	    }
-
-	    print "download finished\n";
+	    PVE::Tools::download_file_from_url("$tmpldir/$template", $appliance->{location}, {
+		hash_required => 1,
+		sha512sum => $appliance->{sha512sum},
+		md5sum => $appliance->{md5sum},
+		http_proxy => $dccfg->{http_proxy},
+	    });
 	};
 
-	return $rpcenv->fork_worker('download', undef, $user, $worker);
+	my $upid = $rpcenv->fork_worker('download', $template, $user, $worker);
+
+	return $upid;
     }});
 
 __PACKAGE__->register_method({

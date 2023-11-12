@@ -19,14 +19,10 @@ use PVE::JSONSchema;
 use PVE::NodeConfig;
 use PVE::RPCEnvironment;
 use PVE::Storage;
-use PVE::Storage::Plugin;
 use PVE::Tools qw(run_command split_list);
 use PVE::QemuConfig;
 use PVE::QemuServer;
 use PVE::VZDump::Common;
-use PVE::LXC;
-use PVE::LXC::Config;
-use PVE::LXC::Setup;
 
 use Term::ANSIColor;
 
@@ -594,11 +590,6 @@ sub check_cifs_credential_location {
 sub check_custom_pool_roles {
     log_info("Checking custom roles for pool permissions..");
 
-    if (! -f "/etc/pve/user.cfg") {
-	log_skip("user.cfg does not exist");
-	return;
-    }
-
     my $raw = eval { PVE::Tools::file_get_contents('/etc/pve/user.cfg'); };
     if ($@) {
 	log_fail("Failed to read '/etc/pve/user.cfg' - $@");
@@ -659,7 +650,7 @@ my sub check_max_length {
     log_warn($warning) if defined($raw) && length($raw) > $max_length; 
 }
 
-sub check_node_and_guest_configurations {
+sub check_description_lengths {
     log_info("Checking node and guest description/note legnth..");
 
     my @affected_nodes = grep {
@@ -674,384 +665,23 @@ sub check_node_and_guest_configurations {
 	log_pass("All node config descriptions fit in the new limit of 64 KiB");
     }
 
-    my $affected_guests_long_desc = [];
-    my $affected_cts_cgroup_keys = [];
+    my $affected_guests = [];
 
     my $cts = PVE::LXC::config_list();
     for my $vmid (sort { $a <=> $b } keys %$cts) {
-	my $conf = PVE::LXC::Config->load_config($vmid);
-
-	my $desc = $conf->{description};
-	push @$affected_guests_long_desc, "CT $vmid" if defined($desc) && length($desc) > 8 * 1024;
-
-	my $lxc_raw_conf = $conf->{lxc};
-	push @$affected_cts_cgroup_keys, "CT $vmid"  if (grep (@$_[0] =~ /^lxc\.cgroup\./, @$lxc_raw_conf));
+	my $desc = PVE::LXC::Config->load_config($vmid)->{description};
+	push @$affected_guests, "CT $vmid" if defined($desc) && length($desc) > 8 * 1024;
     }
     my $vms = PVE::QemuServer::config_list();
     for my $vmid (sort { $a <=> $b } keys %$vms) {
 	my $desc = PVE::QemuConfig->load_config($vmid)->{description};
-	push @$affected_guests_long_desc, "VM $vmid" if defined($desc) && length($desc) > 8 * 1024;
+	push @$affected_guests, "VM $vmid" if defined($desc) && length($desc) > 8 * 1024;
     }
-    if (scalar($affected_guests_long_desc->@*) > 0) {
-	log_warn("Guest config description of the following virtual-guests too long for new limit of 64 KiB:\n"
-	    ."    " . join(", ", $affected_guests_long_desc->@*));
+    if (scalar($affected_guests->@*) > 0) {
+	log_warn("Node config description of the following nodes too long for new limit of 64 KiB:\n"
+	    ."    * " . join("\n    * ", $affected_guests->@*));
     } else {
 	log_pass("All guest config descriptions fit in the new limit of 8 KiB");
-    }
-
-    log_info("Checking container configs for deprecated lxc.cgroup entries");
-
-    if (scalar($affected_cts_cgroup_keys->@*) > 0) {
-	if ($forced_legacy_cgroup) {
-	    log_pass("Found legacy 'lxc.cgroup' keys, but system explicitly configured for legacy hybrid cgroup hierarchy.");
-	}  else {
-	    log_warn("The following CTs have 'lxc.cgroup' keys configured, which will be ignored in the new default unified cgroupv2:\n"
-		."    " . join(", ", $affected_cts_cgroup_keys->@*) ."\n"
-		."    Often it can be enough to change to the new 'lxc.cgroup2' prefix after the upgrade to Proxmox VE 7.x");
-	}
-    } else {
-	log_pass("No legacy 'lxc.cgroup' keys found.");
-    }
-}
-
-sub check_storage_content {
-    log_info("Checking storage content type configuration..");
-
-    my $found;
-    my $pass = 1;
-
-    my $storage_cfg = PVE::Storage::config();
-
-    for my $storeid (sort keys $storage_cfg->{ids}->%*) {
-	my $scfg = $storage_cfg->{ids}->{$storeid};
-
-	next if $scfg->{shared};
-	next if !PVE::Storage::storage_check_enabled($storage_cfg, $storeid, undef, 1);
-
-	my $valid_content = PVE::Storage::Plugin::valid_content_types($scfg->{type});
-
-	if (scalar(keys $scfg->{content}->%*) == 0 && !$valid_content->{none}) {
-	    $pass = 0;
-	    log_fail("storage '$storeid' does not support configured content type 'none'");
-	    delete $scfg->{content}->{none}; # scan for guest images below
-	}
-
-	next if $scfg->{content}->{images};
-	next if $scfg->{content}->{rootdir};
-
-	# Skip 'iscsi(direct)' (and foreign plugins with potentially similiar behavior) with 'none',
-	# because that means "use LUNs directly" and vdisk_list() in PVE 6.x still lists those.
-	# It's enough to *not* skip 'dir', because it is the only other storage that supports 'none'
-	# and 'images' or 'rootdir', hence being potentially misconfigured.
-	next if $scfg->{type} ne 'dir' && $scfg->{content}->{none};
-
-	eval { PVE::Storage::activate_storage($storage_cfg, $storeid) };
-	if (my $err = $@) {
-	    log_warn("activating '$storeid' failed - $err");
-	    next;
-	}
-
-	my $res = eval { PVE::Storage::vdisk_list($storage_cfg, $storeid); };
-	if (my $err = $@) {
-	    log_warn("listing images on '$storeid' failed - $err");
-	    next;
-	}
-	my @volids = map { $_->{volid} } $res->{$storeid}->@*;
-
-	my $number = scalar(@volids);
-	if ($number > 0) {
-	    log_info("storage '$storeid' - neither content type 'images' nor 'rootdir' configured"
-		.", but found $number guest volume(s)");
-	}
-    }
-
-    my $check_volid = sub {
-	my ($volid, $vmid, $vmtype, $reference) = @_;
-
-	my $guesttext = $vmtype eq 'qemu' ? 'VM' : 'CT';
-	my $prefix = "$guesttext $vmid - volume '$volid' ($reference)";
-
-	my ($storeid) = PVE::Storage::parse_volume_id($volid, 1);
-	return if !defined($storeid);
-
-	my $scfg = $storage_cfg->{ids}->{$storeid};
-	if (!$scfg) {
-	    $pass = 0;
-	    log_warn("$prefix - storage does not exist!");
-	    return;
-	}
-
-	# cannot use parse_volname for containers, as it can return 'images'
-	# but containers cannot have ISO images attached, so assume 'rootdir'
-	my $vtype = 'rootdir';
-	if ($vmtype eq 'qemu') {
-	    ($vtype) = eval { PVE::Storage::parse_volname($storage_cfg, $volid); };
-	    return if $@;
-	}
-
-	if (!$scfg->{content}->{$vtype}) {
-	    $found = 1;
-	    $pass = 0;
-	    log_warn("$prefix - storage does not have content type '$vtype' configured.");
-	}
-    };
-
-    my $cts = PVE::LXC::config_list();
-    for my $vmid (sort { $a <=> $b } keys %$cts) {
-	my $conf = PVE::LXC::Config->load_config($vmid);
-
-	my $volhash = {};
-
-	my $check = sub {
-	    my ($ms, $mountpoint, $reference) = @_;
-
-	    my $volid = $mountpoint->{volume};
-	    return if !$volid || $mountpoint->{type} ne 'volume';
-
-	    return if $volhash->{$volid}; # volume might be referenced multiple times
-
-	    $volhash->{$volid} = 1;
-
-	    $check_volid->($volid, $vmid, 'lxc', $reference);
-	};
-
-	my $opts = { include_unused => 1 };
-	PVE::LXC::Config->foreach_volume_full($conf, $opts, $check, 'in config');
-	for my $snapname (keys $conf->{snapshots}->%*) {
-	    my $snap = $conf->{snapshots}->{$snapname};
-	    PVE::LXC::Config->foreach_volume_full($snap, $opts, $check, "in snapshot '$snapname'");
-	}
-    }
-
-    my $vms = PVE::QemuServer::config_list();
-    for my $vmid (sort { $a <=> $b } keys %$vms) {
-	my $conf = PVE::QemuConfig->load_config($vmid);
-
-	my $volhash = {};
-
-	my $check = sub {
-	    my ($key, $drive, $reference) = @_;
-
-	    my $volid = $drive->{file};
-	    return if $volid =~ m|^/|;
-
-	    return if $volhash->{$volid}; # volume might be referenced multiple times
-
-	    $volhash->{$volid} = 1;
-
-	    $check_volid->($volid, $vmid, 'qemu', $reference);
-	};
-
-	my $opts = {
-	    extra_keys => ['vmstate'],
-	    include_unused => 1,
-	};
-	# startup from a suspended state works even without 'images' content type on the
-	# state storage, so do not check 'vmstate' for $conf
-	PVE::QemuConfig->foreach_volume_full($conf, { include_unused => 1 }, $check, 'in config');
-	for my $snapname (keys $conf->{snapshots}->%*) {
-	    my $snap = $conf->{snapshots}->{$snapname};
-	    PVE::QemuConfig->foreach_volume_full($snap, $opts, $check, "in snapshot '$snapname'");
-	}
-    }
-
-    if ($found) {
-	log_warn("Proxmox VE 7.0 enforces stricter content type checks. The guests above " .
-	    "might not work until the storage configuration is fixed.");
-    }
-
-    if ($pass) {
-	log_pass("no problems found");
-    }
-}
-
-sub check_containers_cgroup_compat {
-    if ($forced_legacy_cgroup) {
-	log_skip("System explicitly configured for legacy hybrid cgroup hierarchy.");
-	return;
-    }
-
-    my $supports_cgroupv2 = sub {
-	my ($conf, $rootdir, $ctid) = @_;
-
-	my $get_systemd_version = sub {
-	    my ($self) = @_;
-
-	    my $sd_lib_dir = -d "/lib/systemd" ? "/lib/systemd" : "/usr/lib/systemd";
-	    my $libsd = PVE::Tools::dir_glob_regex($sd_lib_dir, "libsystemd-shared-.+\.so");
-	    if (defined($libsd) && $libsd =~ /libsystemd-shared-(\d+)\.so/) {
-		return $1;
-	    }
-
-	    return undef;
-	};
-
-	my  $unified_cgroupv2_support = sub {
-	    my ($self) = @_;
-
-	    # https://www.freedesktop.org/software/systemd/man/systemd.html
-	    # systemd is installed as symlink to /sbin/init
-	    my $systemd = CORE::readlink('/sbin/init');
-
-	    # assume non-systemd init will run with unified cgroupv2
-	    if (!defined($systemd) || $systemd !~ m@/systemd$@) {
-		return 1;
-	    }
-
-	    # systemd version 232 (e.g. debian stretch) supports the unified hierarchy
-	    my $sdver = $get_systemd_version->();
-	    if (!defined($sdver) || $sdver < 232) {
-		return 0;
-	    }
-
-	    return 1;
-	};
-
-	my $ostype = $conf->{ostype};
-	if (!defined($ostype)) {
-	    log_warn("Found CT ($ctid) without 'ostype' set!");
-	} elsif ($ostype eq 'devuan' || $ostype eq 'alpine') {
-	    return 1; # no systemd, no cgroup problems
-	}
-
-	my $lxc_setup = PVE::LXC::Setup->new($conf, $rootdir);
-	return $lxc_setup->protected_call($unified_cgroupv2_support);
-    };
-
-    my $log_problem = sub {
-	my ($ctid) = @_;
-	log_warn("Found at least one CT ($ctid) which does not support running in a unified cgroup v2" .
-	    " layout.\n    Either upgrade the Container distro or set systemd.unified_cgroup_hierarchy=0 " .
-	    "in the Proxmox VE hosts' kernel cmdline! Skipping further CT compat checks."
-	);
-    };
-
-    my $cts = eval { PVE::API2::LXC->vmlist({ node => $nodename }) };
-    if ($@) {
-	log_warn("Failed to retrieve information about this node's CTs - $@");
-	return;
-    }
-
-    if (!defined($cts) || !scalar(@$cts)) {
-	log_skip("No containers on node detected.");
-	return;
-    }
-
-    my @running_cts = sort { $a <=> $b } grep { $_->{status} eq 'running' } @$cts;
-    my @offline_cts = sort { $a <=> $b } grep { $_->{status} ne 'running' } @$cts;
-
-    for my $ct (@running_cts) {
-	my $ctid = $ct->{vmid};
-	my $pid = eval { PVE::LXC::find_lxc_pid($ctid) };
-	if (my $err = $@) {
-	    log_warn("Failed to get PID for running CT $ctid - $err");
-	    next;
-	}
-	my $rootdir = "/proc/$pid/root";
-	my $conf = PVE::LXC::Config->load_config($ctid);
-
-	my $ret = eval { $supports_cgroupv2->($conf, $rootdir, $ctid) };
-	if (my $err = $@) {
-	    log_warn("Failed to get cgroup support status for CT $ctid - $err");
-	    next;
-	}
-	if (!$ret) {
-	    $log_problem->($ctid);
-	    return;
-	}
-    }
-
-    my $storage_cfg = PVE::Storage::config();
-    for my $ct (@offline_cts) {
-	my $ctid = $ct->{vmid};
-	my ($conf, $rootdir, $ret);
-	eval {
-	    $conf = PVE::LXC::Config->load_config($ctid);
-	    $rootdir = PVE::LXC::mount_all($ctid, $storage_cfg, $conf);
-	    $ret = $supports_cgroupv2->($conf, $rootdir, $ctid);
-	};
-	if (my $err = $@) {
-	    log_warn("Failed to load config and mount CT $ctid - $err");
-	    eval { PVE::LXC::umount_all($ctid, $storage_cfg, $conf) };
-	    next;
-	}
-	if (!$ret) {
-	    $log_problem->($ctid);
-	    eval { PVE::LXC::umount_all($ctid, $storage_cfg, $conf) };
-	    last;
-	}
-
-	eval { PVE::LXC::umount_all($ctid, $storage_cfg, $conf) };
-    }
-};
-
-sub check_security_repo {
-    log_info("Checking if the suite for the Debian security repository is correct..");
-
-    my $found = 0;
-
-    my $dir = '/etc/apt/sources.list.d';
-    my $in_dir = 0;
-
-    my $check_file = sub {
-	my ($file) = @_;
-
-	$file = "${dir}/${file}" if $in_dir;
-
-	my $raw = eval { PVE::Tools::file_get_contents($file) };
-	return if !defined($raw);
-	my @lines = split(/\n/, $raw);
-
-	my $number = 0;
-	for my $line (@lines) {
-	    $number++;
-
-	    next if length($line) == 0; # split would result in undef then...
-
-	    ($line) = split(/#/, $line);
-
-	    next if $line !~ m/^deb[[:space:]]/; # is case sensitive
-
-	    my $suite;
-
-	    # catch any of
-	    # https://deb.debian.org/debian-security
-	    # http://security.debian.org/debian-security
-	    # http://security.debian.org/
-	    if ($line =~ m|https?://deb\.debian\.org/debian-security/?\s+(\S*)|i) {
-		$suite = $1;
-	    } elsif ($line =~ m|https?://security\.debian\.org(?:.*?)\s+(\S*)|i) {
-		$suite = $1;
-	    } else {
-		next;
-	    }
-
-	    $found = 1;
-
-	    my $where = "in ${file}:${number}";
-
-	    if ($suite eq 'buster/updates') {
-		log_info("Make sure to change the suite of the Debian security repository " .
-		    "from 'buster/updates' to 'bullseye-security' - $where");
-	    } elsif ($suite eq 'bullseye-security') {
-		log_pass("already using 'bullseye-security'");
-	    } else {
-		log_fail("The new suite of the Debian security repository should be " .
-		    "'bullseye-security' - $where");
-	    }
-	}
-    };
-
-    $check_file->("/etc/apt/sources.list");
-
-    $in_dir = 1;
-
-    PVE::Tools::dir_glob_foreach($dir, '^.*\.list$', $check_file);
-
-    if (!$found) {
-	# only warn, it might be defined in a .sources file or in a way not catched above
-	log_warn("No Debian security repository detected in /etc/apt/sources.list and " .
-	    "/etc/apt/sources.list.d/*.list");
     }
 }
 
@@ -1149,15 +779,15 @@ sub check_misc {
 	    $log_cert_heading_once->();
 	    log_fail("'$fn', certificate's $check->{name} public key size is less than 2048 bit");
 	    $certs_check_failed = 1;
+	} else {
+	    log_pass("Certificate '$fn' passed Debian Busters security level for TLS connections ($size >= 2048)");
 	}
     }
 
     check_backup_retention_settings();
     check_cifs_credential_location();
     check_custom_pool_roles();
-    check_node_and_guest_configurations();
-    check_storage_content();
-    check_security_repo();
+    check_description_lengths();
 }
 
 __PACKAGE__->register_method ({

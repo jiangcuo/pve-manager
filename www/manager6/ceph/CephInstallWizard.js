@@ -49,9 +49,8 @@ Ext.define('PVE.ceph.CephVersionSelector', {
 	    },
 	},
 	data: [
-	    { release: "nautilus", version: "14.2" },
 	    { release: "octopus", version: "15.2" },
-	    //{release: "pacific", version: "16.1"},
+	    { release: "pacific", version: "16.2" },
 	],
     },
 });
@@ -142,7 +141,7 @@ Ext.define('PVE.ceph.CephInstallWizard', {
     viewModel: {
 	data: {
 	    nodename: '',
-	    cephRelease: 'octopus',
+	    cephRelease: 'pacific',
 	    configuration: true,
 	    isInstalled: false,
 	},

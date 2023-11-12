@@ -250,9 +250,6 @@ sub test_connection {
 sub build_influxdb_payload {
     my ($class, $txn, $data, $ctime, $tags, $excluded, $measurement, $instance) = @_;
 
-    # 'abc' and '123' are both valid hostnames, that confuses influx's type detection
-    my $to_quote = { name => 1 };
-
     my @values = ();
 
     foreach my $key (sort keys %$data) {
