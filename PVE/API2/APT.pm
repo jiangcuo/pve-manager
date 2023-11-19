@@ -89,38 +89,6 @@ my $get_pkgfile = sub {
     return undef;
 };
 
-my $get_changelog_url =sub {
-    my ($pkgname, $info, $pkgver, $pkgfile) = @_;
-
-    my $base;
-    $base = dirname($info->{FileName}) if defined($info->{FileName});
-
-    my $origin = $pkgfile->{Origin};
-
-    if ($origin && $base) {
-	$pkgver =~ s/^\d+://; # strip epoch
-	my $srcpkg = $info->{SourcePkg} || $pkgname;
-	if ($origin eq 'Debian' || $origin eq 'Debian Backports') {
-	    $base =~ s!pool/updates/!pool/!; # for security channel
-	    return "http://packages.debian.org/changelogs/$base/${srcpkg}_${pkgver}/changelog";
-	} elsif ($origin eq 'Proxmox') {
-	    # the product is just for getting the standard repos and is currently a required param,
-	    # but we actually only care about `files`, which includes _all_ configured repos
-	    my $data = Proxmox::RS::APT::Repositories::repositories("pve");
-
-	    for my $file ($data->{files}->@*) {
-		for my $repo (grep { $_->{Enabled} } $file->{repositories}->@*) {
-		    next if !grep(/$pkgfile->{Component}/, $repo->{Components}->@*);
-		    next if !$repo->{URIs}[0] =~ m/$pkgfile->{Site}/;
-
-		    return $repo->{URIs}[0] . "/$base/${pkgname}_${pkgver}.changelog";
-		}
-	    }
-	}
-    }
-    return; # none found, with our heuristic that is..
-};
-
 my $assemble_pkginfo = sub {
     my ($pkgname, $info, $current_ver, $candidate_ver)  = @_;
 
@@ -132,9 +100,6 @@ my $assemble_pkginfo = sub {
 
     if (my $pkgfile = &$get_pkgfile($candidate_ver)) {
 	$data->{Origin} = $pkgfile->{Origin};
-	my $changelog_url = $get_changelog_url->($pkgname, $info, $candidate_ver->{VerStr}, $pkgfile);
-
-	$data->{ChangeLogUrl} = $changelog_url if $changelog_url;
     }
 
     if (my $desc = $info->{LongDesc}) {
@@ -286,8 +251,6 @@ __PACKAGE__->register_method({
     description => "This is used to resynchronize the package index files from their sources (apt-get update).",
     permissions => {
 	check => ['perm', '/nodes/{node}', [ 'Sys.Modify' ]],
-	description => "If 'notify: target-package-updates' is set, then the user must have the "
-	    . "'Mapping.Use' permission on '/mapping/notification/<target>'",
     },
     protected => 1,
     proxyto => 'node',
@@ -297,7 +260,7 @@ __PACKAGE__->register_method({
 	    node => get_standard_option('pve-node'),
 	    notify => {
 		type => 'boolean',
-		description => "Send notification mail about new packages (to email address specified for user 'root\@pam').",
+		description => "Send notification about new packages.",
 		optional => 1,
 		default => 0,
 	    },
@@ -317,16 +280,6 @@ __PACKAGE__->register_method({
 
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $dcconf = PVE::Cluster::cfs_read_file('datacenter.cfg');
-	my $target = $dcconf->{notify}->{'target-package-updates'} //
-	    PVE::Notify::default_target();
-
-	if ($param->{notify} && $target ne PVE::Notify::default_target()) {
-	    # If we notify via anything other than the default target (mail to root),
-	    # then the user must have the proper permissions for the target.
-	    # The mail-to-root target does not require these, as otherwise
-	    # we would break compatibility.
-	    PVE::Notify::check_may_use_target($target, $rpcenv);
-	}
 
 	my $authuser = $rpcenv->get_user();
 
@@ -392,16 +345,23 @@ __PACKAGE__->register_method({
 
 		return if !$count;
 
-		my $properties = {
+		my $template_data = {
 		    updates  => $updates_table,
 		    hostname => $hostname,
 		};
 
+		# Additional metadata fields that can be used in notification
+		# matchers.
+		my $metadata_fields = {
+		    type => 'package-updates',
+		    hostname => $hostname,
+		};
+
 		PVE::Notify::info(
-		    $target,
 		    $updates_available_subject_template,
 		    $updates_available_body_template,
-		    $properties,
+		    $template_data,
+		    $metadata_fields,
 		);
 
 		foreach my $pi (@$pkglist) {
@@ -451,62 +411,28 @@ __PACKAGE__->register_method({
 
 	my $pkgname = $param->{name};
 
-	my $cache = &$get_apt_cache();
-	my $policy = $cache->policy;
-	my $p = $cache->{$pkgname} || die "no such package '$pkgname'\n";
-	my $pkgrecords = $cache->packages();
-
-	my $ver;
-	if ($param->{version}) {
-	    if (my $available = $p->{VersionList}) {
-		for my $v (@$available) {
-		    if ($v->{VerStr} eq $param->{version}) {
-			$ver = $v;
-			last;
-		    }
-		}
-	    }
-	    die "package '$pkgname' version '$param->{version}' is not available\n" if !$ver;
+	my $cmd = ['apt-get', 'changelog', '-qq'];
+	if (my $version = $param->{version}) {
+	    push @$cmd, "$pkgname=$version";
 	} else {
-	    $ver = $policy->candidate($p) || die "no installation candidate for package '$pkgname'\n";
+	    push @$cmd, "$pkgname";
 	}
 
-	my $info = $pkgrecords->lookup($pkgname);
+	my $output = "";
 
-	my $pkgfile = $get_pkgfile->($ver) or die "couldn't find package info file for ${pkgname}=$ver->{VerStr}\n";
+	my $rc = PVE::Tools::run_command(
+	    $cmd,
+	    timeout => 10,
+	    logfunc => sub {
+		my $line = shift;
+		$output .= "$line\n";
+	    },
+	    noerr => 1,
+	);
 
-	my $url = $get_changelog_url->($pkgname, $info, $ver->{VerStr}, $pkgfile)
-	    or die "changelog for '${pkgname}_$ver->{VerStr}' not available\n";
+	$output .= "RC: $rc" if $rc != 0;
 
-	my $ua = LWP::UserAgent->new();
-	$ua->agent("PVE/1.0");
-	$ua->timeout(10);
-	$ua->max_size(1024 * 1024);
-	$ua->ssl_opts(verify_hostname => 0); # don't care for changelogs
-
-	my $datacenter_cfg = PVE::Cluster::cfs_read_file('datacenter.cfg');
-	if (my $proxy = $datacenter_cfg->{http_proxy}) {
-	    $ua->proxy(['http', 'https'], $proxy);
-	} else {
-	    $ua->env_proxy;
-	}
-
-	if ($pkgfile->{Origin} eq 'Proxmox' && $pkgfile->{Component} eq 'pve-enterprise') {
-	    my $info = PVE::API2::Subscription::read_etc_subscription();
-	    if ($info->{status} eq 'active') {
-		my $pw = PVE::API2Tools::get_hwaddress();
-		$ua->credentials("enterprise.proxmox.com:443", 'pve-enterprise-repository', $info->{key}, $pw);
-	    }
-	}
-
-	my $response = $ua->get($url);
-
-	if ($response->is_success) {
-	    return $response->decoded_content;
-	} else {
-	    PVE::Exception::raise($response->message, code => $response->code);
-	}
-	return '';
+	return $output;
     }});
 
 __PACKAGE__->register_method({

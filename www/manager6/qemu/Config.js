@@ -67,7 +67,7 @@ Ext.define('PVE.qemu.Config', {
 	var migrateBtn = Ext.create('Ext.Button', {
 	    text: gettext('Migrate'),
 	    disabled: !caps.vms['VM.Migrate'],
-	    hidden: PVE.data.ResourceStore.getNodes().length < 2,
+	    hidden: PVE.Utils.isStandaloneNode(),
 	    handler: function() {
 		var win = Ext.create('PVE.window.Migrate', {
 		    vmtype: 'qemu',
@@ -390,6 +390,8 @@ Ext.define('PVE.qemu.Config', {
 		    itemId: 'firewall-fwlog',
 		    xtype: 'proxmoxLogView',
 		    url: '/api2/extjs' + base_url + '/firewall/log',
+		    log_select_timespan: true,
+		    submitFormat: 'U',
 		},
 	    );
 	}

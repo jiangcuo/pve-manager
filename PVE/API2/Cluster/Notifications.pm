@@ -56,49 +56,6 @@ sub raise_api_error {
     die $exc;
 }
 
-sub filter_entities_by_privs {
-    my ($rpcenv, $entities) = @_;
-    my $authuser = $rpcenv->get_user();
-
-    my $can_see_mapping_privs = ['Mapping.Modify', 'Mapping.Use', 'Mapping.Audit'];
-
-    my $filtered = [grep {
-	$rpcenv->check_any(
-	    $authuser,
-	    "/mapping/notification/$_->{name}",
-	    $can_see_mapping_privs,
-	    1
-	) || $_->{name} eq PVE::Notify::default_target();
-    } @$entities];
-
-    return $filtered;
-}
-
-sub target_used_by {
-    my ($target) = @_;
-
-    my $used_by = [];
-
-    # Check keys in datacenter.cfg
-    my $dc_conf = PVE::Cluster::cfs_read_file('datacenter.cfg');
-    for my $key (qw(target-package-updates target-replication target-fencing)) {
-	if ($dc_conf->{notify} && $dc_conf->{notify}->{$key} eq $target) {
-	    push @$used_by, $key;
-	}
-    }
-
-    # Check backup jobs
-    my $jobs_conf = PVE::Cluster::cfs_read_file('jobs.cfg');
-    for my $key (keys %{$jobs_conf->{ids}}) {
-	my $job = $jobs_conf->{ids}->{$key};
-	if ($job->{'notification-target'} eq $target) {
-	    push @$used_by, $key;
-	}
-    }
-
-    return join(', ', @$used_by);
-}
-
 __PACKAGE__->register_method ({
     name => 'index',
     path => '',
@@ -120,8 +77,7 @@ __PACKAGE__->register_method ({
     code => sub {
 	my $result = [
 	    { name => 'endpoints' },
-	    { name => 'filters' },
-	    { name => 'groups' },
+	    { name => 'matchers' },
 	    { name => 'targets' },
 	];
 
@@ -161,13 +117,13 @@ __PACKAGE__->register_method ({
     name => 'get_all_targets',
     path => 'targets',
     method => 'GET',
-    description => 'Returns a list of all entities that can be used as notification targets' .
-	' (endpoints and groups).',
+    description => 'Returns a list of all entities that can be used as notification targets.',
     permissions => {
-	description => "Only lists entries where you have 'Mapping.Modify', 'Mapping.Use' or"
-	    . " 'Mapping.Audit' permissions on '/mapping/notification/<name>'."
-	    . " The special 'mail-to-root' target is available to all users.",
-	user => 'all',
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
+	    ['perm', '/mapping/notifications', ['Mapping.Use']],
+	],
     },
     protected => 1,
     parameters => {
@@ -180,19 +136,30 @@ __PACKAGE__->register_method ({
 	    type => 'object',
 	    properties => {
 		name => {
-		    description => 'Name of the endpoint/group.',
+		    description => 'Name of the target.',
 		    type => 'string',
 		    format => 'pve-configid',
 		},
 		'type' => {
-		    description => 'Type of the endpoint or group.',
+		    description => 'Type of the target.',
 		    type  => 'string',
-		    enum => [qw(sendmail gotify group)],
+		    enum => [qw(sendmail gotify)],
 		},
 		'comment' => {
 		    description => 'Comment',
-		    type        => 'string',
-		    optional    => 1,
+		    type => 'string',
+		    optional => 1,
+		},
+		'disable' => {
+		    description => 'Show if this target is disabled',
+		    type => 'boolean',
+		    optional => 1,
+		    default => 0,
+		},
+		'origin' => {
+		    description => 'Show if this entry was created by a user or was built-in',
+		    type  => 'string',
+		    enum => [qw(user-created builtin modified-builtin)],
 		},
 	    },
 	},
@@ -200,7 +167,6 @@ __PACKAGE__->register_method ({
     },
     code => sub {
 	my $config = PVE::Notify::read_config();
-	my $rpcenv = PVE::RPCEnvironment::get();
 
 	my $targets = eval {
 	    my $result = [];
@@ -210,6 +176,8 @@ __PACKAGE__->register_method ({
 		    name => $target->{name},
 		    comment => $target->{comment},
 		    type => 'sendmail',
+		    disable => $target->{disable},
+		    origin => $target->{origin},
 		};
 	    }
 
@@ -218,14 +186,18 @@ __PACKAGE__->register_method ({
 		    name => $target->{name},
 		    comment => $target->{comment},
 		    type => 'gotify',
+		    disable => $target->{disable},
+		    origin => $target->{origin},
 		};
 	    }
 
-	    for my $target (@{$config->get_groups()}) {
+	    for my $target (@{$config->get_smtp_endpoints()}) {
 		push @$result, {
 		    name => $target->{name},
 		    comment => $target->{comment},
-		    type => 'group',
+		    type => 'smtp',
+		    disable => $target->{disable},
+		    origin => $target->{origin},
 		};
 	    }
 
@@ -234,7 +206,7 @@ __PACKAGE__->register_method ({
 
 	raise_api_error($@) if $@;
 
-	return filter_entities_by_privs($rpcenv, $targets);
+	return $targets;
     }
 });
 
@@ -245,10 +217,11 @@ __PACKAGE__->register_method ({
     method => 'POST',
     description => 'Send a test notification to a provided target.',
     permissions => {
-	description => "The user requires 'Mapping.Modify', 'Mapping.Use' or"
-	    . " 'Mapping.Audit' permissions on '/mapping/notification/<name>'."
-	    . " The special 'mail-to-root' target can be accessed by all users.",
-	user => 'all',
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
+	    ['perm', '/mapping/notifications', ['Mapping.Use']],
+	],
     },
     parameters => {
 	additionalProperties => 0,
@@ -264,20 +237,6 @@ __PACKAGE__->register_method ({
     code => sub {
 	my ($param) = @_;
 	my $name = extract_param($param, 'name');
-	my $rpcenv = PVE::RPCEnvironment::get();
-	my $authuser = $rpcenv->get_user();
-
-	my $privs = ['Mapping.Modify', 'Mapping.Use', 'Mapping.Audit'];
-
-	if ($name ne PVE::Notify::default_target()) {
-	    # Due to backwards compatibility reasons the 'mail-to-root'
-	    # target must be accessible for any user
-	    $rpcenv->check_any(
-		$authuser,
-		"/mapping/notification/$name",
-		$privs,
-	    );
-	}
 
 	eval {
 	    my $config = PVE::Notify::read_config();
@@ -286,255 +245,6 @@ __PACKAGE__->register_method ({
 
 	raise_api_error($@) if $@;
 
-	return;
-    }
-});
-
-my $group_properties = {
-    name => {
-	description => 'Name of the group.',
-	type => 'string',
-	format => 'pve-configid',
-    },
-    'endpoint' => {
-	type => 'array',
-	items => {
-	    type => 'string',
-	    format => 'pve-configid',
-	},
-	description => 'List of included endpoints',
-    },
-    'comment' => {
-	description => 'Comment',
-	type => 'string',
-	optional => 1,
-    },
-    filter => {
-	description => 'Name of the filter that should be applied.',
-	type => 'string',
-	format => 'pve-configid',
-	optional => 1,
-    },
-};
-
-__PACKAGE__->register_method ({
-    name => 'get_groups',
-    path => 'groups',
-    method => 'GET',
-    description => 'Returns a list of all groups',
-    protected => 1,
-    permissions => {
-	description => "Only lists entries where you have 'Mapping.Modify', 'Mapping.Use' or"
-	    . " 'Mapping.Audit' permissions on '/mapping/notification/<name>'.",
-	user => 'all',
-    },
-    parameters => {
-	additionalProperties => 0,
-	properties => {},
-    },
-    returns => {
-	type => 'array',
-	items => {
-	    type => 'object',
-	    properties => $group_properties,
-	},
-	links => [ { rel => 'child', href => '{name}' } ],
-    },
-    code => sub {
-	my $config = PVE::Notify::read_config();
-	my $rpcenv = PVE::RPCEnvironment::get();
-
-	my $entities = eval {
-	    $config->get_groups();
-	};
-	raise_api_error($@) if $@;
-
-	return filter_entities_by_privs($rpcenv, $entities);
-    }
-});
-
-__PACKAGE__->register_method ({
-    name => 'get_group',
-    path => 'groups/{name}',
-    method => 'GET',
-    description => 'Return a specific group',
-    protected => 1,
-    permissions => {
-	check => ['or',
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Audit']],
-	],
-    },
-    parameters => {
-	additionalProperties => 0,
-	properties => {
-	    name => {
-		type => 'string',
-		format => 'pve-configid',
-	    },
-	}
-    },
-    returns => {
-	type => 'object',
-	properties => {
-	    %$group_properties,
-	    digest => get_standard_option('pve-config-digest'),
-	},
-    },
-    code => sub {
-	my ($param) = @_;
-	my $name = extract_param($param, 'name');
-
-	my $config = PVE::Notify::read_config();
-
-	my $group = eval {
-	    $config->get_group($name)
-	};
-
-	raise_api_error($@) if $@;
-	$group->{digest} = $config->digest();
-
-	return $group;
-    }
-});
-
-__PACKAGE__->register_method ({
-    name => 'create_group',
-    path => 'groups',
-    protected => 1,
-    method => 'POST',
-    description => 'Create a new group',
-    permissions => {
-	check => ['perm', '/mapping/notification', ['Mapping.Modify']],
-    },
-    parameters => {
-	additionalProperties => 0,
-	properties => $group_properties,
-    },
-    returns => { type => 'null' },
-    code => sub {
-	my ($param) = @_;
-
-	my $name = extract_param($param, 'name');
-	my $endpoint = extract_param($param, 'endpoint');
-	my $comment = extract_param($param, 'comment');
-	my $filter = extract_param($param, 'filter');
-
-	eval {
-	    PVE::Notify::lock_config(sub {
-		my $config = PVE::Notify::read_config();
-
-		$config->add_group(
-		    $name,
-		    $endpoint,
-		    $comment,
-		    $filter,
-		);
-
-		PVE::Notify::write_config($config);
-	    });
-	};
-
-	raise_api_error($@) if $@;
-	return;
-    }
-});
-
-__PACKAGE__->register_method ({
-    name => 'update_group',
-    path => 'groups/{name}',
-    protected => 1,
-    method => 'PUT',
-    description => 'Update existing group',
-    permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
-    },
-    parameters => {
-	additionalProperties => 0,
-	properties => {
-	    %{ make_properties_optional($group_properties) },
-	    delete => {
-		type => 'array',
-		items => {
-		    type => 'string',
-		    format => 'pve-configid',
-		},
-		optional => 1,
-		description => 'A list of settings you want to delete.',
-	    },
-	    digest => get_standard_option('pve-config-digest'),
-	},
-    },
-    returns => { type => 'null' },
-    code => sub {
-	my ($param) = @_;
-
-	my $name = extract_param($param, 'name');
-	my $endpoint = extract_param($param, 'endpoint');
-	my $comment = extract_param($param, 'comment');
-	my $filter = extract_param($param, 'filter');
-	my $digest = extract_param($param, 'digest');
-	my $delete = extract_param($param, 'delete');
-
-	eval {
-	    PVE::Notify::lock_config(sub {
-		my $config = PVE::Notify::read_config();
-
-		$config->update_group(
-		    $name,
-		    $endpoint,
-		    $comment,
-		    $filter,
-		    $delete,
-		    $digest,
-		);
-
-		PVE::Notify::write_config($config);
-	    });
-	};
-
-	raise_api_error($@) if $@;
-	return;
-    }
-});
-
-__PACKAGE__->register_method ({
-    name => 'delete_group',
-    protected => 1,
-    path => 'groups/{name}',
-    method => 'DELETE',
-    description => 'Remove group',
-    permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
-    },
-    parameters => {
-	additionalProperties => 0,
-	properties => {
-	    name => {
-		type => 'string',
-		format => 'pve-configid',
-	    },
-	}
-    },
-    returns => { type => 'null' },
-    code => sub {
-	my ($param) = @_;
-	my $name = extract_param($param, 'name');
-
-	my $used_by = target_used_by($name);
-	if ($used_by) {
-	    raise_param_exc({'name' => "Cannot remove $name, used by: $used_by"});
-	}
-
-	eval {
-	    PVE::Notify::lock_config(sub {
-		my $config = PVE::Notify::read_config();
-		$config->delete_group($name);
-		PVE::Notify::write_config($config);
-	    });
-	};
-
-	raise_api_error($@) if $@;
 	return;
     }
 });
@@ -575,14 +285,14 @@ my $sendmail_properties = {
     },
     'comment' => {
 	description => 'Comment',
-	type        => 'string',
-	optional    => 1,
-    },
-    filter => {
-	description => 'Name of the filter that should be applied.',
 	type => 'string',
-	format => 'pve-configid',
 	optional => 1,
+    },
+    'disable' => {
+	description => 'Disable this target',
+	type => 'boolean',
+	optional => 1,
+	default => 0,
     },
 };
 
@@ -592,9 +302,10 @@ __PACKAGE__->register_method ({
     method => 'GET',
     description => 'Returns a list of all sendmail endpoints',
     permissions => {
-	description => "Only lists entries where you have 'Mapping.Modify', 'Mapping.Use' or"
-	    . " 'Mapping.Audit' permissions on '/mapping/notification/<name>'.",
-	user => 'all',
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
+	],
     },
     protected => 1,
     parameters => {
@@ -605,20 +316,26 @@ __PACKAGE__->register_method ({
 	type => 'array',
 	items => {
 	    type => 'object',
-	    properties => $sendmail_properties,
+	    properties => {
+		%$sendmail_properties,
+		'origin' => {
+		    description => 'Show if this entry was created by a user or was built-in',
+		    type  => 'string',
+		    enum => [qw(user-created builtin modified-builtin)],
+		},
+	    },
 	},
 	links => [ { rel => 'child', href => '{name}' } ],
     },
     code => sub {
 	my $config = PVE::Notify::read_config();
-	my $rpcenv = PVE::RPCEnvironment::get();
 
 	my $entities = eval {
 	    $config->get_sendmail_endpoints();
 	};
 	raise_api_error($@) if $@;
 
-	return filter_entities_by_privs($rpcenv, $entities);
+	return $entities;
     }
 });
 
@@ -629,8 +346,8 @@ __PACKAGE__->register_method ({
     description => 'Return a specific sendmail endpoint',
     permissions => {
 	check => ['or',
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Audit']],
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
 	],
     },
     protected => 1,
@@ -674,7 +391,7 @@ __PACKAGE__->register_method ({
     method => 'POST',
     description => 'Create a new sendmail endpoint',
     permissions => {
-	check => ['perm', '/mapping/notification', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -690,7 +407,7 @@ __PACKAGE__->register_method ({
 	my $from_address = extract_param($param, 'from-address');
 	my $author = extract_param($param, 'author');
 	my $comment = extract_param($param, 'comment');
-	my $filter = extract_param($param, 'filter');
+	my $disable = extract_param($param, 'disable');
 
 	eval {
 	    PVE::Notify::lock_config(sub {
@@ -703,7 +420,7 @@ __PACKAGE__->register_method ({
 		    $from_address,
 		    $author,
 		    $comment,
-		    $filter
+		    $disable,
 		);
 
 		PVE::Notify::write_config($config);
@@ -722,7 +439,7 @@ __PACKAGE__->register_method ({
     method => 'PUT',
     description => 'Update existing sendmail endpoint',
     permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -751,7 +468,7 @@ __PACKAGE__->register_method ({
 	my $from_address = extract_param($param, 'from-address');
 	my $author = extract_param($param, 'author');
 	my $comment = extract_param($param, 'comment');
-	my $filter = extract_param($param, 'filter');
+	my $disable = extract_param($param, 'disable');
 
 	my $delete = extract_param($param, 'delete');
 	my $digest = extract_param($param, 'digest');
@@ -767,7 +484,7 @@ __PACKAGE__->register_method ({
 		    $from_address,
 		    $author,
 		    $comment,
-		    $filter,
+		    $disable,
 		    $delete,
 		    $digest,
 		);
@@ -788,7 +505,7 @@ __PACKAGE__->register_method ({
     method => 'DELETE',
     description => 'Remove sendmail endpoint',
     permissions => {
-	check => ['perm', '/mapping/notification', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -803,11 +520,6 @@ __PACKAGE__->register_method ({
     code => sub {
 	my ($param) = @_;
 	my $name = extract_param($param, 'name');
-
-	my $used_by = target_used_by($name);
-	if ($used_by) {
-	    raise_param_exc({'name' => "Cannot remove $name, used by: $used_by"});
-	}
 
 	eval {
 	    PVE::Notify::lock_config(sub {
@@ -838,15 +550,15 @@ my $gotify_properties = {
     },
     'comment' => {
 	description => 'Comment',
-	type        => 'string',
-	optional    => 1,
-    },
-    'filter' => {
-	description => 'Name of the filter that should be applied.',
 	type => 'string',
-	format => 'pve-configid',
 	optional => 1,
-    }
+    },
+    'disable' => {
+	description => 'Disable this target',
+	type => 'boolean',
+	optional => 1,
+	default => 0,
+    },
 };
 
 __PACKAGE__->register_method ({
@@ -856,9 +568,8 @@ __PACKAGE__->register_method ({
     description => 'Returns a list of all gotify endpoints',
     protected => 1,
     permissions => {
-	description => "Only lists entries where you have 'Mapping.Modify', 'Mapping.Use' or"
-	    . " 'Mapping.Audit' permissions on '/mapping/notification/<name>'.",
-	user => 'all',
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Audit']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -868,7 +579,14 @@ __PACKAGE__->register_method ({
 	type => 'array',
 	items => {
 	    type => 'object',
-	    properties => remove_protected_properties($gotify_properties, ['token']),
+	    properties => {
+		% {remove_protected_properties($gotify_properties, ['token'])},
+		'origin' => {
+		    description => 'Show if this entry was created by a user or was built-in',
+		    type  => 'string',
+		    enum => [qw(user-created builtin modified-builtin)],
+		},
+	    },
 	},
 	links => [ { rel => 'child', href => '{name}' } ],
     },
@@ -881,7 +599,7 @@ __PACKAGE__->register_method ({
 	};
 	raise_api_error($@) if $@;
 
-	return filter_entities_by_privs($rpcenv, $entities);
+	return $entities;
     }
 });
 
@@ -893,8 +611,8 @@ __PACKAGE__->register_method ({
     protected => 1,
     permissions => {
 	check => ['or',
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Audit']],
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
 	],
     },
     parameters => {
@@ -937,7 +655,7 @@ __PACKAGE__->register_method ({
     method => 'POST',
     description => 'Create a new gotify endpoint',
     permissions => {
-	check => ['perm', '/mapping/notification', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -951,7 +669,7 @@ __PACKAGE__->register_method ({
 	my $server = extract_param($param, 'server');
 	my $token = extract_param($param, 'token');
 	my $comment = extract_param($param, 'comment');
-	my $filter = extract_param($param, 'filter');
+	my $disable = extract_param($param, 'disable');
 
 	eval {
 	    PVE::Notify::lock_config(sub {
@@ -962,7 +680,7 @@ __PACKAGE__->register_method ({
 		    $server,
 		    $token,
 		    $comment,
-		    $filter
+		    $disable,
 		);
 
 		PVE::Notify::write_config($config);
@@ -981,7 +699,7 @@ __PACKAGE__->register_method ({
     method => 'PUT',
     description => 'Update existing gotify endpoint',
     permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -1007,7 +725,7 @@ __PACKAGE__->register_method ({
 	my $server = extract_param($param, 'server');
 	my $token = extract_param($param, 'token');
 	my $comment = extract_param($param, 'comment');
-	my $filter = extract_param($param, 'filter');
+	my $disable = extract_param($param, 'disable');
 
 	my $delete = extract_param($param, 'delete');
 	my $digest = extract_param($param, 'digest');
@@ -1021,7 +739,7 @@ __PACKAGE__->register_method ({
 		    $server,
 		    $token,
 		    $comment,
-		    $filter,
+		    $disable,
 		    $delete,
 		    $digest,
 		);
@@ -1042,7 +760,7 @@ __PACKAGE__->register_method ({
     method => 'DELETE',
     description => 'Remove gotify endpoint',
     permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -1057,11 +775,6 @@ __PACKAGE__->register_method ({
     code => sub {
 	my ($param) = @_;
 	my $name = extract_param($param, 'name');
-
-	my $used_by = target_used_by($name);
-	if ($used_by) {
-	    raise_param_exc({'name' => "Cannot remove $name, used by: $used_by"});
-	}
 
 	eval {
 	    PVE::Notify::lock_config(sub {
@@ -1076,47 +789,419 @@ __PACKAGE__->register_method ({
     }
 });
 
-my $filter_properties = {
+my $smtp_properties= {
     name => {
-	description => 'Name of the endpoint.',
+	description => 'The name of the endpoint.',
 	type => 'string',
 	format => 'pve-configid',
     },
-    'min-severity' => {
+    server => {
+	description => 'The address of the SMTP server.',
 	type => 'string',
-	description => 'Minimum severity to match',
+    },
+    port => {
+	description => 'The port to be used. Defaults to 465 for TLS based connections,'
+	    . ' 587 for STARTTLS based connections and port 25 for insecure plain-text'
+	    . ' connections.',
+	type => 'integer',
 	optional => 1,
-	enum => [qw(info notice warning error)],
     },
     mode => {
+	description => 'Determine which encryption method shall be used for the connection.',
 	type => 'string',
-	description => "Choose between 'and' and 'or' for when multiple properties are specified",
+	enum => [ qw(insecure starttls tls) ],
+	default => 'tls',
 	optional => 1,
-	enum => [qw(and or)],
-	default => 'and',
     },
-    'invert-match' => {
-	type => 'boolean',
-	description => 'Invert match of the whole filter',
+    username => {
+	description => 'Username for SMTP authentication',
+	type => 'string',
+	optional => 1,
+    },
+    password => {
+	description => 'Password for SMTP authentication',
+	type => 'string',
+	optional => 1,
+    },
+    mailto => {
+	type => 'array',
+	items => {
+	    type => 'string',
+	    format => 'email-or-username',
+	},
+	description => 'List of email recipients',
+	optional => 1,
+    },
+    'mailto-user' => {
+	type => 'array',
+	items => {
+	    type => 'string',
+	    format => 'pve-userid',
+	},
+	description => 'List of users',
+	optional => 1,
+    },
+    'from-address' => {
+	description => '`From` address for the mail',
+	type => 'string',
+    },
+    author => {
+	description => 'Author of the mail. Defaults to \'Proxmox VE\'.',
+	type => 'string',
 	optional => 1,
     },
     'comment' => {
 	description => 'Comment',
-	type        => 'string',
-	optional    => 1,
+	type => 'string',
+	optional => 1,
+    },
+    'disable' => {
+	description => 'Disable this target',
+	type => 'boolean',
+	optional => 1,
+	default => 0,
     },
 };
 
 __PACKAGE__->register_method ({
-    name => 'get_filters',
-    path => 'filters',
+    name => 'get_smtp_endpoints',
+    path => 'endpoints/smtp',
     method => 'GET',
-    description => 'Returns a list of all filters',
+    description => 'Returns a list of all smtp endpoints',
+    permissions => {
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
+	],
+    },
+    protected => 1,
+    parameters => {
+	additionalProperties => 0,
+	properties => {},
+    },
+    returns => {
+	type => 'array',
+	items => {
+	    type => 'object',
+	    properties => {
+		%{ remove_protected_properties($smtp_properties, ['password']) },
+		'origin' => {
+		    description => 'Show if this entry was created by a user or was built-in',
+		    type  => 'string',
+		    enum => [qw(user-created builtin modified-builtin)],
+		},
+	    },
+	},
+	links => [ { rel => 'child', href => '{name}' } ],
+    },
+    code => sub {
+	my $config = PVE::Notify::read_config();
+
+	my $entities = eval {
+	    $config->get_smtp_endpoints();
+	};
+	raise_api_error($@) if $@;
+
+	return $entities;
+    }
+});
+
+__PACKAGE__->register_method ({
+    name => 'get_smtp_endpoint',
+    path => 'endpoints/smtp/{name}',
+    method => 'GET',
+    description => 'Return a specific smtp endpoint',
+    permissions => {
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
+	],
+    },
+    protected => 1,
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    name => {
+		type => 'string',
+		format => 'pve-configid',
+	    },
+	}
+    },
+    returns => {
+	type => 'object',
+	properties => {
+	    %{ remove_protected_properties($smtp_properties, ['password']) },
+	    digest => get_standard_option('pve-config-digest'),
+	}
+
+    },
+    code => sub {
+	my ($param) = @_;
+	my $name = extract_param($param, 'name');
+
+	my $config = PVE::Notify::read_config();
+	my $endpoint = eval {
+	    $config->get_smtp_endpoint($name)
+	};
+
+	raise_api_error($@) if $@;
+	$endpoint->{digest} = $config->digest();
+
+	return $endpoint;
+    }
+});
+
+__PACKAGE__->register_method ({
+    name => 'create_smtp_endpoint',
+    path => 'endpoints/smtp',
+    protected => 1,
+    method => 'POST',
+    description => 'Create a new smtp endpoint',
+    permissions => {
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => $smtp_properties,
+    },
+    returns => { type => 'null' },
+    code => sub {
+	my ($param) = @_;
+
+	my $name = extract_param($param, 'name');
+	my $server = extract_param($param, 'server');
+	my $port = extract_param($param, 'port');
+	my $mode = extract_param($param, 'mode');
+	my $username = extract_param($param, 'username');
+	my $password = extract_param($param, 'password');
+	my $mailto = extract_param($param, 'mailto');
+	my $mailto_user = extract_param($param, 'mailto-user');
+	my $from_address = extract_param($param, 'from-address');
+	my $author = extract_param($param, 'author');
+	my $comment = extract_param($param, 'comment');
+	my $disable = extract_param($param, 'disable');
+
+	eval {
+	    PVE::Notify::lock_config(sub {
+		my $config = PVE::Notify::read_config();
+
+		$config->add_smtp_endpoint(
+		    $name,
+		    $server,
+		    $port,
+		    $mode,
+		    $username,
+		    $password,
+		    $mailto,
+		    $mailto_user,
+		    $from_address,
+		    $author,
+		    $comment,
+		    $disable,
+		);
+
+		PVE::Notify::write_config($config);
+	    });
+	};
+
+	raise_api_error($@) if $@;
+	return;
+    }
+});
+
+__PACKAGE__->register_method ({
+    name => 'update_smtp_endpoint',
+    path => 'endpoints/smtp/{name}',
+    protected => 1,
+    method => 'PUT',
+    description => 'Update existing smtp endpoint',
+    permissions => {
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    %{ make_properties_optional($smtp_properties) },
+	    delete => {
+		type => 'array',
+		items => {
+		    type => 'string',
+		    format => 'pve-configid',
+		},
+		optional => 1,
+		description => 'A list of settings you want to delete.',
+	    },
+	    digest => get_standard_option('pve-config-digest'),
+
+	}
+    },
+    returns => { type => 'null' },
+    code => sub {
+	my ($param) = @_;
+
+	my $name = extract_param($param, 'name');
+	my $server = extract_param($param, 'server');
+	my $port = extract_param($param, 'port');
+	my $mode = extract_param($param, 'mode');
+	my $username = extract_param($param, 'username');
+	my $password = extract_param($param, 'password');
+	my $mailto = extract_param($param, 'mailto');
+	my $mailto_user = extract_param($param, 'mailto-user');
+	my $from_address = extract_param($param, 'from-address');
+	my $author = extract_param($param, 'author');
+	my $comment = extract_param($param, 'comment');
+	my $disable = extract_param($param, 'disable');
+
+	my $delete = extract_param($param, 'delete');
+	my $digest = extract_param($param, 'digest');
+
+	eval {
+	    PVE::Notify::lock_config(sub {
+		my $config = PVE::Notify::read_config();
+
+		$config->update_smtp_endpoint(
+		    $name,
+		    $server,
+		    $port,
+		    $mode,
+		    $username,
+		    $password,
+		    $mailto,
+		    $mailto_user,
+		    $from_address,
+		    $author,
+		    $comment,
+		    $disable,
+		    $delete,
+		    $digest,
+		);
+
+		PVE::Notify::write_config($config);
+	    });
+	};
+
+	raise_api_error($@) if $@;
+	return;
+    }
+});
+
+__PACKAGE__->register_method ({
+    name => 'delete_smtp_endpoint',
+    protected => 1,
+    path => 'endpoints/smtp/{name}',
+    method => 'DELETE',
+    description => 'Remove smtp endpoint',
+    permissions => {
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    name => {
+		type => 'string',
+		format => 'pve-configid',
+	    },
+	}
+    },
+    returns => { type => 'null' },
+    code => sub {
+	my ($param) = @_;
+	my $name = extract_param($param, 'name');
+
+	eval {
+	    PVE::Notify::lock_config(sub {
+		my $config = PVE::Notify::read_config();
+		$config->delete_smtp_endpoint($name);
+		PVE::Notify::write_config($config);
+	    });
+	};
+
+	raise_api_error($@) if ($@);
+	return;
+    }
+});
+
+my $matcher_properties = {
+    name => {
+	description => 'Name of the matcher.',
+	type => 'string',
+	format => 'pve-configid',
+    },
+    'match-field' => {
+	type => 'array',
+	items => {
+	    type => 'string',
+	},
+	optional => 1,
+	description => 'Metadata fields to match (regex or exact match).'
+	    . ' Must be in the form (regex|exact):<field>=<value>',
+    },
+    'match-severity' => {
+	type => 'array',
+	items => {
+	    type => 'string',
+	},
+	optional => 1,
+	description => 'Notification severities to match',
+    },
+    'match-calendar' => {
+	type => 'array',
+	items => {
+	    type => 'string',
+	},
+	optional => 1,
+	description => 'Match notification timestamp',
+    },
+    'target' => {
+	type => 'array',
+	items => {
+	    type => 'string',
+	    format => 'pve-configid',
+	},
+	optional => 1,
+	description => 'Targets to notify on match',
+    },
+    mode => {
+	type => 'string',
+	description => "Choose between 'all' and 'any' for when multiple properties are specified",
+	optional => 1,
+	enum => [qw(all any)],
+	default => 'all',
+    },
+    'invert-match' => {
+	type => 'boolean',
+	description => 'Invert match of the whole matcher',
+	optional => 1,
+    },
+    'comment' => {
+	description => 'Comment',
+	type => 'string',
+	optional => 1,
+    },
+    'disable' => {
+	description => 'Disable this matcher',
+	type => 'boolean',
+	optional => 1,
+	default => 0,
+    },
+};
+
+__PACKAGE__->register_method ({
+    name => 'get_matchers',
+    path => 'matchers',
+    method => 'GET',
+    description => 'Returns a list of all matchers',
     protected => 1,
     permissions => {
-	description => "Only lists entries where you have 'Mapping.Modify', 'Mapping.Use' or"
-	    . " 'Mapping.Audit' permissions on '/mapping/notification/<name>'.",
-	user => 'all',
+	check => ['or',
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
+	    ['perm', '/mapping/notifications', ['Mapping.Use']],
+	],
     },
     parameters => {
 	additionalProperties => 0,
@@ -1126,33 +1211,39 @@ __PACKAGE__->register_method ({
 	type => 'array',
 	items => {
 	    type => 'object',
-	    properties => $filter_properties,
+	    properties => {
+		%$matcher_properties,
+		'origin' => {
+		    description => 'Show if this entry was created by a user or was built-in',
+		    type  => 'string',
+		    enum => [qw(user-created builtin modified-builtin)],
+		},
+	    }
 	},
 	links => [ { rel => 'child', href => '{name}' } ],
     },
     code => sub {
 	my $config = PVE::Notify::read_config();
-	my $rpcenv = PVE::RPCEnvironment::get();
 
 	my $entities = eval {
-	    $config->get_filters();
+	    $config->get_matchers();
 	};
 	raise_api_error($@) if $@;
 
-	return filter_entities_by_privs($rpcenv, $entities);
+	return $entities;
     }
 });
 
 __PACKAGE__->register_method ({
-    name => 'get_filter',
-    path => 'filters/{name}',
+    name => 'get_matcher',
+    path => 'matchers/{name}',
     method => 'GET',
-    description => 'Return a specific filter',
+    description => 'Return a specific matcher',
     protected => 1,
     permissions => {
 	check => ['or',
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
-	    ['perm', '/mapping/notification/{name}', ['Mapping.Audit']],
+	    ['perm', '/mapping/notifications', ['Mapping.Modify']],
+	    ['perm', '/mapping/notifications', ['Mapping.Audit']],
 	],
     },
     parameters => {
@@ -1167,7 +1258,7 @@ __PACKAGE__->register_method ({
     returns => {
 	type => 'object',
 	properties => {
-	    %$filter_properties,
+	    %$matcher_properties,
 	    digest => get_standard_option('pve-config-digest'),
 	},
     },
@@ -1177,51 +1268,59 @@ __PACKAGE__->register_method ({
 
 	my $config = PVE::Notify::read_config();
 
-	my $filter = eval {
-	    $config->get_filter($name)
+	my $matcher = eval {
+	    $config->get_matcher($name)
 	};
 
 	raise_api_error($@) if $@;
-	$filter->{digest} = $config->digest();
+	$matcher->{digest} = $config->digest();
 
-	return $filter;
+	return $matcher;
     }
 });
 
 __PACKAGE__->register_method ({
-    name => 'create_filter',
-    path => 'filters',
+    name => 'create_matcher',
+    path => 'matchers',
     protected => 1,
     method => 'POST',
-    description => 'Create a new filter',
+    description => 'Create a new matcher',
     protected => 1,
     permissions => {
-	check => ['perm', '/mapping/notification', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
-	properties => $filter_properties,
+	properties => $matcher_properties,
     },
     returns => { type => 'null' },
     code => sub {
 	my ($param) = @_;
 
 	my $name = extract_param($param, 'name');
-	my $min_severity = extract_param($param, 'min-severity');
+	my $match_severity = extract_param($param, 'match-severity');
+	my $match_field = extract_param($param, 'match-field');
+	my $match_calendar = extract_param($param, 'match-calendar');
+	my $target = extract_param($param, 'target');
 	my $mode = extract_param($param, 'mode');
 	my $invert_match = extract_param($param, 'invert-match');
 	my $comment = extract_param($param, 'comment');
+	my $disable = extract_param($param, 'disable');
 
 	eval {
 	    PVE::Notify::lock_config(sub {
 		my $config = PVE::Notify::read_config();
 
-		$config->add_filter(
+		$config->add_matcher(
 		    $name,
-		    $min_severity,
+		    $target,
+		    $match_severity,
+		    $match_field,
+		    $match_calendar,
 		    $mode,
 		    $invert_match,
 		    $comment,
+		    $disable,
 		);
 
 		PVE::Notify::write_config($config);
@@ -1234,18 +1333,18 @@ __PACKAGE__->register_method ({
 });
 
 __PACKAGE__->register_method ({
-    name => 'update_filter',
-    path => 'filters/{name}',
+    name => 'update_matcher',
+    path => 'matchers/{name}',
     protected => 1,
     method => 'PUT',
-    description => 'Update existing filter',
+    description => 'Update existing matcher',
     permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
 	properties => {
-	    %{ make_properties_optional($filter_properties) },
+	    %{ make_properties_optional($matcher_properties) },
 	    delete => {
 		type => 'array',
 		items => {
@@ -1263,10 +1362,14 @@ __PACKAGE__->register_method ({
 	my ($param) = @_;
 
 	my $name = extract_param($param, 'name');
-	my $min_severity = extract_param($param, 'min-severity');
+	my $match_severity = extract_param($param, 'match-severity');
+	my $match_field = extract_param($param, 'match-field');
+	my $match_calendar = extract_param($param, 'match-calendar');
+	my $target = extract_param($param, 'target');
 	my $mode = extract_param($param, 'mode');
 	my $invert_match = extract_param($param, 'invert-match');
 	my $comment = extract_param($param, 'comment');
+	my $disable = extract_param($param, 'disable');
 	my $digest = extract_param($param, 'digest');
 	my $delete = extract_param($param, 'delete');
 
@@ -1274,12 +1377,16 @@ __PACKAGE__->register_method ({
 	    PVE::Notify::lock_config(sub {
 		my $config = PVE::Notify::read_config();
 
-		$config->update_filter(
+		$config->update_matcher(
 		    $name,
-		    $min_severity,
+		    $target,
+		    $match_severity,
+		    $match_field,
+		    $match_calendar,
 		    $mode,
 		    $invert_match,
 		    $comment,
+		    $disable,
 		    $delete,
 		    $digest,
 		);
@@ -1294,13 +1401,13 @@ __PACKAGE__->register_method ({
 });
 
 __PACKAGE__->register_method ({
-    name => 'delete_filter',
+    name => 'delete_matcher',
     protected => 1,
-    path => 'filters/{name}',
+    path => 'matchers/{name}',
     method => 'DELETE',
-    description => 'Remove filter',
+    description => 'Remove matcher',
     permissions => {
-	check => ['perm', '/mapping/notification/{name}', ['Mapping.Modify']],
+	check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
     },
     parameters => {
 	additionalProperties => 0,
@@ -1319,7 +1426,7 @@ __PACKAGE__->register_method ({
 	eval {
 	    PVE::Notify::lock_config(sub {
 		my $config = PVE::Notify::read_config();
-		$config->delete_filter($name);
+		$config->delete_matcher($name);
 		PVE::Notify::write_config($config);
 	    });
 	};

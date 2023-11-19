@@ -135,9 +135,6 @@ Ext.define('PVE.tree.ResourceTree', {
     },
 
     getToolTip: function(info) {
-	if (info.tip) {
-	    return info.tip;
-	}
 	if (info.type === 'pool' || info.groupbyid !== undefined) {
 	    return undefined;
 	}
@@ -148,6 +145,12 @@ Ext.define('PVE.tree.ResourceTree', {
 	}
 	if (info.hastate !== 'unmanaged') {
 	    qtips.push(gettext('HA State') + ": " + info.hastate);
+	}
+	if (info.type === 'storage') {
+	    let usage = info.disk / info.maxdisk;
+	    if (usage >= 0.0 && usage <= 1.0) {
+		qtips.push(Ext.String.format(gettext("Usage: {0}%"), (usage*100).toFixed(2)));
+	    }
 	}
 
 	let tip = qtips.join(', ');
@@ -420,7 +423,12 @@ Ext.define('PVE.tree.ResourceTree', {
 			listeners: {
 			    beforeshow: function(tip) {
 				let rec = me.getView().getRecord(tip.triggerElement);
-				tip.update(me.getToolTip(rec.data));
+				let tipText = me.getToolTip(rec.data);
+				if (tipText) {
+				    tip.update(tipText);
+				    return true;
+				}
+				return false;
 			    },
 			},
 		    });

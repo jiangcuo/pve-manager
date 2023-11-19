@@ -317,35 +317,17 @@ Ext.define('PVE.dc.Config', {
 	    );
 	}
 
-	// this is being reworked, but we need to release newer manager versions already..
-	let notification_enabled = false;
-	if (notification_enabled && caps.dc['Sys.Audit']) {
-	    me.items.push(
-		{
-		    xtype: 'pveNotificationEvents',
-		    title: gettext('Notifications'),
-		    onlineHelp: 'notification_events',
-		    iconCls: 'fa fa-bell-o',
-		    itemId: 'notifications',
-		},
-	    );
-	}
-
-	if (notification_enabled && (
-		caps.mapping['Mapping.Audit'] ||
-		caps.mapping['Mapping.Use'] ||
-		caps.mapping['Mapping.Modify']
-	    )
-	) {
+	if (caps.mapping['Mapping.Audit'] ||
+	    caps.mapping['Mapping.Use'] ||
+	    caps.mapping['Mapping.Modify']) {
 	    me.items.push(
 		{
 		    xtype: 'pmxNotificationConfigView',
-		    title: gettext('Notification Targets'),
+		    title: gettext('Notifications'),
 		    onlineHelp: 'notification_targets',
 		    itemId: 'notification-targets',
-		    iconCls: 'fa fa-dot-circle-o',
+		    iconCls: 'fa fa-bell-o',
 		    baseUrl: '/cluster/notifications',
-		    groups: ['notifications'],
 		},
 	    );
 	}

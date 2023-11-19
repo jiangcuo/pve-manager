@@ -94,6 +94,7 @@ Ext.define('PVE.ceph.StatusDetail', {
 	colors: [
 	    '#CFCFCF',
 	    '#21BF4B',
+	    '#3892d4',
 	    '#FFCC00',
 	    '#FF6C59',
 	],
@@ -146,13 +147,12 @@ Ext.define('PVE.ceph.StatusDetail', {
 	clean: 1,
 	active: 1,
 
-	// working
+	// busy
 	activating: 2,
 	backfill_wait: 2,
 	backfilling: 2,
 	creating: 2,
 	deep: 2,
-	degraded: 2,
 	forced_backfill: 2,
 	forced_recovery: 2,
 	peered: 2,
@@ -165,17 +165,20 @@ Ext.define('PVE.ceph.StatusDetail', {
 	snaptrim: 2,
 	snaptrim_wait: 2,
 
-	// error
-	backfill_toofull: 3,
-	backfill_unfound: 3,
-	down: 3,
-	incomplete: 3,
-	inconsistent: 3,
-	recovery_toofull: 3,
-	recovery_unfound: 3,
-	snaptrim_error: 3,
-	stale: 3,
+	// warning
+	degraded: 3,
 	undersized: 3,
+
+	// critical
+	backfill_toofull: 4,
+	backfill_unfound: 4,
+	down: 4,
+	incomplete: 4,
+	inconsistent: 4,
+	recovery_toofull: 4,
+	recovery_unfound: 4,
+	snaptrim_error: 4,
+	stale: 4,
     },
 
     statecategories: [
@@ -190,11 +193,15 @@ Ext.define('PVE.ceph.StatusDetail', {
 	    cls: 'good',
 	},
 	{
-	    text: gettext('Working'),
+	    text: gettext('Busy'),
+	    cls: 'pve-ceph-status-busy',
+	},
+	{
+	    text: gettext('Warning'),
 	    cls: 'warning',
 	},
 	{
-	    text: gettext('Error'),
+	    text: gettext('Critical'),
 	    cls: 'critical',
 	},
     ],

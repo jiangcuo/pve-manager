@@ -66,9 +66,24 @@ Ext.define('PVE.node.Config', {
 			},
 		    },
 		    {
+			text: gettext('Bulk Suspend'),
+			iconCls: 'fa fa-fw fa-download',
+			disabled: !caps.vms['VM.PowerMgmt'],
+			handler: function() {
+			    Ext.create('PVE.window.BulkAction', {
+				autoShow: true,
+				nodename: nodename,
+				title: gettext('Bulk Suspend'),
+				btnText: gettext('Suspend'),
+				action: 'suspendall',
+			    });
+			},
+		    },
+		    {
 			text: gettext('Bulk Migrate'),
 			iconCls: 'fa fa-fw fa-send-o',
 			disabled: !caps.vms['VM.Migrate'],
+			hidden: PVE.Utils.isStandaloneNode(),
 			handler: function() {
 			    Ext.create('PVE.window.BulkAction', {
 				autoShow: true,
@@ -397,6 +412,8 @@ Ext.define('PVE.node.Config', {
 		    onlineHelp: 'chapter_pve_firewall',
 		    url: '/api2/extjs/nodes/' + nodename + '/firewall/log',
 		    itemId: 'firewall-fwlog',
+		    log_select_timespan: true,
+		    submitFormat: 'U',
 		},
 		{
 		    xtype: 'cephLogView',
