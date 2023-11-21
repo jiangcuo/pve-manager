@@ -519,18 +519,10 @@ Ext.define('PVE.Utils', {
     render_scsihw: function(value) {
 	if (!value) {
 	    return Proxmox.Utils.defaultText + ' (LSI 53C895A)';
-	} else if (value === 'lsi') {
-	    return 'LSI 53C895A';
-	} else if (value === 'lsi53c810') {
-	    return 'LSI 53C810';
-	} else if (value === 'megasas') {
-	    return 'MegaRAID SAS 8708EM2';
 	} else if (value === 'virtio-scsi-pci') {
 	    return 'VirtIO SCSI';
 	} else if (value === 'virtio-scsi-single') {
 	    return 'VirtIO SCSI single';
-	} else if (value === 'pvscsi') {
-	    return 'VMware PVSCSI';
 	} else {
 	    return value;
 	}
@@ -592,11 +584,6 @@ Ext.define('PVE.Utils', {
 
     kvm_vga_drivers: {
 	std: gettext('Standard VGA'),
-	vmware: gettext('VMware compatible'),
-	qxl: 'SPICE',
-	qxl2: 'SPICE dual monitor',
-	qxl3: 'SPICE three monitors',
-	qxl4: 'SPICE four monitors',
 	serial0: gettext('Serial terminal') + ' 0',
 	serial1: gettext('Serial terminal') + ' 1',
 	serial2: gettext('Serial terminal') + ' 2',
