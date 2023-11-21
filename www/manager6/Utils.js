@@ -489,7 +489,7 @@ Ext.define('PVE.Utils', {
     },
 
     render_qemu_machine: function(value) {
-	return value || Proxmox.Utils.defaultText + ' (i440fx)';
+	return value || Proxmox.Utils.defaultText + ' (virt)';
     },
 
     render_qemu_bios: function(value) {
