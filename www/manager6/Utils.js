@@ -518,7 +518,7 @@ Ext.define('PVE.Utils', {
 
     render_scsihw: function(value) {
 	if (!value) {
-	    return Proxmox.Utils.defaultText + ' (LSI 53C895A)';
+	    return Proxmox.Utils.defaultText + ' (VirtIO SCSI)';
 	} else if (value === 'virtio-scsi-pci') {
 	    return 'VirtIO SCSI';
 	} else if (value === 'virtio-scsi-single') {
