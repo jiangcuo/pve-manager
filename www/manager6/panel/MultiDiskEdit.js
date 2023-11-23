@@ -19,7 +19,7 @@ Ext.define('PVE.panel.MultiDiskPanel', {
 	    let me = this;
 	    me.lookup('addButton').setDisabled(true);
 	    me.addDisk();
-	    let count = me.lookup('grid').getStore().getCount() + 1; // +1 is from ide2
+	    let count = me.lookup('grid').getStore().getCount() + 1; // +1 is from scsi2
 	    me.lookup('addButton').setDisabled(count >= me.maxCount);
 	},
 

@@ -48,19 +48,9 @@ Ext.define('PVE.Utils', {
     kvm_ostypes: {
 	'Linux': [
 	    { desc: '6.x - 2.6 Kernel', val: 'l26' },
-	    { desc: '2.4 Kernel', val: 'l24' },
 	],
 	'Microsoft Windows': [
 	    { desc: '11/2022', val: 'win11' },
-	    { desc: '10/2016/2019', val: 'win10' },
-	    { desc: '8.x/2012/2012r2', val: 'win8' },
-	    { desc: '7/2008r2', val: 'win7' },
-	    { desc: 'Vista/2008', val: 'w2k8' },
-	    { desc: 'XP/2003', val: 'wxp' },
-	    { desc: '2000', val: 'w2k' },
-	],
-	'Solaris Kernel': [
-	    { desc: '-', val: 'solaris' },
 	],
 	'Other': [
 	    { desc: '-', val: 'other' },
@@ -495,7 +485,7 @@ Ext.define('PVE.Utils', {
     },
 
     render_qemu_machine: function(value) {
-	return value || Proxmox.Utils.defaultText + ' (i440fx)';
+	return value || Proxmox.Utils.defaultText + ' (virt)';
     },
 
     render_qemu_bios: function(value) {
@@ -521,19 +511,11 @@ Ext.define('PVE.Utils', {
 
     render_scsihw: function(value) {
 	if (!value || value === '__default__') {
-	    return Proxmox.Utils.defaultText + ' (LSI 53C895A)';
-	} else if (value === 'lsi') {
-	    return 'LSI 53C895A';
-	} else if (value === 'lsi53c810') {
-	    return 'LSI 53C810';
-	} else if (value === 'megasas') {
-	    return 'MegaRAID SAS 8708EM2';
+	    return Proxmox.Utils.defaultText + '(VirtIO SCSI)';
 	} else if (value === 'virtio-scsi-pci') {
 	    return 'VirtIO SCSI';
 	} else if (value === 'virtio-scsi-single') {
 	    return 'VirtIO SCSI single';
-	} else if (value === 'pvscsi') {
-	    return 'VMware PVSCSI';
 	} else {
 	    return value;
 	}
@@ -597,11 +579,6 @@ Ext.define('PVE.Utils', {
     kvm_vga_drivers: {
 	'__default__': Proxmox.Utils.defaultText,
 	std: gettext('Standard VGA'),
-	vmware: gettext('VMware compatible'),
-	qxl: 'SPICE',
-	qxl2: 'SPICE dual monitor',
-	qxl3: 'SPICE three monitors',
-	qxl4: 'SPICE four monitors',
 	serial0: gettext('Serial terminal') + ' 0',
 	serial1: gettext('Serial terminal') + ' 1',
 	serial2: gettext('Serial terminal') + ' 2',
@@ -1818,7 +1795,7 @@ Ext.define('PVE.Utils', {
 
     sortByPreviousUsage: function(vmconfig, controllerList) {
 	if (!controllerList) {
-	    controllerList = ['ide', 'virtio', 'scsi', 'sata'];
+	    controllerList = ['scsi', 'virtio', 'ide', 'sata'];
 	}
 	let usedControllers = {};
 	for (const type of Object.keys(PVE.Utils.diskControllerMaxIDs)) {
