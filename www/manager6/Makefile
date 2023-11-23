@@ -88,6 +88,7 @@ JSSRC= 							\
 	form/TagEdit.js					\
 	form/MultiFileButton.js				\
 	form/TagFieldSet.js				\
+	form/IsoSelector.js				\
 	grid/BackupView.js				\
 	grid/FirewallAliases.js				\
 	grid/FirewallOptions.js				\
@@ -108,6 +109,7 @@ JSSRC= 							\
 	tree/ResourceTree.js				\
 	tree/SnapshotTree.js				\
 	tree/ResourceMapTree.js				\
+	tree/DhcpTree.js				\
 	window/Backup.js				\
 	window/BackupConfig.js				\
 	window/BulkAction.js				\
@@ -273,6 +275,7 @@ JSSRC= 							\
 	sdn/ZoneContentView.js				\
 	sdn/ZoneContentPanel.js				\
 	sdn/ZoneView.js					\
+	sdn/IpamEdit.js					\
 	sdn/OptionsPanel.js				\
 	sdn/controllers/Base.js				\
 	sdn/controllers/EvpnEdit.js			\

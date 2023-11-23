@@ -1,3 +1,82 @@
+pve-manager (8.1.3) bookworm; urgency=medium
+
+  * ui: pool view: fix editing nested pools
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 23 Nov 2023 11:20:00 +0100
+
+pve-manager (8.1.2) bookworm; urgency=medium
+
+  * ui: iso selector: fix layout, stretch items again to full space
+
+  * ui: drop various translations of fixed strings like 'VMID'
+
+  * ui: resource tree: fix inconsistency with extra-space causing some
+    potential vertical misalignment with nodes that had no virtual-guest
+
+  * ui: resource tree: consistently apply the tooltip and 'setText' method
+
+  * ui: perm paths: use adapted plural form for /mapping/notifications ACL
+    path
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 23 Nov 2023 10:23:05 +0100
+
+pve-manager (8.1.1) bookworm; urgency=medium
+
+  * ui: sdn: use all upper case for acronyms
+
+  * api: node status: cache boot mode info
+
+  * sdn: adapt edit panels for new API endpoints
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 22 Nov 2023 19:37:00 +0100
+
+pve-manager (8.1.0) bookworm; urgency=medium
+
+  * update shipped appliance info index
+
+  * ui: fix zero-sized panels on fresh chrome start
+
+  * fix #1148: api: pools: support nested pools
+
+  * ui: vm create wizard: allow adding an extra iso drive for the VirtIO
+    drivers and set the defaults of the disk and network device-types
+    accordingly.
+
+  * api: ceph: add endpoint to fetch config keys
+
+  * fix #2515: ui: ceph pool create: use configured defaults for 'size' and
+    'min_size'
+
+  * vzdump: support 'notification-mode' parameter to allow deciding if one
+    wants to use the legacy sendmail-only system or the new centrally managed
+    notification system.
+
+  * sdn: regenerate DHCP config on reload
+
+  * sdn: add DHCP option to Zone dialogue
+
+  * sdn: subnet: add panel for editing DHCP ranges
+
+  * ui: node summary: drop PVE prefix for manager version
+
+  * api: nodes: add full info about current kernel from uname call
+
+  * api: nodes: add info about current boot mode
+
+  * ui: node summary: reduce noise in current kernel version
+
+  * ui: node summary: add boot-mode information
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 22 Nov 2023 14:50:05 +0100
+
+pve-manager (8.0.9) bookworm; urgency=medium
+
+  * move default link config to drop-in snippet to avoid that the all default
+    fallback settings are overridden, not just the MACAddressPolicy one we
+    actually want to change.
+
+ -- Proxmox Support Team <support@proxmox.com>  Sat, 18 Nov 2023 12:18:49 +0100
+
 pve-manager (8.0.8) bookworm; urgency=medium
 
   * update shipped apliance info index
