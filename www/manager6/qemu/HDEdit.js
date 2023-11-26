@@ -170,7 +170,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
 
 	if (!me.confid || me.unused) {
 	    me.bussel = Ext.create('PVE.form.ControllerSelector', {
-		vmconfig: me.insideWizard ? { ide2: 'cdrom' } : {},
+		vmconfig: me.insideWizard ? { scsi2: 'cdrom' } : {},
 	    });
 	    me.column1.push(me.bussel);
 

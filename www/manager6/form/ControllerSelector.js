@@ -56,8 +56,8 @@ Ext.define('PVE.form.ControllerSelector', {
 
 	let clist = ['ide', 'virtio', 'scsi', 'sata'];
 	if (autoSelect === 'cdrom') {
-	    if (!Ext.isDefined(me.vmconfig.ide2)) {
-		bussel.setValue('ide');
+	    if (!Ext.isDefined(me.vmconfig.scsi2)) {
+		bussel.setValue('scsi');
 		deviceid.setValue(2);
 		return;
 	    }
