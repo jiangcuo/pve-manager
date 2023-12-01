@@ -1,3 +1,9 @@
+pve-manager (7.0-4+loong64) bullseye; urgency=medium
+
+  * add virtio-gl spport
+
+ -- jiangcuo <jiangcuo@bingsin.com>  Mon, 27 Nov 2023 00:19:55 +0800
+
 pve-manager (7.0-3+loong64) bullseye; urgency=medium
 
   * change ide2 to scsi2
