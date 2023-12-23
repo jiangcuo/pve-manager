@@ -1,12 +1,5 @@
 Ext.ns('PVE');
 
-// avoid errors related to Accessible Rich Internet Applications
-// (access for people with disabilities)
-// TODO reenable after all components are upgraded
-Ext.enableAria = false;
-Ext.enableAriaButtons = false;
-Ext.enableAriaPanels = false;
-
 console.log("Starting Proxmox VE Manager");
 
 Ext.Ajax.defaultHeaders = {
@@ -20,7 +13,7 @@ Ext.define('PVE.Utils', {
 
     toolkit: undefined, // (extjs|touch), set inside Toolkit.js
 
-    bus_match: /^(ide|sata|virtio|scsi)\d+$/,
+    bus_match: /^(ide|sata|virtio|scsi)(\d+)$/,
 
     log_severity_hash: {
 	0: "panic",
@@ -41,15 +34,24 @@ Ext.define('PVE.Utils', {
     },
 
     noSubKeyHtml: 'You do not have a valid subscription for this server. Please visit '
-      +'<a target="_blank" href="https://www.proxmox.com/products/proxmox-ve/subscription-service-plans">'
+      +'<a target="_blank" href="https://www.proxmox.com/en/proxmox-virtual-environment/pricing">'
       +'www.proxmox.com</a> to get a list of available options.',
+
+    getClusterSubscriptionLevel: async function() {
+	let { result } = await Proxmox.Async.api2({ url: '/cluster/status' });
+	let levelMap = Object.fromEntries(
+	  result.data.filter(v => v.type === 'node').map(v => [v.name, v.level]),
+	);
+	return levelMap;
+    },
 
     kvm_ostypes: {
 	'Linux': [
-	    { desc: '5.x - 2.6 Kernel', val: 'l26' },
+	    { desc: '6.x - 2.6 Kernel', val: 'l26' },
 	    { desc: '2.4 Kernel', val: 'l24' },
 	],
 	'Microsoft Windows': [
+	    { desc: '11/2022', val: 'win11' },
 	    { desc: '10/2016/2019', val: 'win10' },
 	    { desc: '8.x/2012/2012r2', val: 'win8' },
 	    { desc: '7/2008r2', val: 'win7' },
@@ -399,6 +401,8 @@ Ext.define('PVE.Utils', {
 	'efidisk but no OMVF BIOS': gettext('EFI Disk without OMVF BIOS'),
     },
 
+    renderNotFound: what => Ext.String.format(gettext("No {0} found"), what),
+
     get_kvm_osinfo: function(value) {
 	var info = { base: 'Other' }; // default
 	if (value) {
@@ -479,6 +483,8 @@ Ext.define('PVE.Utils', {
 		    virtio: "VirtIO",
 		};
 		displayText = map[value] || Proxmox.Utils.unknownText;
+	    } else if (key === 'freeze-fs-on-backup' && PVE.Parser.parseBoolean(value)) {
+		continue;
 	    } else if (PVE.Parser.parseBoolean(value)) {
 		displayText = Proxmox.Utils.enabledText;
 	    }
@@ -511,10 +517,7 @@ Ext.define('PVE.Utils', {
 	    return PVE.Parser.printPropertyString(value);
 	}
     },
-    render_as_property_string: function(value) {
-	return !value ? Proxmox.Utils.defaultText
-	    : PVE.Parser.printPropertyString(value);
-    },
+    render_as_property_string: v => !v ? Proxmox.Utils.defaultText : PVE.Parser.printPropertyString(v),
 
     render_scsihw: function(value) {
 	if (!value) {
@@ -547,6 +550,7 @@ Ext.define('PVE.Utils', {
     // fixme: auto-generate this
     // for now, please keep in sync with PVE::Tools::kvmkeymaps
     kvm_keymaps: {
+	'__default__': Proxmox.Utils.defaultText,
 	//ar: 'Arabic',
 	da: 'Danish',
 	de: 'German',
@@ -583,12 +587,14 @@ Ext.define('PVE.Utils', {
     },
 
     kvm_vga_drivers: {
+	'__default__': Proxmox.Utils.defaultText,
 	std: gettext('Standard VGA'),
 	serial0: gettext('Serial terminal') + ' 0',
 	serial1: gettext('Serial terminal') + ' 1',
 	serial2: gettext('Serial terminal') + ' 2',
 	serial3: gettext('Serial terminal') + ' 3',
 	virtio: 'VirtIO-GPU',
+	'virtio-gl': 'VirGL GPU',
 	none: Proxmox.Utils.noneText,
     },
 
@@ -596,20 +602,8 @@ Ext.define('PVE.Utils', {
 	if (!value || value === '__default__') {
 	    return Proxmox.Utils.defaultText;
 	}
-	var text = PVE.Utils.kvm_keymaps[value];
-	if (text) {
-	    return text + ' (' + value + ')';
-	}
-	return value;
-    },
-
-    kvm_keymap_array: function() {
-	var data = [['__default__', PVE.Utils.render_kvm_language('')]];
-	Ext.Object.each(PVE.Utils.kvm_keymaps, function(key, value) {
-	    data.push([key, PVE.Utils.render_kvm_language(value)]);
-	});
-
-	return data;
+	let text = PVE.Utils.kvm_keymaps[value];
+	return text ? `${text} (${value})` : value;
     },
 
     console_map: {
@@ -621,40 +615,19 @@ Ext.define('PVE.Utils', {
 
     render_console_viewer: function(value) {
 	value = value || '__default__';
-	if (PVE.Utils.console_map[value]) {
-	    return PVE.Utils.console_map[value];
-	}
-	return value;
-    },
-
-    console_viewer_array: function() {
-	return Ext.Array.map(Object.keys(PVE.Utils.console_map), function(v) {
-	    return [v, PVE.Utils.render_console_viewer(v)];
-	});
+	return PVE.Utils.console_map[value] || value;
     },
 
     render_kvm_vga_driver: function(value) {
 	if (!value) {
 	    return Proxmox.Utils.defaultText;
 	}
-	var vga = PVE.Parser.parsePropertyString(value, 'type');
-	var text = PVE.Utils.kvm_vga_drivers[vga.type];
+	let vga = PVE.Parser.parsePropertyString(value, 'type');
+	let text = PVE.Utils.kvm_vga_drivers[vga.type];
 	if (!vga.type) {
 	    text = Proxmox.Utils.defaultText;
 	}
-	if (text) {
-	    return text + ' (' + value + ')';
-	}
-	return value;
-    },
-
-    kvm_vga_driver_array: function() {
-	var data = [['__default__', PVE.Utils.render_kvm_vga_driver('')]];
-	Ext.Object.each(PVE.Utils.kvm_vga_drivers, function(key, value) {
-	    data.push([key, PVE.Utils.render_kvm_vga_driver(value)]);
-	});
-
-	return data;
+	return text ? `${text} (${value})` : value;
     },
 
     render_kvm_startup: function(value) {
@@ -720,22 +693,38 @@ Ext.define('PVE.Utils', {
 	    ipanel: 'pveAuthADPanel',
 	    syncipanel: 'pveAuthLDAPSyncPanel',
 	    add: true,
+	    tfa: true,
+	    pwchange: true,
 	},
 	ldap: {
 	    name: gettext('LDAP Server'),
 	    ipanel: 'pveAuthLDAPPanel',
 	    syncipanel: 'pveAuthLDAPSyncPanel',
 	    add: true,
+	    tfa: true,
+	    pwchange: true,
+	},
+	openid: {
+	    name: gettext('OpenID Connect Server'),
+	    ipanel: 'pveAuthOpenIDPanel',
+	    add: true,
+	    tfa: false,
+	    pwchange: false,
+	    iconCls: 'pmx-itype-icon-openid-logo',
 	},
 	pam: {
 	    name: 'Linux PAM',
 	    ipanel: 'pveAuthBasePanel',
 	    add: false,
+	    tfa: true,
+	    pwchange: true,
 	},
 	pve: {
 	    name: 'Proxmox VE authentication server',
 	    ipanel: 'pveAuthBasePanel',
 	    add: false,
+	    tfa: true,
+	    pwchange: true,
 	},
     },
 
@@ -758,6 +747,12 @@ Ext.define('PVE.Utils', {
 	    faIcon: 'folder',
 	    backups: false,
 	},
+	btrfs: {
+	    name: 'BTRFS',
+	    ipanel: 'BTRFSInputPanel',
+	    faIcon: 'folder',
+	    backups: true,
+	},
 	nfs: {
 	    name: 'NFS',
 	    ipanel: 'NFSInputPanel',
@@ -765,7 +760,7 @@ Ext.define('PVE.Utils', {
 	    backups: true,
 	},
 	cifs: {
-	    name: 'CIFS',
+	    name: 'SMB/CIFS',
 	    ipanel: 'CIFSInputPanel',
 	    faIcon: 'building',
 	    backups: true,
@@ -887,6 +882,11 @@ Ext.define('PVE.Utils', {
 	    ipanel: 'BgpInputPanel',
 	    faIcon: 'crosshairs',
 	},
+	isis: {
+	    name: 'isis',
+	    ipanel: 'IsisInputPanel',
+	    faIcon: 'crosshairs',
+	},
     },
 
     sdnipamSchema: {
@@ -971,11 +971,8 @@ Ext.define('PVE.Utils', {
 	    value = !record || record.get('monhost') ? 'cephfs' : 'pvecephfs';
 	}
 
-	var schema = PVE.Utils.storageSchema[value];
-	if (schema) {
-	    return schema.name;
-	}
-	return Proxmox.Utils.unknownText;
+	let schema = PVE.Utils.storageSchema[value];
+	return schema?.name ?? value;
     },
 
     format_ha: function(value) {
@@ -998,15 +995,18 @@ Ext.define('PVE.Utils', {
     },
 
     render_storage_content: function(value, metaData, record) {
-	var data = record.data;
+	let data = record.data;
+	let result;
 	if (Ext.isNumber(data.channel) &&
 	    Ext.isNumber(data.id) &&
 	    Ext.isNumber(data.lun)) {
-	    return "CH " +
+	    result = "CH " +
 		Ext.String.leftPad(data.channel, 2, '0') +
 		" ID " + data.id + " LUN " + data.lun;
+	} else {
+	    result = data.volid.replace(/^.*?:(.*?\/)?/, '');
 	}
-	return data.volid.replace(/^.*?:(.*?\/)?/, '');
+	return Ext.String.htmlEncode(result);
     },
 
     render_serverity: function(value) {
@@ -1071,6 +1071,18 @@ Ext.define('PVE.Utils', {
 
     render_timestamp_human_readable: function(value) {
 	return Ext.Date.format(new Date(value * 1000), 'l d F Y H:i:s');
+    },
+
+    // render a timestamp or pending
+    render_next_event: function(value) {
+	if (!value) {
+	    return '-';
+	}
+	let now = new Date(), next = new Date(value * 1000);
+	if (next < now) {
+	    return gettext('pending');
+	}
+	return Proxmox.Utils.render_timestamp(value);
     },
 
     calculate_mem_usage: function(data) {
@@ -1273,15 +1285,19 @@ Ext.define('PVE.Utils', {
 	return Ext.htmlEncode(first + " " + last);
     },
 
-    render_u2f_error: function(error) {
-	var ErrorNames = {
-	    '1': gettext('Other Error'),
-	    '2': gettext('Bad Request'),
-	    '3': gettext('Configuration Unsupported'),
-	    '4': gettext('Device Ineligible'),
-	    '5': gettext('Timeout'),
-	};
-	return "U2F Error: " + ErrorNames[error] || Proxmox.Utils.unknownText;
+    // expecting the following format:
+    // [v2:10.10.10.1:6802/2008,v1:10.10.10.1:6803/2008]
+    render_ceph_osd_addr: function(value) {
+	value = value.trim();
+	if (value.startsWith('[') && value.endsWith(']')) {
+	    value = value.slice(1, -1); // remove []
+	}
+	value = value.replaceAll(',', '\n'); // split IPs in lines
+	let retVal = '';
+	for (const i of value.matchAll(/^(v[0-9]):(.*):([0-9]*)\/([0-9]*)$/gm)) {
+	    retVal += `${i[1]}: ${i[2]}:${i[3]}<br>`;
+	}
+	return retVal.length < 1 ? value : retVal;
     },
 
     windowHostname: function() {
@@ -1338,7 +1354,7 @@ Ext.define('PVE.Utils', {
 	    allowSpice = consoles.spice;
 	    allowXtermjs = !!consoles.xtermjs;
 	}
-	let dv = PVE.VersionInfo.console || (type === 'kvm' ? 'vv' : 'xtermjs');
+	let dv = PVE.UIOptions.options.console || (type === 'kvm' ? 'vv' : 'xtermjs');
 	if (dv === 'vv' && !allowSpice) {
 	    dv = allowXtermjs ? 'xtermjs' : 'html5';
 	} else if (dv === 'xtermjs' && !allowXtermjs) {
@@ -1377,10 +1393,11 @@ Ext.define('PVE.Utils', {
 		css: 'display:none;visibility:hidden;height:0px;',
 	    });
 
-	    // Note: we need to tell Android and Chrome the correct file name extension
+	    // Note: we need to tell Android, AppleWebKit and Chrome
+	    // the correct file name extension
 	    // but we do not set 'download' tag for other environments, because
 	    // It can have strange side effects (additional user prompt on firefox)
-	    if (navigator.userAgent.match(/Android|Chrome/i)) {
+	    if (navigator.userAgent.match(/Android|AppleWebKit|Chrome/i)) {
 		link.download = name;
 	    }
 
@@ -1519,6 +1536,7 @@ Ext.define('PVE.Utils', {
 	sata: 6,
 	scsi: 31,
 	virtio: 16,
+	unused: 256,
     },
 
     // types is either undefined (all busses), an array of busses, or a single bus
@@ -1550,12 +1568,12 @@ Ext.define('PVE.Utils', {
     },
 
     mp_counts: {
-	mps: 256,
+	mp: 256,
 	unused: 256,
     },
 
     forEachMP: function(func, includeUnused) {
-	for (let i = 0; i < PVE.Utils.mp_counts.mps; i++) {
+	for (let i = 0; i < PVE.Utils.mp_counts.mp; i++) {
 	    let cont = func('mp', i);
 	    if (!cont && cont !== undefined) {
 		return;
@@ -1574,7 +1592,58 @@ Ext.define('PVE.Utils', {
 	}
     },
 
-    hardware_counts: { net: 32, usb: 5, hostpci: 16, audio: 1, efidisk: 1, serial: 4, rng: 1 },
+    hardware_counts: {
+	net: 32,
+	usb: 14,
+	usb_old: 5,
+	hostpci: 16,
+	audio: 1,
+	efidisk: 1,
+	serial: 4,
+	rng: 1,
+	tpmstate: 1,
+    },
+
+    // we can have usb6 and up only for specific machine/ostypes
+    get_max_usb_count: function(ostype, machine) {
+	if (!ostype) {
+	    return PVE.Utils.hardware_counts.usb_old;
+	}
+
+	let match = /-(\d+).(\d+)/.exec(machine ?? '');
+	if (!match || PVE.Utils.qemu_min_version([match[1], match[2]], [7, 1])) {
+	    if (ostype === 'l26') {
+		return PVE.Utils.hardware_counts.usb;
+	    }
+	    let os_match = /^win(\d+)$/.exec(ostype);
+	    if (os_match && os_match[1] > 7) {
+		return PVE.Utils.hardware_counts.usb;
+	    }
+	}
+
+	return PVE.Utils.hardware_counts.usb_old;
+    },
+
+    // parameters are expected to be arrays, e.g. [7,1], [4,0,1]
+    // returns true if toCheck is equal or greater than minVersion
+    qemu_min_version: function(toCheck, minVersion) {
+	let i;
+	for (i = 0; i < toCheck.length && i < minVersion.length; i++) {
+	    if (toCheck[i] < minVersion[i]) {
+		return false;
+	    }
+	}
+
+	if (minVersion.length > toCheck.length) {
+	    for (; i < minVersion.length; i++) {
+		if (minVersion[i] !== 0) {
+		    return false;
+		}
+	    }
+	}
+
+	return true;
+    },
 
     cleanEmptyObjectKeys: function(obj) {
 	for (const propName of Object.keys(obj)) {
@@ -1637,6 +1706,9 @@ Ext.define('PVE.Utils', {
 		    });
 		    win.getViewModel().set('isInstalled', isInstalled);
 		    container.add(win);
+		    win.on('close', () => {
+			container.el.unmask();
+		    });
 		    win.show();
 		    callback(win);
 		}
@@ -1656,7 +1728,7 @@ Ext.define('PVE.Utils', {
 	    rstore,
 	    /not (installed|initialized)/i,
 	    (_, error) => {
-		nodename = nodename || 'localhost';
+		nodename = nodename || Proxmox.NodeName;
 		let maskTarget = maskOwnerCt ? view.ownerCt : view;
 		rstore.stopUpdate();
 		PVE.Utils.showCephInstallOrMask(maskTarget, error.statusText, nodename, win => {
@@ -1729,6 +1801,117 @@ Ext.define('PVE.Utils', {
 
 	return true;
     },
+
+    sortByPreviousUsage: function(vmconfig, controllerList) {
+	if (!controllerList) {
+	    controllerList = ['ide', 'virtio', 'scsi', 'sata'];
+	}
+	let usedControllers = {};
+	for (const type of Object.keys(PVE.Utils.diskControllerMaxIDs)) {
+	    usedControllers[type] = 0;
+	}
+
+	for (const property of Object.keys(vmconfig)) {
+	    if (property.match(PVE.Utils.bus_match) && !vmconfig[property].match(/media=cdrom/)) {
+		const foundController = property.match(PVE.Utils.bus_match)[1];
+		usedControllers[foundController]++;
+	    }
+	}
+
+	let sortPriority = PVE.qemu.OSDefaults.getDefaults(vmconfig.ostype).busPriority;
+
+	let sortedList = Ext.clone(controllerList);
+	sortedList.sort(function(a, b) {
+	    if (usedControllers[b] === usedControllers[a]) {
+		return sortPriority[b] - sortPriority[a];
+	    }
+	    return usedControllers[b] - usedControllers[a];
+	});
+
+	return sortedList;
+    },
+
+    nextFreeDisk: function(controllers, config) {
+	for (const controller of controllers) {
+	    for (let i = 0; i < PVE.Utils.diskControllerMaxIDs[controller]; i++) {
+		let confid = controller + i.toString();
+		if (!Ext.isDefined(config[confid])) {
+		    return {
+			controller,
+			id: i,
+			confid,
+		    };
+		}
+	    }
+	}
+
+	return undefined;
+    },
+
+    nextFreeMP: function(type, config) {
+	for (let i = 0; i < PVE.Utils.mp_counts[type]; i++) {
+	    let confid = `${type}${i}`;
+	    if (!Ext.isDefined(config[confid])) {
+		return {
+		    type,
+		    id: i,
+		    confid,
+		};
+	    }
+	}
+
+	return undefined;
+    },
+
+    escapeNotesTemplate: function(value) {
+	let replace = {
+	    '\\': '\\\\',
+	    '\n': '\\n',
+	};
+	return value.replace(/(\\|[\n])/g, match => replace[match]);
+    },
+
+    unEscapeNotesTemplate: function(value) {
+	let replace = {
+	    '\\\\': '\\',
+	    '\\n': '\n',
+	};
+	return value.replace(/(\\\\|\\n)/g, match => replace[match]);
+    },
+
+    notesTemplateVars: ['cluster', 'guestname', 'node', 'vmid'],
+
+    renderTags: function(tagstext, overrides) {
+	let text = '';
+	if (tagstext) {
+	    let tags = (tagstext.split(/[,; ]/) || []).filter(t => !!t);
+	    if (PVE.UIOptions.shouldSortTags()) {
+		tags = tags.sort((a, b) => {
+		    let alc = a.toLowerCase();
+		    let blc = b.toLowerCase();
+		    return alc < blc ? -1 : blc < alc ? 1 : a.localeCompare(b);
+		});
+	    }
+	    text += ' ';
+	    tags.forEach((tag) => {
+		text += Proxmox.Utils.getTagElement(tag, overrides);
+	    });
+	}
+	return text;
+    },
+
+    tagCharRegex: /^[a-z0-9+_.-]+$/i,
+
+    verificationStateOrder: {
+	'failed': 0,
+	'none': 1,
+	'ok': 2,
+	'__default__': 3,
+    },
+
+    isStandaloneNode: function() {
+	return PVE.data.ResourceStore.getNodes().length < 2;
+    },
 },
 
     singleton: true,
@@ -1756,6 +1939,7 @@ Ext.define('PVE.Utils', {
 	    cephdestroymon: ['Ceph Monitor', gettext('Destroy')],
 	    cephdestroyosd: ['Ceph OSD', gettext('Destroy')],
 	    cephdestroypool: ['Ceph Pool', gettext('Destroy')],
+	    cephdestroyfs: ['CephFS', gettext('Destroy')],
 	    cephfscreate: ['CephFS', gettext('Create')],
 	    cephsetpool: ['Ceph Pool', gettext('Edit')],
 	    cephsetflags: ['', gettext('Change global Ceph flags')],
@@ -1763,7 +1947,7 @@ Ext.define('PVE.Utils', {
 	    clusterjoin: ['', gettext('Join Cluster')],
 	    dircreate: [gettext('Directory Storage'), gettext('Create')],
 	    dirremove: [gettext('Directory'), gettext('Remove')],
-	    download: ['', gettext('Download')],
+	    download: [gettext('File'), gettext('Download')],
 	    hamigrate: ['HA', gettext('Migrate')],
 	    hashutdown: ['HA', gettext('Shutdown')],
 	    hastart: ['HA', gettext('Start')],
@@ -1771,8 +1955,10 @@ Ext.define('PVE.Utils', {
 	    imgcopy: ['', gettext('Copy data')],
 	    imgdel: ['', gettext('Erase data')],
 	    lvmcreate: [gettext('LVM Storage'), gettext('Create')],
+	    lvmremove: ['Volume Group', gettext('Remove')],
 	    lvmthincreate: [gettext('LVM-Thin Storage'), gettext('Create')],
-	    migrateall: ['', gettext('Migrate all VMs and Containers')],
+	    lvmthinremove: ['Thinpool', gettext('Remove')],
+	    migrateall: ['', gettext('Bulk migrate VMs and Containers')],
 	    'move_volume': ['CT', gettext('Move Volume')],
 	    'pbs-download': ['VM/CT', gettext('File Restore Download')],
 	    pull_file: ['CT', gettext('Pull file')],
@@ -1796,10 +1982,12 @@ Ext.define('PVE.Utils', {
 	    qmstop: ['VM', gettext('Stop')],
 	    qmsuspend: ['VM', gettext('Hibernate')],
 	    qmtemplate: ['VM', gettext('Convert to template')],
+	    resize: ['VM/CT', gettext('Resize')],
 	    spiceproxy: ['VM/CT', gettext('Console') + ' (Spice)'],
 	    spiceshell: ['', gettext('Shell') + ' (Spice)'],
-	    startall: ['', gettext('Start all VMs and Containers')],
-	    stopall: ['', gettext('Stop all VMs and Containers')],
+	    startall: ['', gettext('Bulk start VMs and Containers')],
+	    stopall: ['', gettext('Bulk shutdown VMs and Containers')],
+	    suspendall: ['', gettext('Suspend all VMs')],
 	    unknownimgdel: ['', gettext('Destroy image from unknown guest')],
 	    wipedisk: ['Device', gettext('Wipe Disk')],
 	    vncproxy: ['VM/CT', gettext('Console')],
@@ -1823,6 +2011,7 @@ Ext.define('PVE.Utils', {
 	    vztemplate: ['CT', gettext('Convert to template')],
 	    vzumount: ['CT', gettext('Unmount')],
 	    zfscreate: [gettext('ZFS Storage'), gettext('Create')],
+	    zfsremove: ['ZFS Pool', gettext('Remove')],
 	});
     },
 

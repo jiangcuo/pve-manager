@@ -1,29 +1,49 @@
 Ext.define('PVE.storage.ZFSPoolSelector', {
-    extend: 'Ext.form.field.ComboBox',
+    extend: 'PVE.form.ComboBoxSetStoreNode',
     alias: 'widget.pveZFSPoolSelector',
     valueField: 'pool',
     displayField: 'pool',
     queryMode: 'local',
     editable: false,
+    allowBlank: false,
+
     listConfig: {
-	loadingText: gettext('Scanning...'),
+	columns: [
+	    {
+		dataIndex: 'pool',
+		flex: 1,
+	    },
+	],
+	emptyText: PVE.Utils.renderNotFound(gettext('ZFS Pool')),
     },
+
+    config: {
+	apiSuffix: '/scan/zfs',
+    },
+
+    showNodeSelector: true,
+
+    setNodeName: function(value) {
+	let me = this;
+	me.callParent([value]);
+	me.getStore().load();
+    },
+
     initComponent: function() {
-	var me = this;
+	let me = this;
 
 	if (!me.nodename) {
 	    me.nodename = 'localhost';
 	}
 
-	var store = Ext.create('Ext.data.Store', {
+	let store = Ext.create('Ext.data.Store', {
 	    autoLoad: {}, // true,
 	    fields: ['pool', 'size', 'free'],
 	    proxy: {
 		type: 'proxmox',
-		url: '/api2/json/nodes/' + me.nodename + '/scan/zfs',
+		url: `${me.apiBaseUrl}${me.nodename}${me.apiSuffix}`,
 	    },
 	});
-
 	store.sort('pool', 'ASC');
 
 	Ext.apply(me, {
@@ -36,58 +56,56 @@ Ext.define('PVE.storage.ZFSPoolSelector', {
 
 Ext.define('PVE.storage.ZFSPoolInputPanel', {
     extend: 'PVE.panel.StorageBase',
+    mixins: ['Proxmox.Mixin.CBind'],
 
     onlineHelp: 'storage_zfspool',
 
-    initComponent: function() {
-	var me = this;
-
-	me.column1 = [];
-
-	if (me.isCreate) {
-	    me.column1.push(Ext.create('PVE.storage.ZFSPoolSelector', {
-		name: 'pool',
-		fieldLabel: gettext('ZFS Pool'),
-		allowBlank: false,
-	    }));
-	} else {
-	    me.column1.push(Ext.createWidget('displayfield', {
-		name: 'pool',
-		value: '',
-		fieldLabel: gettext('ZFS Pool'),
-		allowBlank: false,
-	    }));
-	}
-
-	// value is an array,
-	// while before it was a string
-	me.column1.push(
-	    {
-xtype: 'pveContentTypeSelector',
-	     cts: ['images', 'rootdir'],
-	     fieldLabel: gettext('Content'),
-	     name: 'content',
-	     value: ['images', 'rootdir'],
-	     multiSelect: true,
-	     allowBlank: false,
-	});
-	me.column2 = [
-	    {
-		xtype: 'proxmoxcheckbox',
-		name: 'sparse',
-		checked: false,
-		uncheckedValue: 0,
-		fieldLabel: gettext('Thin provision'),
+    column1: [
+	{
+	    xtype: 'pmxDisplayEditField',
+	    cbind: {
+		editable: '{isCreate}',
 	    },
-	    {
-		xtype: 'textfield',
-		name: 'blocksize',
-		emptyText: '8k',
-		fieldLabel: gettext('Block Size'),
-		allowBlank: true,
-	    },
-	];
 
-	me.callParent();
-    },
+	    name: 'pool',
+	    fieldLabel: gettext('ZFS Pool'),
+	    allowBlank: false,
+
+	    editConfig: {
+		xtype: 'pveZFSPoolSelector',
+		reference: 'zfsPoolSelector',
+		listeners: {
+		    nodechanged: function(value) {
+			this.up('inputpanel').lookup('storageNodeRestriction').setValue(value);
+		    },
+		},
+	    },
+	},
+	{
+	    xtype: 'pveContentTypeSelector',
+	    cts: ['images', 'rootdir'],
+	    fieldLabel: gettext('Content'),
+	    name: 'content',
+	    value: ['images', 'rootdir'],
+	    multiSelect: true,
+	    allowBlank: false,
+	},
+    ],
+
+    column2: [
+	{
+	    xtype: 'proxmoxcheckbox',
+	    name: 'sparse',
+	    checked: false,
+	    uncheckedValue: 0,
+	    fieldLabel: gettext('Thin provision'),
+	},
+	{
+	    xtype: 'textfield',
+	    name: 'blocksize',
+	    emptyText: '8k',
+	    fieldLabel: gettext('Block Size'),
+	    allowBlank: true,
+	},
+    ],
 });

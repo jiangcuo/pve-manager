@@ -170,7 +170,7 @@ Ext.define('PVE.window.Clone', {
 	    onlineValidator: true,
 	    listeners: {
 		change: function(f, value) {
-		    me.lookupReference('hdstorage').setTargetNode(value);
+		    me.lookup('diskselector').getComponent('hdstorage').setTargetNode(value);
 		},
 	    },
 	});
@@ -191,6 +191,7 @@ Ext.define('PVE.window.Clone', {
 	{
 	    xtype: 'textfield',
 	    name: 'name',
+	    vtype: 'DnsName',
 	    allowBlank: true,
 	    fieldLabel: me.guestType === 'lxc' ? gettext('Hostname') : gettext('Name'),
 	},

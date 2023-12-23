@@ -2,22 +2,37 @@ package PVE::API2::VZDump;
 
 use strict;
 use warnings;
-use PVE::Exception qw(raise_param_exc);
-use PVE::Tools qw(extract_param);
-use PVE::Cluster qw(cfs_register_file cfs_read_file);
-use PVE::INotify;
-use PVE::RPCEnvironment;
+
 use PVE::AccessControl;
+use PVE::Cluster;
+use PVE::Exception qw(raise_param_exc);
+use PVE::INotify;
 use PVE::JSONSchema qw(get_standard_option);
+use PVE::RPCEnvironment;
 use PVE::Storage;
-use PVE::VZDump;
+use PVE::Tools qw(extract_param);
 use PVE::VZDump::Common;
+use PVE::VZDump;
+
+use PVE::API2::Backup;
 use PVE::API2Tools;
 
 use Data::Dumper; # fixme: remove
 
-
 use base qw(PVE::RESTHandler);
+
+my sub assert_param_permission_vzdump {
+    my ($rpcenv, $user, $param) = @_;
+    return if $user eq 'root@pam'; # always OK
+
+    PVE::API2::Backup::assert_param_permission_common($rpcenv, $user, $param);
+
+    if (defined($param->{maxfiles}) || defined($param->{'prune-backups'})) {
+	if (my $storeid = PVE::VZDump::get_storage_param($param)) {
+	    $rpcenv->check($user, "/storage/$storeid", [ 'Datastore.Allocate' ]);
+	}
+    }
+}
 
 __PACKAGE__->register_method ({
     name => 'vzdump',
@@ -25,9 +40,11 @@ __PACKAGE__->register_method ({
     method => 'POST',
     description => "Create backup.",
     permissions => {
-	description => "The user needs 'VM.Backup' permissions on any VM, and 'Datastore.AllocateSpace'"
-	    ." on the backup storage. The 'maxfiles', 'prune-backups', 'tmpdir', 'dumpdir', 'script',"
-	    ." 'bwlimit' and 'ionice' parameters are restricted to the 'root\@pam' user.",
+	description => "The user needs 'VM.Backup' permissions on any VM, and "
+	    ."'Datastore.AllocateSpace' on the backup storage. The 'tmpdir', 'dumpdir' and "
+	    ."'script' parameters are restricted to the 'root\@pam' user. The 'maxfiles' and "
+	    ."'prune-backups' settings require 'Datastore.Allocate' on the backup storage. The "
+	    ."'bwlimit', 'performance' and 'ionice' parameters require 'Sys.Modify' on '/'. ",
 	user => 'all',
     },
     protected => 1,
@@ -60,10 +77,7 @@ __PACKAGE__->register_method ({
 		if $param->{stdout};
 	}
 
-	foreach my $key (qw(maxfiles prune-backups tmpdir dumpdir script bwlimit ionice)) {
-	    raise_param_exc({ $key => "Only root may set this option."})
-		if defined($param->{$key}) && ($user ne 'root@pam');
-	}
+	assert_param_permission_vzdump($rpcenv, $user, $param);
 
 	PVE::VZDump::verify_vzdump_parameters($param, 1);
 
@@ -95,8 +109,9 @@ __PACKAGE__->register_method ({
 	die "you can only backup a single VM with option --stdout\n"
 	    if $param->{stdout} && scalar(@{$local_vmids}) != 1;
 
-	$rpcenv->check($user, "/storage/$param->{storage}", [ 'Datastore.AllocateSpace' ])
-	    if $param->{storage};
+	if (my $storeid = PVE::VZDump::get_storage_param($param)) {
+	    $rpcenv->check($user, "/storage/$storeid", [ 'Datastore.AllocateSpace' ]);
+	}
 
 	my $worker = sub {
 	    my $upid = shift;
@@ -112,7 +127,7 @@ __PACKAGE__->register_method ({
 		$vzdump->getlock($upid); # only one process allowed
 	    };
 	    if (my $err = $@) {
-		$vzdump->sendmail([], 0, $err);
+		$vzdump->send_notification([], 0, $err);
 		exit(-1);
 	    }
 
@@ -267,7 +282,19 @@ __PACKAGE__->register_method ({
 	my $authuser = $rpcenv->get_user();
 
 	my $storage_cfg = PVE::Storage::config();
-	PVE::Storage::check_volume_access($rpcenv, $authuser, $storage_cfg, undef, $volume);
+	PVE::Storage::check_volume_access(
+	    $rpcenv,
+	    $authuser,
+	    $storage_cfg,
+	    undef,
+	    $volume,
+	    'backup',
+	);
+
+	if (PVE::Storage::parse_volume_id($volume, 1)) {
+	    my (undef, undef, $ownervm) = PVE::Storage::parse_volname($storage_cfg, $volume);
+	    $rpcenv->check($authuser, "/vms/$ownervm", ['VM.Backup']);
+	}
 
 	return PVE::Storage::extract_vzdump_config($storage_cfg, $volume);
     }});

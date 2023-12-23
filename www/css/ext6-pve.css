@@ -301,8 +301,9 @@
 .pve-itype-icon-serial,
 .pve-itype-icon-cloud,
 .pve-itype-icon-pci,
-.pve-itype-icon-die
-{
+.pve-itype-icon-cpu,
+.pve-itype-icon-memory,
+.pve-itype-icon-die {
     background-repeat: no-repeat;
     background-position:3px center;
     padding-left: 20px;
@@ -319,125 +320,118 @@
 
 .pve-grid-fa {
     margin-right: 10px;
+    font-size: 14px;
 }
 
 .pve-itype-icon-qemu,
 .x-tree-node-computer,
-.x-grid-tree-node-expanded .x-tree-node-computer
-{
+.x-grid-tree-node-expanded .x-tree-node-computer {
     background-image:url(../images/icon-display.png);
 }
 
 .pve-itype-icon-lxc,
 .x-tree-node-lxc,
-.x-grid-tree-node-expanded .x-tree-node-lxc
-{
+.x-grid-tree-node-expanded .x-tree-node-lxc {
     background-image:url(../images/lxc-off.png);
 }
 
 .pve-itype-icon-swap,
 .x-tree-node-lxc-swap,
-.x-grid-tree-node-expanded .x-tree-lxc-swap
-{
+.x-grid-tree-node-expanded .x-tree-lxc-swap {
     background-image:url(../images/icon-swap.png);
 }
 
 .pve-itype-icon-lxc-running,
 .x-tree-node-lxc-running,
-.x-grid-tree-node-expanded .x-tree-node-lxc-running
-{
+.x-grid-tree-node-expanded .x-tree-node-lxc-running {
     background-image:url(../images/lxc-on.png);
 }
 
 .pve-itype-icon-storage,
 .x-tree-node-harddisk,
-.x-grid-tree-node-expanded .x-tree-node-harddisk
-{
+.x-grid-tree-node-expanded .x-tree-node-harddisk {
     background-image:url(../images/icon-harddisk.png);
 }
 
 .x-tree-node-snapshot,
-.x-grid-tree-node-expanded .x-tree-node-snapshot
-{
+.x-grid-tree-node-expanded .x-tree-node-snapshot {
     background-image:url(../images/snapshot.png);
 }
 
-.pve-itype-icon-itype
-{
+.pve-itype-icon-itype {
     background-image:url(../ext6/theme-classic/resources/images/tree/folder.gif);
 }
 
-.pve-itype-icon-network-server
-{
+.pve-itype-icon-network-server {
     background-image:url(../images/network-server.png);
 }
 
-.pve-itype-icon-network
-{
+.pve-itype-icon-network {
     background-image:url(../images/icon-network.png);
 }
 
-.pve-itype-icon-keyboard
-{
+.pve-itype-icon-keyboard {
     background-image:url(../images/icon-keyboard.png);
 }
 
-.pve-itype-icon-cdrom
-{
-    background-image:url(../images/icon-cd.png);
+.pve-itype-icon-cdrom {
+    background-size: 16px;
+    background-image:url(../images/icon-cd-drive.svg);
 }
 
-.pve-itype-icon-display
-{
+.pve-itype-icon-display {
     background-image:url(../images/icon-display.png);
 }
 
-.pve-itype-icon-tigervnc
-{
+.pve-itype-icon-tigervnc {
     background-image:url(../images/tigervnc.png);
 }
 
-.pve-itype-icon-novnc
-{
+.pve-itype-icon-novnc {
     background-image:url(../images/novnc.png);
 }
 
-.pve-itype-icon-virt-viewer
-{
+.pve-itype-icon-virt-viewer {
     background-image:url(../images/virt-viewer.png);
 }
 
-.pve-itype-icon-xtermjs
-{
+.pve-itype-icon-xtermjs {
     background-image:url(../images/xtermjs.png);
 }
 
-.pve-itype-icon-usb
-{
+.pve-itype-icon-usb {
     background-image:url(../images/icon-usb.png);
 }
 
-.pve-itype-icon-pci
-{
-    background-image:url(../images/icon-pci.png);
+.pve-itype-icon-pci {
+    background-size: 16px 16px;
+    background-image:url(../images/icon-pci.svg);
 }
 
-.pve-itype-icon-serial
-{
+.pve-itype-icon-serial {
     background-size: 16px;
     background-image:url(../images/icon-serial.svg);
 }
 
-.pve-itype-icon-cloud
-{
+.pve-itype-icon-cloud {
     background-size: 16px;
     background-image:url(../images/icon-cloud.svg);
 }
 
-.pve-itype-icon-die
-{
+.pve-itype-icon-die {
     background-size: 16px;
     background-image:url(../images/icon-die.svg);
+}
+
+.pve-itype-icon-cpu {
+    background-size: 16px;
+    background-image:url(../images/icon-cpu.svg);
+}
+
+
+.pve-itype-icon-memory {
+    background-size: 16px;
+    background-image:url(../images/icon-memory.svg);
 }
 
 .pve-icon {
@@ -516,26 +510,36 @@ div.right-aligned {
     content: ' ';
 }
 
-.fa-sdn:before {
+.x-fa-sdn-treelist:before {
     width: 14px;
     height: 14px;
     position: absolute;
     left: 1px;
     top: 4px;
+}
+
+.fa-sdn:before {
     background-image:url(../images/icon-sdn.svg);
     background-size: 14px 14px;
     content: ' ';
 }
 
 .fa-network-wired:before {
-    width: 14px;
-    height: 14px;
-    position: absolute;
-    left: 1px;
-    top: 4px;
     background-image:url(../images/icon-fa-network-wired.svg);
     background-size: 14px 14px;
     content: ' ';
+}
+
+.x-fa-treepanel:before {
+    width: 16px;
+    height: 24px;
+    display: block;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.x-tree-icon-none {
+    display: none;
 }
 
 .x-treelist-row-over > * > .x-treelist-item-icon,
@@ -624,7 +628,7 @@ table.osds td:first-of-type {
 }
 
 .x-fa {
-    diplay: inline-block;
+    display: inline-block;
     font: normal normal normal 14px/1 FontAwesome;
     text-rendering: auto;
     -webkit-font-smoothing: antialiased;
@@ -656,4 +660,93 @@ table.osds td:first-of-type {
 .install-mask {
     background-color: rgb(245, 245, 245);
     color: #000;
+}
+
+.x-pveColorPicker-default-cell > .x-grid-cell-inner {
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+
+.pve-edit-tag > i {
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 15px;
+    height: 15px;
+}
+
+.pve-edit-tag > i.handle {
+    padding-right: 5px;
+    cursor: grab;
+}
+
+.hide-handles .pve-edit-tag > i.handle {
+    display: none;
+    padding-right: 0px;
+}
+
+.pve-edit-tag > i.action {
+    padding-left: 5px;
+}
+
+.pve-edit-tag.normal > i {
+    display: none;
+}
+
+.pve-edit-tag.editable span {
+    background-color: #ffffff;
+    border: 1px solid #a8a8a8;
+    color: #000;
+    padding-left: 2px;
+    padding-right: 2px;
+    min-width: 2em;
+    display: inline-block;
+    line-height: 15px;
+    height: 15px;
+    vertical-align: top;
+    box-sizing: content-box;
+}
+
+.pve-tag-inline-button {
+    cursor: pointer;
+    padding-left: 2px;
+}
+
+.x-grid-item .x-item-disabled {
+    opacity: 0.3;
+}
+
+.pmx-action-hidden:before {
+    opacity: 0.0;
+    cursor: default;
+}
+
+.pve-ceph-warning-detail {
+    overflow: auto;
+    white-space: pre-wrap;
+    margin: 0;
+    padding-bottom: 10px;
+    font-weight: normal;
+}
+
+.pve-ceph-status-busy {
+    color: #3892d4;
+}
+
+.pmx-opacity-75 {
+    opacity: 0.75;
+}
+
+/* tag edit fields must be aligned manually in the fieldset */
+.proxmox-tag-fieldset.proxmox-tags-full .x-component.x-column {
+    margin: 2px;
+}
+
+/* we have to override some styles for the tag tooltips,
+ * otherwise extjs styling interferes */
+.pmx-tag-tooltip {
+    background-color: transparent;
+}
+
+.pmx-tag-tooltip .proxmox-tags-full > span {
+    margin: 0px;
 }

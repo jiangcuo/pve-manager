@@ -2,48 +2,26 @@ Ext.define('PVE.form.ControllerSelector', {
     extend: 'Ext.form.FieldContainer',
     alias: 'widget.pveControllerSelector',
 
-    noVirtIO: false,
+    withVirtIO: true,
+    withUnused: false,
 
     vmconfig: {}, // used to check for existing devices
 
-    sortByPreviousUsage: function(vmconfig, controllerList) {
-	let usedControllers = {};
-	for (const type of Object.keys(PVE.Utils.diskControllerMaxIDs)) {
-	    usedControllers[type] = 0;
-	}
-
-	for (const property of Object.keys(vmconfig)) {
-	    if (property.match(PVE.Utils.bus_match) && !vmconfig[property].match(/media=cdrom/)) {
-		const foundController = property.match(PVE.Utils.bus_match)[1];
-		usedControllers[foundController]++;
-	    }
-	}
-
-	let sortPriority = PVE.qemu.OSDefaults.getDefaults(vmconfig.ostype).busPriority;
-
-	let sortedList = Ext.clone(controllerList);
-	sortedList.sort(function(a, b) {
-	    if (usedControllers[b] === usedControllers[a]) {
-		return sortPriority[b] - sortPriority[a];
-	    }
-	    return usedControllers[b] - usedControllers[a];
-	});
-
-	return sortedList;
-    },
-
     setToFree: function(controllers, busField, deviceIDField) {
 	let me = this;
-	for (const controller of controllers) {
-	    busField.setValue(controller);
-	    for (let i = 0; i < PVE.Utils.diskControllerMaxIDs[controller]; i++) {
-		let confid = controller + i.toString();
-		if (!Ext.isDefined(me.vmconfig[confid])) {
-		    deviceIDField.setValue(i);
-		    return;
-		}
-	    }
+	let freeId = PVE.Utils.nextFreeDisk(controllers, me.vmconfig);
+
+	if (freeId !== undefined) {
+	    busField?.setValue(freeId.controller);
+	    deviceIDField.setValue(freeId.id);
 	}
+    },
+
+    updateVMConfig: function(vmconfig) {
+	let me = this;
+	me.vmconfig = Ext.apply({}, vmconfig);
+
+	me.down('field[name=deviceid]').validate();
     },
 
     setVMConfig: function(vmconfig, autoSelect) {
@@ -54,7 +32,7 @@ Ext.define('PVE.form.ControllerSelector', {
 	let bussel = me.down('field[name=controller]');
 	let deviceid = me.down('field[name=deviceid]');
 
-	let clist = ['ide', 'virtio', 'scsi', 'sata'];
+	let clist;
 	if (autoSelect === 'cdrom') {
 	    if (!Ext.isDefined(me.vmconfig.scsi2)) {
 		bussel.setValue('scsi');
@@ -64,7 +42,7 @@ Ext.define('PVE.form.ControllerSelector', {
 	    clist = ['ide', 'scsi', 'sata'];
 	} else {
 	    // in most cases we want to add a disk to the same controller we previously used
-	    clist = me.sortByPreviousUsage(me.vmconfig, clist);
+	    clist = PVE.Utils.sortByPreviousUsage(me.vmconfig);
 	}
 
 	me.setToFree(clist, bussel, deviceid);
@@ -72,8 +50,16 @@ Ext.define('PVE.form.ControllerSelector', {
 	deviceid.validate();
     },
 
+    getConfId: function() {
+	let me = this;
+	let controller = me.getComponent('controller').getValue() || 'ide';
+	let id = me.getComponent('deviceid').getValue() || 0;
+
+	return `${controller}${id}`;
+    },
+
     initComponent: function() {
-	var me = this;
+	let me = this;
 
 	Ext.apply(me, {
 	    fieldLabel: gettext('Bus/Device'),
@@ -85,8 +71,10 @@ Ext.define('PVE.form.ControllerSelector', {
 		{
 		    xtype: 'pveBusSelector',
 		    name: 'controller',
+		    itemId: 'controller',
 		    value: PVE.qemu.OSDefaults.generic.busType,
-		    noVirtIO: me.noVirtIO,
+		    withVirtIO: me.withVirtIO,
+		    withUnused: me.withUnused,
 		    allowBlank: false,
 		    flex: 2,
 		    listeners: {
@@ -95,7 +83,8 @@ Ext.define('PVE.form.ControllerSelector', {
 				return;
 			    }
 			    let field = me.down('field[name=deviceid]');
-			    field.setMaxValue(PVE.Utils.diskControllerMaxIDs[value]);
+			    me.setToFree([value], undefined, field);
+			    field.setMaxValue(PVE.Utils.diskControllerMaxIDs[value] - 1);
 			    field.validate();
 			},
 		    },
@@ -103,8 +92,9 @@ Ext.define('PVE.form.ControllerSelector', {
 		{
 		    xtype: 'proxmoxintegerfield',
 		    name: 'deviceid',
+		    itemId: 'deviceid',
 		    minValue: 0,
-		    maxValue: PVE.Utils.diskControllerMaxIDs.ide,
+		    maxValue: PVE.Utils.diskControllerMaxIDs.ide - 1,
 		    value: '0',
 		    flex: 1,
 		    allowBlank: false,
@@ -124,5 +114,9 @@ Ext.define('PVE.form.ControllerSelector', {
 	});
 
 	me.callParent();
+
+	if (me.selectFree) {
+	    me.setVMConfig(me.vmconfig);
+	}
     },
 });

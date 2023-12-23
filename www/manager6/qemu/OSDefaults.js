@@ -42,7 +42,8 @@ Ext.define('PVE.qemu.OSDefaults', {
 		    scsi: 2,
 		    virtio: 1,
 	    },
-	    scsihw: 'virtio-scsi-pci',
+	    scsihw: 'virtio-scsi-single',
+	    cputype: 'x86-64-v2-AES',
 	};
 
        // virtio-net is in kernel since 2.6.25

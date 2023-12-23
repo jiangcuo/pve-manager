@@ -32,6 +32,20 @@ Ext.define('PVE.dc.SyncWindow', {
 	    let view = me.getView();
 	    let ipanel = me.lookup('ipanel');
 	    let params = ipanel.getValues();
+
+	    let vanished_opts = [];
+	    ['acl', 'entry', 'properties'].forEach((prop) => {
+		if (params[`remove-vanished-${prop}`]) {
+		    vanished_opts.push(prop);
+		}
+		delete params[`remove-vanished-${prop}`];
+	    });
+	    if (vanished_opts.length > 0) {
+		params['remove-vanished'] = vanished_opts.join(';');
+	    } else {
+		params['remove-vanished'] = 'none';
+	    }
+
 	    params['dry-run'] = is_preview ? 1 : 0;
 	    Proxmox.Utils.API2Request({
 		url: `/access/domains/${view.realm}/sync`,
@@ -88,19 +102,6 @@ Ext.define('PVE.dc.SyncWindow', {
 			    ['both', gettext('Users and Groups')],
 			],
 		    },
-		    {
-			xtype: 'proxmoxKVComboBox',
-			value: '',
-			emptyText: gettext('No default available'),
-			deleteEmpty: false,
-			allowBlank: false,
-			comboItems: [
-			    ['1', Proxmox.Utils.yesText],
-			    ['0', Proxmox.Utils.noText],
-			],
-			name: 'full',
-			fieldLabel: gettext('Full'),
-		    },
 		],
 
 		column2: [
@@ -116,22 +117,33 @@ Ext.define('PVE.dc.SyncWindow', {
 			name: 'enable-new',
 			fieldLabel: gettext('Enable new'),
 		    },
-		    {
-			xtype: 'proxmoxKVComboBox',
-			value: '',
-			emptyText: gettext('No default available'),
-			deleteEmpty: false,
-			allowBlank: false,
-			comboItems: [
-			    ['1', Proxmox.Utils.yesText],
-			    ['0', Proxmox.Utils.noText],
-			],
-			name: 'purge',
-			fieldLabel: gettext('Purge ACLs'),
-		    },
 		],
 
 		columnB: [
+		    {
+			xtype: 'fieldset',
+			title: gettext('Remove Vanished Options'),
+			items: [
+			    {
+				xtype: 'proxmoxcheckbox',
+				fieldLabel: gettext('ACL'),
+				name: 'remove-vanished-acl',
+				boxLabel: gettext('Remove ACLs of vanished users and groups.'),
+			    },
+			    {
+				xtype: 'proxmoxcheckbox',
+				fieldLabel: gettext('Entry'),
+				name: 'remove-vanished-entry',
+				boxLabel: gettext('Remove vanished user and group entries.'),
+			    },
+			    {
+				xtype: 'proxmoxcheckbox',
+				fieldLabel: gettext('Properties'),
+				name: 'remove-vanished-properties',
+				boxLabel: gettext('Remove vanished properties from synced users.'),
+			    },
+			],
+		    },
 		    {
 			xtype: 'displayfield',
 			reference: 'defaulthint',
@@ -183,6 +195,12 @@ Ext.define('PVE.dc.SyncWindow', {
 		let default_options = response.result.data['sync-defaults-options'];
 		if (default_options) {
 		    let options = PVE.Parser.parsePropertyString(default_options);
+		    if (options['remove-vanished']) {
+			let opts = options['remove-vanished'].split(';');
+			for (const opt of opts) {
+			    options[`remove-vanished-${opt}`] = 1;
+			}
+		    }
 		    let ipanel = me.lookup('ipanel');
 		    ipanel.setValues(options);
 		} else {

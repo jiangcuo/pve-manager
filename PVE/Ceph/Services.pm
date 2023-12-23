@@ -51,7 +51,16 @@ sub broadcast_ceph_versions {
     my ($version, $buildcommit, $vers_parts) = PVE::Ceph::Tools::get_local_version(1);
 
     if ($version) {
-	# FIXME: remove with 7.0 - for backward compat only
+	my $nodename = PVE::INotify::nodename();
+	my $old = PVE::Cluster::get_node_kv("ceph-versions", $nodename);
+	if (defined($old->{$nodename})) {
+	    $old = eval { decode_json($old->{$nodename}) };
+	    warn $@ if $@; # should not happen
+	    if (defined($old) && $old->{buildcommit} eq $buildcommit && $old->{version}->{str} eq $version) {
+		return; # up to date, nothing to do so avoid (not exactly cheap) broadcast
+	    }
+	}
+	# FIXME: remove with 8.0 (or 7.2, its not _that_ bad) - for backward compat only
 	PVE::Cluster::broadcast_node_kv("ceph-version", $version);
 
 	my $node_versions = {
@@ -81,11 +90,9 @@ sub get_cluster_service {
     my ($type) = @_;
 
     my $raw = PVE::Cluster::get_node_kv("ceph-$type");
-    my $res = {};
-
-    for my $host (keys %$raw) {
-	$res->{$host} = eval { decode_json($raw->{$host}) };
-    }
+    my $res = {
+	map { $_ => eval { decode_json($raw->{$_}) } } keys $raw->%*
+    };
 
     return $res;
 }
@@ -179,13 +186,14 @@ sub get_cluster_mds_state {
     }
 
     my $add_state = sub {
-	my ($mds) = @_;
+	my ($mds, $fsname) = @_;
 
 	my $state = {};
 	$state->{addr} = $mds->{addr};
 	$state->{rank} = $mds->{rank};
 	$state->{standby_replay} = $mds->{standby_replay} ? 1 : 0;
 	$state->{state} = $mds->{state};
+	$state->{fs_name} = $fsname;
 
 	$mds_state->{$mds->{name}} = $state;
     };
@@ -198,35 +206,39 @@ sub get_cluster_mds_state {
 	$add_state->($mds);
     }
 
-    my $fs_info = $fsmap->{filesystems}->[0];
-    my $active_mds = $fs_info->{mdsmap}->{info};
+    for my $fs_info (@{$fsmap->{filesystems}}) {
+	my $active_mds = $fs_info->{mdsmap}->{info};
 
-    # normally there's only one active MDS, but we can have multiple active for
-    # different ranks (e.g., different cephs path hierarchy). So just add all.
-    foreach my $mds (values %$active_mds) {
-	$add_state->($mds);
+	# normally there's only one active MDS, but we can have multiple active for
+	# different ranks (e.g., different cephs path hierarchy). So just add all.
+	foreach my $mds (values %$active_mds) {
+	    $add_state->($mds, $fs_info->{mdsmap}->{fs_name});
+	}
     }
 
     return $mds_state;
 }
 
-sub is_any_mds_active {
-    my ($rados) = @_;
+sub is_mds_active {
+    my ($rados, $fs_name) = @_;
 
     if (!defined($rados)) {
 	$rados = PVE::RADOS->new();
     }
 
     my $mds_dump = $rados->mon_command({ prefix => 'mds stat' });
-    my $fs = $mds_dump->{fsmap}->{filesystems};
+    my $fsmap = $mds_dump->{fsmap}->{filesystems};
 
-    if (!($fs && scalar(@$fs) > 0)) {
+    if (!($fsmap && scalar(@$fsmap) > 0)) {
 	return undef;
     }
-    my $active_mds = $fs->[0]->{mdsmap}->{info};
+    for my $fs (@$fsmap) {
+	next if defined($fs_name) && $fs->{mdsmap}->{fs_name} ne $fs_name;
 
-    for my $mds (values %$active_mds) {
-	return 1 if $mds->{state} eq 'up:active';
+	my $active_mds = $fs->{mdsmap}->{info};
+	for my $mds (values %$active_mds) {
+	    return 1 if $mds->{state} eq 'up:active';
+	}
     }
 
     return 0;

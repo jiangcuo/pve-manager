@@ -43,15 +43,29 @@ Ext.define('PVE.node.CmdMenu', {
 	    },
 	},
 	{
-	    text: gettext('Bulk Stop'),
+	    text: gettext('Bulk Shutdown'),
 	    itemId: 'bulkstop',
 	    iconCls: 'fa fa-fw fa-stop',
 	    handler: function() {
 		Ext.create('PVE.window.BulkAction', {
 		    nodename: this.up('menu').nodename,
-		    title: gettext('Bulk Stop'),
-		    btnText: gettext('Stop'),
+		    title: gettext('Bulk Shutdown'),
+		    btnText: gettext('Shutdown'),
 		    action: 'stopall',
+		    autoShow: true,
+		});
+	    },
+	},
+	{
+	    text: gettext('Bulk Suspend'),
+	    itemId: 'bulksuspend',
+	    iconCls: 'fa fa-fw fa-download',
+	    handler: function() {
+		Ext.create('PVE.window.BulkAction', {
+		    nodename: this.up('menu').nodename,
+		    title: gettext('Bulk Suspend'),
+		    btnText: gettext('Suspend'),
+		    action: 'suspendall',
 		    autoShow: true,
 		});
 	    },
@@ -123,10 +137,15 @@ Ext.define('PVE.node.CmdMenu', {
 	    me.getComponent('createct').setDisabled(true);
 	    me.getComponent('createvm').setDisabled(true);
 	}
-	if (!caps.nodes['Sys.PowerMgmt']) {
+	if (!caps.vms['VM.Migrate']) {
+	    me.getComponent('bulkmigrate').setDisabled(true);
+	}
+	if (!caps.vms['VM.PowerMgmt']) {
 	    me.getComponent('bulkstart').setDisabled(true);
 	    me.getComponent('bulkstop').setDisabled(true);
-	    me.getComponent('bulkmigrate').setDisabled(true);
+	    me.getComponent('bulksuspend').setDisabled(true);
+	}
+	if (!caps.nodes['Sys.PowerMgmt']) {
 	    me.getComponent('wakeonlan').setDisabled(true);
 	}
 	if (!caps.nodes['Sys.Console']) {
@@ -134,6 +153,10 @@ Ext.define('PVE.node.CmdMenu', {
 	}
 	if (me.pveSelNode.data.running) {
 	    me.getComponent('wakeonlan').setDisabled(true);
+	}
+
+	if (PVE.Utils.isStandaloneNode()) {
+	    me.getComponent('bulkmigrate').setVisible(false);
 	}
     },
 });

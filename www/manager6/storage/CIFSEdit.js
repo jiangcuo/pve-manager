@@ -120,6 +120,22 @@ Ext.define('PVE.storage.CIFSInputPanel', {
 
     onlineHelp: 'storage_cifs',
 
+    onGetValues: function(values) {
+	let me = this;
+
+	if (values.password?.length === 0) {
+	    delete values.password;
+	}
+	if (values.username?.length === 0) {
+	    delete values.username;
+	}
+	if (values.subdir?.length === 0) {
+	    delete values.subdir;
+	}
+
+	return me.callParent([values]);
+    },
+
     initComponent: function() {
 	var me = this;
 
@@ -202,6 +218,14 @@ Ext.define('PVE.storage.CIFSInputPanel', {
 			}
 		    },
 		},
+	    },
+	    {
+		xtype: 'pmxDisplayEditField',
+		editable: me.isCreate,
+		name: 'subdir',
+		fieldLabel: gettext('Subdirectory'),
+		allowBlank: true,
+		emptyText: gettext('/some/path'),
 	    },
 	];
 

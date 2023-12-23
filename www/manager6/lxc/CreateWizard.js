@@ -8,6 +8,14 @@ Ext.define('PVE.lxc.CreateWizard', {
 	    storage: '',
 	    unprivileged: true,
 	},
+	formulas: {
+	    cgroupMode: function(get) {
+		const nodeInfo = PVE.data.ResourceStore.getNodes().find(
+		    node => node.node === get('nodename'),
+		);
+		return nodeInfo ? nodeInfo['cgroup-mode'] : 2;
+	    },
+	},
     },
 
     cbindData: {
@@ -62,6 +70,16 @@ Ext.define('PVE.lxc.CreateWizard', {
 		    },
 		    fieldLabel: gettext('Unprivileged container'),
 		},
+		{
+		    xtype: 'proxmoxcheckbox',
+		    name: 'features',
+		    inputValue: 'nesting=1',
+		    value: true,
+		    bind: {
+			disabled: '{!unprivileged}',
+		    },
+		    fieldLabel: gettext('Nesting'),
+		},
 	    ],
 	    column2: [
 		{
@@ -102,16 +120,16 @@ Ext.define('PVE.lxc.CreateWizard', {
 		    },
 		},
 		{
-		    xtype: 'proxmoxtextfield',
+		    xtype: 'textarea',
 		    name: 'ssh-public-keys',
 		    value: '',
-		    fieldLabel: gettext('SSH public key'),
+		    fieldLabel: gettext('SSH public key(s)'),
 		    allowBlank: true,
 		    validator: function(value) {
 			let pwfield = this.up().down('field[name=password]');
 			if (value.length) {
-			    let key = PVE.Parser.parseSSHKey(value);
-			    if (!key) {
+			    let keys = value.indexOf('\n') !== -1 ? value.split('\n') : [value];
+			    if (keys.some(key => key !== '' && !PVE.Parser.parseSSHKey(key))) {
 				return "Failed to recognize ssh key";
 			    }
 			    pwfield.allowBlank = true;
@@ -141,18 +159,30 @@ Ext.define('PVE.lxc.CreateWizard', {
 		    },
 		},
 		{
-		    xtype: 'filebutton',
+		    xtype: 'pveMultiFileButton',
 		    name: 'file',
 		    hidden: !window.FileReader,
 		    text: gettext('Load SSH Key File'),
 		    listeners: {
 			change: function(btn, e, value) {
 			    e = e.event;
-			    let field = this.up().down('proxmoxtextfield[name=ssh-public-keys]');
-			    PVE.Utils.loadSSHKeyFromFile(e.target.files[0], v => field.setValue(v));
+			    let field = this.up().down('textarea[name=ssh-public-keys]');
+			    for (const file of e?.target?.files ?? []) {
+				PVE.Utils.loadSSHKeyFromFile(file, v => {
+				    let oldValue = field.getValue();
+				    field.setValue(oldValue ? `${oldValue}\n${v.trim()}` : v.trim());
+				});
+			    }
 			    btn.reset();
 			},
 		    },
+		},
+	    ],
+	    advancedColumnB: [
+		{
+		    xtype: 'pveTagFieldSet',
+		    name: 'tags',
+		    maxHeight: 150,
 		},
 	    ],
 	},
@@ -187,15 +217,11 @@ Ext.define('PVE.lxc.CreateWizard', {
 	    ],
 	},
 	{
-	    xtype: 'pveLxcMountPointInputPanel',
-	    title: gettext('Root Disk'),
+	    xtype: 'pveMultiMPPanel',
+	    title: gettext('Disks'),
 	    insideWizard: true,
 	    isCreate: true,
 	    unused: false,
-	    bind: {
-		nodename: '{nodename}',
-		unprivileged: '{unprivileged}',
-	    },
 	    confid: 'rootfs',
 	},
 	{

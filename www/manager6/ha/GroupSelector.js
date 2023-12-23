@@ -2,7 +2,6 @@ Ext.define('PVE.ha.GroupSelector', {
     extend: 'Proxmox.form.ComboGrid',
     alias: ['widget.pveHAGroupSelector'],
 
-    value: [],
     autoSelect: false,
     valueField: 'group',
     displayField: 'group',
@@ -32,7 +31,7 @@ Ext.define('PVE.ha.GroupSelector', {
 	    model: 'pve-ha-groups',
 	    sorters: {
 		property: 'group',
-		order: 'DESC',
+		direction: 'ASC',
 	    },
     },
 

@@ -121,7 +121,7 @@ Ext.define('PVE.qemu.Options', {
 			    if (bootdisk) {
 				text += bootdisk;
 			    } else {
-				text += gettext('(no bootdisk)');
+				text += gettext('first disk');
 			    }
 			} else if (sel === 'n') {
 			    text += gettext('any net');
@@ -278,6 +278,7 @@ Ext.define('PVE.qemu.Options', {
 		    xtype: 'proxmoxWindowEdit',
 		    subject: gettext('Qemu Agent'),
 		    width: 350,
+		    onlineHelp: 'qm_qemu_agent',
 		    items: {
 			xtype: 'pveAgentFeatureSelector',
 			name: 'agent',

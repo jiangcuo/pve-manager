@@ -8,6 +8,7 @@ use LWP::UserAgent;
 use POSIX qw(strftime);
 
 use PVE::SafeSyslog;
+use PVE::Storage;
 use PVE::Tools qw(run_command);
 use PVE::pvecfg;
 
@@ -33,7 +34,7 @@ sub read_aplinfo_from_fh {
 
     while (my $rec = <$fh>) {
 	chomp $rec;
-	
+
 	my $res = {};
 
 	while ($rec) {
@@ -65,25 +66,25 @@ sub read_aplinfo_from_fh {
 		$res->{lc $1} = $2;
 	    } else {
 		my $msg = "unable to parse appliance record: $rec\n";
-		$update ? die $msg : warn $msg;		
+		$update ? die $msg : warn $msg;
 		$res = {};
 		last;
 	    }
 	}
-	
+
 	if ($res->{'package'} eq 'pve-web-news' && $res->{description}) {
-	    $list->{'all'}->{$res->{'package'}} = $res;	    
+	    $list->{'all'}->{$res->{'package'}} = $res;
 	    next;
 	}
 
 	$res->{section} = 'unknown' if !$res->{section};
-	
+
 	if ($res->{'package'} && $res->{type} && $res->{os} && $res->{version} &&
 	    $res->{infopage}) {
 	    my $template;
 	    if ($res->{location}) {
 		$template = $res->{location};
-		$template =~ s|.*/([^/]+.tar.[gx]z)$|$1|;
+		$template =~ s|.*/([^/]+$PVE::Storage::vztmpl_extension_re)$|$1|;
 		if ($res->{location} !~ m|^([a-zA-Z]+)\://|) {
 		    # relative localtion (no http:// prefix)
 		    $res->{location} = "$source/$res->{location}";
@@ -100,7 +101,7 @@ sub read_aplinfo_from_fh {
 	    $list->{'all'}->{$template} = $res;
 	} else {
 	    my $msg = "found incomplete appliance records\n";
-	    $update ? die $msg : warn $msg;		
+	    $update ? die $msg : warn $msg;
 	}
     }
 }
@@ -117,7 +118,7 @@ sub read_aplinfo {
     close($fh);
 
     die $err if $err;
-    
+
     return $list;
 }
 
@@ -159,7 +160,7 @@ sub download_aplinfo {
 	if (url_get($ua, $aplsrcurl, $tmpgz, $logfd) != 0) {
 	    die "update failed - no data file '$aplsrcurl'\n";
 	}
- 
+
        eval { run_command(["gunzip", "-f", $tmpgz]) };
        die "update failed: unable to unpack '$tmpgz'\n" if $@;
 
@@ -197,7 +198,7 @@ sub get_apl_sources {
 	{
 	    host => "download.proxmox.com",
 	    url => "http://download.proxmox.com/images",
-	    file => 'aplinfo-pve-6.dat',
+	    file => 'aplinfo-pve-8.dat',
 	},
 	{
 	    host => "releases.turnkeylinux.org",
@@ -242,7 +243,7 @@ sub update {
 	    logmsg ($logfd, $err);
 	    push @dlerr, $info->{url};
 	}
-    } 
+    }
 
     close($logfd);
 

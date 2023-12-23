@@ -8,13 +8,7 @@ Ext.define('PVE.sdn.zones.EvpnInputPanel', {
 
 	if (me.isCreate) {
 	    values.type = me.type;
-	} else {
-	    delete values.zone;
 	}
-
-        if (!values.mac) {
-            delete values.mac;
-        }
 
 	return values;
     },
@@ -24,11 +18,10 @@ Ext.define('PVE.sdn.zones.EvpnInputPanel', {
 
 	me.items = [
 	    {
-		xtype: me.isCreate ? 'textfield' : 'displayfield',
-		name: 'zone',
-		maxLength: 8,
-		value: me.zone || '',
-		fieldLabel: 'ID',
+		xtype: 'pveSDNControllerSelector',
+		fieldLabel: gettext('Controller'),
+		name: 'controller',
+		value: '',
 		allowBlank: false,
 	    },
 	    {
@@ -40,12 +33,13 @@ Ext.define('PVE.sdn.zones.EvpnInputPanel', {
 		allowBlank: false,
 	    },
 	    {
-		xtype: 'textfield',
+		xtype: 'proxmoxtextfield',
 		name: 'mac',
-		fieldLabel: gettext('Vnet MAC address'),
+		fieldLabel: gettext('VNet MAC Address'),
 		vtype: 'MacAddress',
 		allowBlank: true,
 		emptyText: 'auto',
+		deleteEmpty: !me.isCreate,
 	    },
 	    {
 		xtype: 'pveNodeSelector',
@@ -55,31 +49,43 @@ Ext.define('PVE.sdn.zones.EvpnInputPanel', {
 		autoSelect: false,
 	    },
 	    {
-		xtype: 'pveSDNControllerSelector',
-		fieldLabel: gettext('Controller'),
-		name: 'controller',
-		value: '',
-		allowBlank: false,
-	    },
-	    {
-		xtype: 'proxmoxintegerfield',
-		name: 'mtu',
-		minValue: 100,
-		maxValue: 65000,
-		fieldLabel: 'MTU',
-		skipEmptyText: true,
-		allowBlank: true,
-		emptyText: 'auto',
-	    },
-	    {
 		xtype: 'pveNodeSelector',
-		name: 'nodes',
-		fieldLabel: gettext('Nodes'),
-		emptyText: gettext('All') + ' (' + gettext('No restrictions') +')',
-		multiSelect: true,
+		name: 'exitnodes-primary',
+		fieldLabel: gettext('Primary Exit Node'),
+		multiSelect: false,
 		autoSelect: false,
 	    },
-
+	    {
+		xtype: 'proxmoxcheckbox',
+		name: 'exitnodes-local-routing',
+		uncheckedValue: null,
+		checked: false,
+		fieldLabel: gettext('Exit Nodes Local Routing'),
+		deleteEmpty: !me.isCreate,
+	    },
+	    {
+		xtype: 'proxmoxcheckbox',
+		name: 'advertise-subnets',
+		uncheckedValue: null,
+		checked: false,
+		fieldLabel: gettext('Advertise Subnets'),
+		deleteEmpty: !me.isCreate,
+	    },
+	    {
+		xtype: 'proxmoxcheckbox',
+		name: 'disable-arp-nd-suppression',
+		uncheckedValue: null,
+		checked: false,
+		fieldLabel: gettext('Disable ARP-nd Suppression'),
+		deleteEmpty: !me.isCreate,
+	    },
+	    {
+		xtype: 'proxmoxtextfield',
+		name: 'rt-import',
+		fieldLabel: gettext('Route Target Import'),
+		allowBlank: true,
+		deleteEmpty: !me.isCreate,
+	    },
 	];
 
 	me.callParent();

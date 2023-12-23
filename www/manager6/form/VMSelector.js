@@ -15,14 +15,12 @@ Ext.define('PVE.form.VMSelector', {
 
     store: {
 	model: 'PVEResources',
-	autoLoad: true,
 	sorters: 'vmid',
-	filters: [{
-	    property: 'type',
-	    value: /lxc|qemu/,
-	}],
     },
-    columns: [
+
+    userCls: 'proxmox-tags-circle',
+
+    columnsDeclaration: [
 	{
 	    header: 'ID',
 	    dataIndex: 'vmid',
@@ -85,6 +83,12 @@ Ext.define('PVE.form.VMSelector', {
 	    },
 	},
 	{
+	    header: gettext('Tags'),
+	    dataIndex: 'tags',
+	    renderer: tags => PVE.Utils.renderTags(tags, PVE.UIOptions.tagOverrides),
+	    flex: 1,
+	},
+	{
 	    header: 'HA ' + gettext('Status'),
 	    dataIndex: 'hastate',
 	    flex: 1,
@@ -93,6 +97,9 @@ Ext.define('PVE.form.VMSelector', {
 	    },
 	},
     ],
+
+    // should be a list of 'dataIndex' values, if 'undefined' all declared columns will be included
+    columnSelection: undefined,
 
     selModel: {
 	selType: 'checkboxmodel',
@@ -113,6 +120,9 @@ Ext.define('PVE.form.VMSelector', {
 
     getValue: function() {
 	var me = this;
+	if (me.savedValue !== undefined) {
+	    return me.savedValue;
+	}
 	var sm = me.getSelectionModel();
 	var selection = sm.getSelection();
 	var values = [];
@@ -126,24 +136,65 @@ Ext.define('PVE.form.VMSelector', {
 	return values;
     },
 
+    setValueSelection: function(value) {
+	let me = this;
+
+	let store = me.getStore();
+	let notFound = [];
+	let selection = value.map(item => {
+	    let found = store.findRecord('vmid', item, 0, false, true, true);
+	    if (!found) {
+		if (Ext.isNumeric(item)) {
+		    notFound.push(item);
+		} else {
+		    console.warn(`invalid item in vm selection: ${item}`);
+		}
+	    }
+	    return found;
+	}).filter(r => r);
+
+	for (const vmid of notFound) {
+	    let rec = store.add({
+		vmid,
+		node: 'unknown',
+	    });
+	    selection.push(rec[0]);
+	}
+
+	let sm = me.getSelectionModel();
+	if (selection.length) {
+	    sm.select(selection);
+	} else {
+	    sm.deselectAll();
+	}
+	// to correctly trigger invalid class
+	me.getErrors();
+    },
+
     setValue: function(value) {
 	let me = this;
+	value ??= [];
 	if (!Ext.isArray(value)) {
-	    value = value.split(',');
+	    value = value.split(',').filter(v => v !== '');
 	}
 
 	let store = me.getStore();
-	let selection = value.map(item => store.findRecord('vmid', item, 0, false, true, true)).filter(r => r);
-
-	me.getSelectionModel().select(selection);
-
+	if (!store.isLoaded()) {
+	    me.savedValue = value;
+	    store.on('load', function() {
+		me.setValueSelection(value);
+		delete me.savedValue;
+	    }, { single: true });
+	} else {
+	    me.setValueSelection(value);
+	}
 	return me.mixins.field.setValue.call(me, value);
     },
 
     getErrors: function(value) {
 	let me = this;
-	if (me.allowBlank === false &&
-	    me.getSelectionModel().getCount() === 0) {
+	if (!me.isDisabled() && me.allowBlank === false &&
+	    me.getValue().length === 0) {
 	    me.addBodyCls(['x-form-trigger-wrap-default', 'x-form-trigger-wrap-invalid']);
 	    return [gettext('No VM selected')];
 	}
@@ -152,13 +203,28 @@ Ext.define('PVE.form.VMSelector', {
 	return [];
     },
 
+    setDisabled: function(disabled) {
+	let me = this;
+	let res = me.callParent([disabled]);
+	me.getErrors();
+	return res;
+    },
+
     initComponent: function() {
 	let me = this;
 
+	let columns = me.columnsDeclaration.filter((column) =>
+	    me.columnSelection ? me.columnSelection.indexOf(column.dataIndex) !== -1 : true,
+	).map((x) => x);
+
+	me.columns = columns;
+
 	me.callParent();
 
+	me.getStore().load({ params: { type: 'vm' } });
+
 	if (me.nodename) {
-	    me.store.filters.add({
+	    me.getStore().addFilter({
 		property: 'node',
 		exactMatch: true,
 		value: me.nodename,
@@ -177,7 +243,7 @@ Ext.define('PVE.form.VMSelector', {
 		    break;
 	    }
 	    if (statusfilter !== '') {
-		me.store.filters.add({
+		me.getStore().addFilter([{
 		    property: 'template',
 		    value: 0,
 		}, {
@@ -185,7 +251,7 @@ Ext.define('PVE.form.VMSelector', {
 		    operator: 'in',
 		    property: 'status',
 		    value: [statusfilter],
-		});
+		}]);
 	    }
 	}
 

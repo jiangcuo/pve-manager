@@ -10,7 +10,7 @@ use PVE::SysFSTools;
 
 use base qw(PVE::RESTHandler);
 
-my $default_class_blacklist = "05;06;08;0b";
+my $default_class_blacklist = "05;06;0b";
 
 __PACKAGE__->register_method ({
     name => 'pciscan',
@@ -20,7 +20,7 @@ __PACKAGE__->register_method ({
     protected => 1,
     proxyto => "node",
     permissions => {
-	check => ['perm', '/', ['Sys.Modify']],
+	check => ['perm', '/', ['Sys.Audit', 'Sys.Modify'], any => 1],
     },
     parameters => {
 	additionalProperties => 0,
@@ -33,8 +33,7 @@ __PACKAGE__->register_method ({
 		optional => 1,
 		description => "A list of blacklisted PCI classes, which will ".
 			       "not be returned. Following are filtered by ".
-			       "default: Memory Controller (05), Bridge (06), ".
-			       "Generic System Peripheral (08) and ".
+			       "default: Memory Controller (05), Bridge (06) and ".
 			       "Processor (0b).",
 	    },
 	    verbose => {
@@ -178,7 +177,7 @@ __PACKAGE__->register_method ({
     protected => 1,
     proxyto => "node",
     permissions => {
-	check => ['perm', '/', ['Sys.Modify']],
+	check => ['perm', '/', ['Sys.Audit', 'Sys.Modify'], any => 1],
     },
     parameters => {
 	additionalProperties => 0,

@@ -123,16 +123,6 @@ Ext.define('PVE.lxc.NetworkInputPanel', {
 		value: cdata.tag,
 	    },
 	    {
-		xtype: 'numberfield',
-		name: 'rate',
-		fieldLabel: gettext('Rate limit') + ' (MB/s)',
-		minValue: 0,
-		maxValue: 10*1024,
-		value: cdata.rate,
-		emptyText: 'unlimited',
-		allowBlank: true,
-	    },
-	    {
 		xtype: 'proxmoxcheckbox',
 		fieldLabel: gettext('Firewall'),
 		name: 'firewall',
@@ -279,6 +269,37 @@ Ext.define('PVE.lxc.NetworkInputPanel', {
 		value: cdata.gw6,
 		disabled: dhcp6 || auto6,
 		fieldLabel: gettext('Gateway') + ' (IPv6)',
+	    },
+	];
+
+	me.advancedColumn1 = [
+	    {
+		xtype: 'proxmoxcheckbox',
+		fieldLabel: gettext('Disconnect'),
+		name: 'link_down',
+		value: cdata.link_down,
+	    },
+	    {
+		xtype: 'proxmoxintegerfield',
+		fieldLabel: 'MTU',
+		emptyText: gettext('Same as bridge'),
+		name: 'mtu',
+		value: cdata.mtu,
+		minValue: 576,
+		maxValue: 65535,
+	    },
+	];
+
+	me.advancedColumn2 = [
+	    {
+		xtype: 'numberfield',
+		name: 'rate',
+		fieldLabel: gettext('Rate limit') + ' (MB/s)',
+		minValue: 0,
+		maxValue: 10*1024,
+		value: cdata.rate,
+		emptyText: 'unlimited',
+		allowBlank: true,
 	    },
 	];
 
@@ -519,6 +540,17 @@ Ext.define('PVE.lxc.NetworkView', {
 			}
 		    },
 		},
+		{
+		    header: gettext('MTU'),
+		    width: 80,
+		    dataIndex: 'mtu',
+		},
+		{
+		    header: gettext('Disconnected'),
+		    width: 100,
+		    dataIndex: 'link_down',
+		    renderer: Proxmox.Utils.format_boolean,
+		},
 	    ],
 	    listeners: {
 		activate: me.load,
@@ -543,6 +575,8 @@ Ext.define('PVE.lxc.NetworkView', {
 	    'gw6',
 	    'tag',
 	    'firewall',
+	    'mtu',
+	    'link_down',
 	],
     });
 });

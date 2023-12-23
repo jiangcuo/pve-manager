@@ -10,6 +10,7 @@ use PVE::Cluster qw(cfs_register_file cfs_lock_file cfs_read_file cfs_write_file
 use PVE::DataCenterConfig;
 use PVE::Exception qw(raise_param_exc);
 use PVE::Firewall;
+use PVE::GuestHelpers;
 use PVE::HA::Config;
 use PVE::HA::Env::PVE2;
 use PVE::INotify;
@@ -23,9 +24,12 @@ use PVE::Tools qw(extract_param);
 use PVE::API2::ACMEAccount;
 use PVE::API2::ACMEPlugin;
 use PVE::API2::Backup;
-use PVE::API2::BackupInfo;
+use PVE::API2::Cluster::BackupInfo;
 use PVE::API2::Cluster::Ceph;
+use PVE::API2::Cluster::Mapping;
+use PVE::API2::Cluster::Jobs;
 use PVE::API2::Cluster::MetricServer;
+use PVE::API2::Cluster::Notifications;
 use PVE::API2::ClusterConfig;
 use PVE::API2::Firewall::Cluster;
 use PVE::API2::HAConfig;
@@ -50,6 +54,11 @@ __PACKAGE__->register_method ({
 });
 
 __PACKAGE__->register_method ({
+    subclass => "PVE::API2::Cluster::Notifications",
+    path => 'notifications',
+});
+
+__PACKAGE__->register_method ({
     subclass => "PVE::API2::ClusterConfig",
     path => 'config',
 });
@@ -65,8 +74,8 @@ __PACKAGE__->register_method ({
 });
 
 __PACKAGE__->register_method ({
-    subclass => "PVE::API2::BackupInfo",
-    path => 'backupinfo',
+    subclass => "PVE::API2::Cluster::BackupInfo",
+    path => 'backup-info',
 });
 
 __PACKAGE__->register_method ({
@@ -82,6 +91,16 @@ __PACKAGE__->register_method ({
 __PACKAGE__->register_method ({
     subclass => "PVE::API2::Cluster::Ceph",
     path => 'ceph',
+});
+
+__PACKAGE__->register_method ({
+    subclass => "PVE::API2::Cluster::Jobs",
+    path => 'jobs',
+});
+
+__PACKAGE__->register_method ({
+    subclass => "PVE::API2::Cluster::Mapping",
+    path => 'mapping',
 });
 
 if ($have_sdn) {
@@ -125,21 +144,24 @@ __PACKAGE__->register_method ({
 	my ($param) = @_;
 
 	my $result = [
-	    { name => 'log' },
-	    { name => 'options' },
-	    { name => 'resources' },
-	    { name => 'replication' },
-	    { name => 'tasks' },
-	    { name => 'backup' },
-	    { name => 'backupinfo' },
-	    { name => 'ha' },
-	    { name => 'status' },
-	    { name => 'nextid' },
-	    { name => 'firewall' },
-	    { name => 'config' },
 	    { name => 'acme' },
+	    { name => 'backup' },
+	    { name => 'backup-info' },
 	    { name => 'ceph' },
+	    { name => 'config' },
+	    { name => 'firewall' },
+	    { name => 'ha' },
+	    { name => 'jobs' },
+	    { name => 'log' },
+	    { name => 'mapping' },
 	    { name => 'metrics' },
+	    { name => 'notifications' },
+	    { name => 'nextid' },
+	    { name => 'options' },
+	    { name => 'replication' },
+	    { name => 'resources' },
+	    { name => 'status' },
+	    { name => 'tasks' },
 	];
 
 	if ($have_sdn) {
@@ -215,7 +237,10 @@ __PACKAGE__->register_method({
 	items => {
 	    type => "object",
 	    properties => {
-		id => { type => 'string' },
+		id => {
+		    description => "Resource id.",
+		    type => 'string',
+		},
 		type => {
 		    description => "Resource type.",
 		    type => 'string',
@@ -248,18 +273,21 @@ __PACKAGE__->register_method({
 		    description => "CPU utilization (when type in node,qemu,lxc).",
 		    type => 'number',
 		    optional => 1,
+		    minimum => 0,
 		    renderer => 'fraction_as_percentage',
 		},
 		maxcpu => {
 		    description => "Number of available CPUs (when type in node,qemu,lxc).",
 		    type => 'number',
 		    optional => 1,
+		    minimum => 0,
 		},
 		mem => {
 		    description => "Used memory in bytes (when type in node,qemu,lxc).",
-		    type => 'string',
+		    type => 'integer',
 		    optional => 1,
 		    renderer => 'bytes',
+		    minimum => 0,
 		},
 		maxmem => {
 		    description => "Number of available memory in bytes (when type in node,qemu,lxc).",
@@ -285,15 +313,17 @@ __PACKAGE__->register_method({
 		},
 		disk => {
 		    description => "Used disk space in bytes (when type in storage), used root image spave for VMs (type in qemu,lxc).",
-		    type => 'string',
+		    type => 'integer',
 		    optional => 1,
 		    renderer => 'bytes',
+		    minimum => 0,
 		},
 		maxdisk => {
 		    description => "Storage size in bytes (when type in storage), root image size for VMs (type in qemu,lxc).",
 		    type => 'integer',
 		    optional => 1,
 		    renderer => 'bytes',
+		    minimum => 0,
 		},
 		content => {
 		    description => "Allowed storage content types (when type == storage).",
@@ -304,6 +334,15 @@ __PACKAGE__->register_method({
 		plugintype => {
 		    description => "More specific type, if available.",
 		    type => 'string',
+		    optional => 1,
+		},
+		vmid => get_standard_option('pve-vmid', {
+		    description => "The numerical vmid (when type in qemu,lxc).",
+		    optional => 1,
+		}),
+		'cgroup-mode' => {
+		    description => "The cgroup mode the node operates under (when type == node).",
+		    type => 'integer',
 		    optional => 1,
 		},
 	    },
@@ -354,7 +393,8 @@ __PACKAGE__->register_method({
 
 	# we try to generate 'numbers' by using "$X + 0"
 	if (!$param->{type} || $param->{type} eq 'vm') {
-	    my $locked_vms = PVE::Cluster::get_guest_config_property('lock');
+	    my $prop_list = [qw(lock tags)];
+	    my $props = PVE::Cluster::get_guest_config_properties($prop_list);
 
 	    for my $vmid (sort keys %$idlist) {
 
@@ -386,8 +426,10 @@ __PACKAGE__->register_method({
 		# only skip now to next to ensure that the pool stats above are filled, if eligible
 		next if !$rpcenv->check($authuser, "/vms/$vmid", [ 'VM.Audit' ], 1);
 
-		if (defined(my $lock = $locked_vms->{$vmid}->{lock})) {
-		    $entry->{lock} = $lock;
+		for my $prop (@$prop_list) {
+		    if (defined(my $value = $props->{$vmid}->{$prop})) {
+			$entry->{$prop} = $value;
+		    }
 		}
 
 		if (defined($entry->{pool}) &&
@@ -410,10 +452,18 @@ __PACKAGE__->register_method({
 	    }
 	}
 
+	my $static_node_info = PVE::Cluster::get_node_kv("static-info");
+
 	if (!$param->{type} || $param->{type} eq 'node') {
 	    foreach my $node (@$nodelist) {
 		my $can_audit = $rpcenv->check($authuser, "/nodes/$node", [ 'Sys.Audit' ], 1);
 		my $entry = PVE::API2Tools::extract_node_stats($node, $members, $rrd, !$can_audit);
+
+		my $info = eval { decode_json($static_node_info->{$node}); };
+		if (defined(my $mode = $info->{'cgroup-mode'})) {
+		    $entry->{'cgroup-mode'} = int($mode);
+		}
+
 		push @$res, $entry;
 	    }
 	}
@@ -437,9 +487,22 @@ __PACKAGE__->register_method({
 	    }
 	}
 
-	if ($have_sdn) {
-	    if (!$param->{type} || $param->{type} eq 'sdn') {
+	if (!$param->{type} || $param->{type} eq 'sdn') {
+	    #add default "localnetwork" zone
+	    if ($rpcenv->check($authuser, "/sdn/zones/localnetwork", [ 'SDN.Audit' ], 1)) {
+		foreach my $node (@$nodelist) {
+		    my $local_sdn = {
+			id => "sdn/$node/localnetwork",
+			sdn => 'localnetwork',
+			node => $node,
+			type => 'sdn',
+			status => 'ok',
+		    };
+		    push @$res, $local_sdn;
+		}
+	    }
 
+	    if ($have_sdn) {
 		my $nodes = PVE::Cluster::get_node_kv("sdn");
 
 		for my $node (sort keys %{$nodes}) {
@@ -457,7 +520,7 @@ __PACKAGE__->register_method({
 			};
 			push @$res, $entry;
 		    }
-	        }
+		}
 	    }
 	}
 
@@ -490,13 +553,11 @@ __PACKAGE__->register_method({
 	my $authuser = $rpcenv->get_user();
 
 	my $tlist = PVE::Cluster::get_tasklist();
-
-	my $res = [];
-
-	return $res if !$tlist;
+	return [] if !$tlist;
 
 	my $all = $rpcenv->check($authuser, "/", [ 'Sys.Audit' ], 1);
 
+	my $res = [];
 	foreach my $task (@$tlist) {
 	    if (PVE::AccessControl::pve_verify_tokenid($task->{user}, 1)) {
 		($task->{user}, $task->{tokenid}) = PVE::AccessControl::split_tokenid($task->{user});
@@ -511,8 +572,9 @@ __PACKAGE__->register_method({
     name => 'get_options',
     path => 'options',
     method => 'GET',
-    description => "Get datacenter options.",
+    description => "Get datacenter options. Without 'Sys.Audit' on '/' not all options are returned.",
     permissions => {
+	user => 'all',
 	check => ['perm', '/', [ 'Sys.Audit' ]],
     },
     parameters => {
@@ -526,7 +588,25 @@ __PACKAGE__->register_method({
     code => sub {
 	my ($param) = @_;
 
-	return PVE::Cluster::cfs_read_file('datacenter.cfg');
+	my $res = {};
+
+	my $rpcenv = PVE::RPCEnvironment::get();
+	my $authuser = $rpcenv->get_user();
+
+	my $datacenter_config = eval { PVE::Cluster::cfs_read_file('datacenter.cfg') } // {};
+
+	if ($rpcenv->check($authuser, '/', ['Sys.Audit'], 1)) {
+	    $res = $datacenter_config;
+	} else {
+	    for my $k (qw(console tag-style)) {
+		$res->{$k} = $datacenter_config->{$k} if exists $datacenter_config->{$k};
+	    }
+	}
+
+	my $tags = PVE::GuestHelpers::get_allowed_tags($rpcenv, $authuser);
+	$res->{'allowed-tags'} = [sort keys $tags->%*];
+
+	return $res;
     }});
 
 __PACKAGE__->register_method({
@@ -546,26 +626,17 @@ __PACKAGE__->register_method({
     code => sub {
 	my ($param) = @_;
 
-	my $filename = 'datacenter.cfg';
-
 	my $delete = extract_param($param, 'delete');
 
-	my $code = sub {
+	cfs_lock_file('datacenter.cfg', undef, sub {
+	    my $conf = cfs_read_file('datacenter.cfg');
 
-	    my $conf = cfs_read_file($filename);
+	    $conf->{$_} = $param->{$_} for keys $param->%*;
 
-	    foreach my $opt (keys %$param) {
-		$conf->{$opt} = $param->{$opt};
-	    }
+	    delete $conf->{$_} for PVE::Tools::split_list($delete);
 
-	    foreach my $opt (PVE::Tools::split_list($delete)) {
-		delete $conf->{$opt};
-	    };
-
-	    cfs_write_file($filename, $conf);
-	};
-
-	cfs_lock_file($filename, undef, $code);
+	    cfs_write_file('datacenter.cfg', $conf);
+	});
 	die $@ if $@;
 
 	return undef;
@@ -695,7 +766,7 @@ __PACKAGE__->register_method({
 	    # fake entry for local node if no cluster defined
 	    my $pmxcfs = ($clinfo && $clinfo->{version}) ? 1 : 0; # pmxcfs online ?
 
-	    my $subinfo = PVE::INotify::read_file('subscription');
+	    my $subinfo = PVE::API2::Subscription::read_etc_subscription();
 	    my $sublevel = $subinfo->{level} || '';
 
 	    return [{
@@ -715,12 +786,14 @@ __PACKAGE__->register_method({
     name => 'nextid',
     path => 'nextid',
     method => 'GET',
-    description => "Get next free VMID. If you pass an VMID it will raise an error if the ID is already used.",
+    description => "Get next free VMID. Pass a VMID to assert that its free (at time of check).",
     permissions => { user => 'all' },
     parameters => {
     	additionalProperties => 0,
 	properties => {
-	    vmid => get_standard_option('pve-vmid', {optional => 1}),
+	    vmid => get_standard_option('pve-vmid', {
+		    optional => 1,
+	    }),
 	},
     },
     returns => {
@@ -738,11 +811,17 @@ __PACKAGE__->register_method({
 	    raise_param_exc({ vmid => "VM $vmid already exists" });
 	}
 
-	for (my $i = 100; $i < 10000; $i++) {
+	my $dc_conf = PVE::Cluster::cfs_read_file('datacenter.cfg');
+	my $next_id = $dc_conf->{'next-id'} // {};
+
+	my $lower = $next_id->{lower} // 100;
+	my $upper = $next_id->{upper} // (1000 * 1000); # note, lower than the schema-maximum
+
+	for (my $i = $lower; $i < $upper; $i++) {
 	    return $i if !defined($idlist->{$i});
 	}
 
-	die "unable to get any free VMID\n";
+	die "unable to get any free VMID in range [$lower, $upper]\n";
     }});
 
 1;

@@ -1,3 +1,10 @@
+Ext.define('pve-ceph-warnings', {
+    extend: 'Ext.data.Model',
+    fields: ['id', 'summary', 'detail', 'severity'],
+    idProperty: 'id',
+});
+
+
 Ext.define('PVE.node.CephStatus', {
     extend: 'Ext.panel.Panel',
     alias: 'widget.pveNodeCephStatus',
@@ -44,14 +51,15 @@ Ext.define('PVE.node.CephStatus', {
 		    flex: 1,
 		    items: [
 			{
-			    flex: 1,
-			    itemId: 'overallhealth',
+
 			    xtype: 'pveHealthWidget',
+			    itemId: 'overallhealth',
+			    flex: 1,
 			    title: gettext('Status'),
 			},
 			{
-			    itemId: 'versioninfo',
 			    xtype: 'displayfield',
+			    itemId: 'versioninfo',
 			    fieldLabel: gettext('Ceph Version'),
 			    value: "",
 			    autoEl: {
@@ -66,23 +74,56 @@ Ext.define('PVE.node.CephStatus', {
 		    ],
 		},
 		{
-		    flex: 2,
+		    xtype: 'grid',
 		    itemId: 'warnings',
+		    flex: 2,
+		    maxHeight: 430,
 		    stateful: true,
 		    stateId: 'ceph-status-warnings',
-		    xtype: 'grid',
+		    viewConfig: {
+			enableTextSelection: true,
+		    },
 		    // we load the store manually, to show an emptyText specify an empty intermediate store
 		    store: {
+			type: 'diff',
 			trackRemoved: false,
 			data: [],
+			rstore: {
+			    storeid: 'pve-ceph-warnings',
+			    type: 'update',
+			    model: 'pve-ceph-warnings',
+			},
+		    },
+		    updateHealth: function(health) {
+			let checks = health.checks || {};
+
+			let checkRecords = Object.keys(checks).sort().map(key => {
+			    let check = checks[key];
+			    let data = {
+				id: key,
+				summary: check.summary.message,
+				detail: check.detail.reduce((acc, v) => `${acc}\n${v.message}`, '').trimStart(),
+				severity: check.severity,
+			    };
+			    data.noDetails = data.detail.length === 0;
+			    data.detailsCls = data.detail.length === 0 ? 'pmx-opacity-75' : '';
+			    if (data.detail.length === 0) {
+				data.detail = "no additional data";
+			    }
+			    return data;
+			});
+
+			let rstore = this.getStore().rstore;
+			rstore.loadData(checkRecords, false);
+			rstore.fireEvent('load', rstore, checkRecords, true);
 		    },
 		    emptyText: gettext('No Warnings/Errors'),
 		    columns: [
 			{
 			    dataIndex: 'severity',
-			    header: gettext('Severity'),
+			    tooltip: gettext('Severity'),
 			    align: 'center',
-			    width: 70,
+			    width: 38,
 			    renderer: function(value) {
 				let health = PVE.Utils.map_ceph_health[value];
 				let icon = PVE.Utils.get_health_icon(health);
@@ -102,36 +143,42 @@ Ext.define('PVE.node.CephStatus', {
 			},
 			{
 			    xtype: 'actioncolumn',
-			    width: 40,
+			    width: 50,
 			    align: 'center',
-			    tooltip: gettext('Detail'),
+			    tooltip: gettext('Actions'),
 			    items: [
 				{
-				    iconCls: 'x-fa fa-info-circle',
-				    handler: function(grid, rowindex, colindex, item, e, record) {
-					var win = Ext.create('Ext.window.Window', {
-					    title: gettext('Detail'),
-					    resizable: true,
-					    modal: true,
-					    width: 650,
-					    height: 400,
-					    layout: {
-						type: 'fit',
-					    },
-					    items: [{
-						scrollable: true,
-						padding: 10,
-						xtype: 'box',
-						html: [
-						    '<span>' + Ext.htmlEncode(record.data.summary) + '</span>',
-						    '<pre>' + Ext.htmlEncode(record.data.detail) + '</pre>',
-						],
-					    }],
-					});
-					win.show();
+				    iconCls: 'x-fa fa-clipboard',
+				    tooltip: gettext('Copy to Clipboard'),
+				    handler: function(grid, rowindex, colindex, item, e, { data }) {
+					let detail = data.noDetails ? '': `\n${data.detail}`;
+					navigator.clipboard
+					    .writeText(`${data.severity}: ${data.summary}${detail}`)
+					    .catch(err => Ext.Msg.alert(gettext('Error'), err));
 				    },
 				},
 			    ],
+			},
+		    ],
+		    listeners: {
+			itemdblclick: function(view, record, row, rowIdx, e) {
+			    // inspired by Ext.grid.plugin.RowExpander, but for double click
+			    let rowNode = view.getNode(rowIdx);
+			    let normalRow = Ext.fly(rowNode);
+
+			    let collapsedCls = view.rowBodyFeature.rowCollapsedCls;
+
+			    if (normalRow.hasCls(collapsedCls)) {
+				view.rowBodyFeature.rowExpander.toggleRow(rowIdx, record);
+			    }
+			},
+		    },
+		    plugins: [
+			{
+			    ptype: 'rowexpander',
+			    expandOnDblClick: false,
+			    scrollIntoViewOnExpand: false,
+			    rowBodyTpl: '<pre class="pve-ceph-warning-detail {detailsCls}">{detail}</pre>',
 			},
 		    ],
 		},
@@ -154,8 +201,8 @@ Ext.define('PVE.node.CephStatus', {
 	    title: gettext('Status'),
 	},
 	{
-	    title: gettext('Services'),
 	    xtype: 'pveCephServices',
+	    title: gettext('Services'),
 	    itemId: 'services',
 	    plugins: 'responsive',
 	    layout: {
@@ -184,8 +231,8 @@ Ext.define('PVE.node.CephStatus', {
 	    },
 	    items: [
 		{
-		    flex: 1,
 		    xtype: 'container',
+		    flex: 1,
 		    items: [
 			{
 			    xtype: 'proxmoxGauge',
@@ -203,8 +250,8 @@ Ext.define('PVE.node.CephStatus', {
 			    padding: 25,
 			    items: [
 				{
-				    itemId: 'recoverychart',
 				    xtype: 'pveRunningChart',
+				    itemId: 'recoverychart',
 				    title: gettext('Recovery') +'/ '+ gettext('Rebalance'),
 				    renderer: PVE.Utils.render_bandwidth,
 				    height: 100,
@@ -218,34 +265,34 @@ Ext.define('PVE.node.CephStatus', {
 		    ],
 		},
 		{
-		    flex: 2,
 		    xtype: 'container',
+		    flex: 2,
 		    defaults: {
 			padding: 0,
 			height: 100,
 		    },
 		    items: [
 			{
-			    itemId: 'reads',
 			    xtype: 'pveRunningChart',
+			    itemId: 'reads',
 			    title: gettext('Reads'),
 			    renderer: PVE.Utils.render_bandwidth,
 			},
 			{
-			    itemId: 'writes',
 			    xtype: 'pveRunningChart',
+			    itemId: 'writes',
 			    title: gettext('Writes'),
 			    renderer: PVE.Utils.render_bandwidth,
 			},
 			{
-			    itemId: 'readiops',
 			    xtype: 'pveRunningChart',
+			    itemId: 'readiops',
 			    title: 'IOPS: ' + gettext('Reads'),
 			    renderer: Ext.util.Format.numberRenderer('0,000'),
 			},
 			{
-			    itemId: 'writeiops',
 			    xtype: 'pveRunningChart',
+			    itemId: 'writeiops',
 			    title: 'IOPS: ' + gettext('Writes'),
 			    renderer: Ext.util.Format.numberRenderer('0,000'),
 			},
@@ -254,22 +301,6 @@ Ext.define('PVE.node.CephStatus', {
 	    ],
 	},
     ],
-
-    generateCheckData: function(health) {
-	var result = [];
-	let checks = health.checks || {};
-
-	Object.keys(checks).sort().forEach(key => {
-	    let check = checks[key];
-	    result.push({
-		id: key,
-		summary: check.summary.message,
-		detail: check.detail.reduce((acc, v) => `${acc}\n${v.message}`, ''),
-		severity: check.severity,
-	    });
-	});
-	return result;
-    },
 
     updateAll: function(store, records, success) {
 	if (!success || records.length === 0) {
@@ -282,13 +313,10 @@ Ext.define('PVE.node.CephStatus', {
 
 	// add health panel
 	me.down('#overallhealth').updateHealth(PVE.Utils.render_ceph_health(rec.data.health || {}));
-	// add errors to gridstore
-	me.down('#warnings').getStore().loadRawData(me.generateCheckData(rec.data.health || {}), false);
+	me.down('#warnings').updateHealth(rec.data.health || {}); // add errors to gridstore
 
-	// update services
 	me.getComponent('services').updateAll(me.metadata || {}, rec.data);
 
-	// update detailstatus panel
 	me.getComponent('statusdetail').updateAll(me.metadata || {}, rec.data);
 
 	// add performance data
@@ -321,14 +349,14 @@ Ext.define('PVE.node.CephStatus', {
 	let unhealthy = degraded + unfound + misplaced;
 	// update recovery
 	if (pgmap.recovering_objects_per_sec !== undefined || unhealthy > 0) {
-	    let toRecover = pgmap.misplaced_total || pgmap.unfound_total || pgmap.degraded_total || 0;
-	    if (toRecover === 0) {
+	    let toRecoverObjects = pgmap.misplaced_total || pgmap.unfound_total || pgmap.degraded_total || 0;
+	    if (toRecoverObjects === 0) {
 		return; // FIXME: unexpected return and leaves things possible visible when it shouldn't?
 	    }
-	    let recovered = toRecover - unhealthy || 0;
+	    let recovered = toRecoverObjects - unhealthy || 0;
 	    let speed = pgmap.recovering_bytes_per_sec || 0;
 
-	    let recoveryRatio = recovered / total;
+	    let recoveryRatio = recovered / toRecoverObjects;
 	    let txt = `${(recoveryRatio * 100).toFixed(2)}%`;
 	    if (speed > 0) {
 		let obj_per_sec = speed / (4 * 1024 * 1024); // 4 MiB per Object

@@ -3,6 +3,7 @@ Ext.define('PVE.qemu.Config', {
     alias: 'widget.PVE.qemu.Config',
 
     onlineHelp: 'chapter_virtual_machines',
+    userCls: 'proxmox-tags-full',
 
     initComponent: function() {
         var me = this;
@@ -66,7 +67,7 @@ Ext.define('PVE.qemu.Config', {
 	var migrateBtn = Ext.create('Ext.Button', {
 	    text: gettext('Migrate'),
 	    disabled: !caps.vms['VM.Migrate'],
-	    hidden: PVE.data.ResourceStore.getNodes().length < 2,
+	    hidden: PVE.Utils.isStandaloneNode(),
 	    handler: function() {
 		var win = Ext.create('PVE.window.Migrate', {
 		    vmtype: 'qemu',
@@ -219,11 +220,36 @@ Ext.define('PVE.qemu.Config', {
 	    ],
 	});
 
+	let tagsContainer = Ext.create('PVE.panel.TagEditContainer', {
+	    tags: vm.tags,
+	    canEdit: !!caps.vms['VM.Config.Options'],
+	    listeners: {
+		change: function(tags) {
+		    Proxmox.Utils.API2Request({
+			url: base_url + '/config',
+			method: 'PUT',
+			params: {
+			    tags,
+			},
+			success: function() {
+			    me.statusStore.load();
+			},
+			failure: function(response) {
+			    Ext.Msg.alert('Error', response.htmlStatus);
+			    me.statusStore.load();
+			},
+		    });
+		},
+	    },
+	});
+
+	let vm_text = `${vm.vmid} (${vm.name})`;
+
 	Ext.apply(me, {
-	    title: Ext.String.format(gettext("Virtual Machine {0} on node '{1}'"), vm.text, nodename),
+	    title: Ext.String.format(gettext("Virtual Machine {0} on node '{1}'"), vm_text, nodename),
 	    hstateid: 'kvmtab',
 	    tbarSpacing: false,
-	    tbar: [statusTxt, '->', resumeBtn, startBtn, shutdownBtn, migrateBtn, consoleBtn, moreBtn],
+	    tbar: [statusTxt, tagsContainer, '->', resumeBtn, startBtn, shutdownBtn, migrateBtn, consoleBtn, moreBtn],
 	    defaults: { statusStore: me.statusStore },
 	    items: [
 		{
@@ -270,9 +296,11 @@ Ext.define('PVE.qemu.Config', {
 		title: gettext('Task History'),
 		itemId: 'tasks',
 		xtype: 'proxmoxNodeTasks',
-		iconCls: 'fa fa-list',
+		iconCls: 'fa fa-list-alt',
 		nodename: nodename,
-		vmidFilter: vmid,
+		preFilter: {
+		    vmid,
+		},
 	    },
 	);
 
@@ -311,7 +339,7 @@ Ext.define('PVE.qemu.Config', {
 	    });
 	}
 
-	if (caps.vms['VM.Console']) {
+	if (caps.vms['VM.Audit']) {
 	    me.items.push(
 		{
 		    xtype: 'pveFirewallRules',
@@ -349,7 +377,12 @@ Ext.define('PVE.qemu.Config', {
 		    list_refs_url: base_url + '/firewall/refs',
 		    itemId: 'firewall-ipset',
 		},
-		{
+	    );
+	}
+
+	if (caps.vms['VM.Console']) {
+            me.items.push(
+                {
 		    title: gettext('Log'),
 		    groups: ['firewall'],
 		    iconCls: 'fa fa-list',
@@ -357,6 +390,8 @@ Ext.define('PVE.qemu.Config', {
 		    itemId: 'firewall-fwlog',
 		    xtype: 'proxmoxLogView',
 		    url: '/api2/extjs' + base_url + '/firewall/log',
+		    log_select_timespan: true,
+		    submitFormat: 'U',
 		},
 	    );
 	}
@@ -380,11 +415,12 @@ Ext.define('PVE.qemu.Config', {
 	    var spice = false;
 	    var xtermjs = false;
 	    var lock;
+	    var rec;
 
 	    if (!success) {
 		status = qmpstatus = 'unknown';
 	    } else {
-		var rec = s.data.get('status');
+		rec = s.data.get('status');
 		status = rec ? rec.data.value : 'unknown';
 		rec = s.data.get('qmpstatus');
 		qmpstatus = rec ? rec.data.value : 'unknown';
@@ -396,6 +432,9 @@ Ext.define('PVE.qemu.Config', {
 		spice = !!s.data.get('spice');
 		xtermjs = !!s.data.get('serial');
 	    }
+
+	    rec = s.data.get('tags');
+	    tagsContainer.loadTags(rec?.data?.value);
 
 	    if (template) {
 		return;

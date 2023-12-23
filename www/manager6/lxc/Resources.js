@@ -5,14 +5,25 @@ Ext.define('PVE.lxc.RessourceView', {
     onlineHelp: 'pct_configuration',
 
     renderKey: function(key, metaData, rec, rowIndex, colIndex, store) {
-	var me = this;
-	var rowdef = me.rows[key] || {};
+	let me = this;
+	let rowdef = me.rows[key] || {};
+
+	let txt = rowdef.header || key;
+	let icon = '';
 
 	metaData.tdAttr = "valign=middle";
 	if (rowdef.tdCls) {
 	    metaData.tdCls = rowdef.tdCls;
+	} else if (rowdef.iconCls) {
+	    icon = `<i class='pve-grid-fa fa fa-fw fa-${rowdef.iconCls}'></i>`;
+	    metaData.tdCls += " pve-itype-fa";
 	}
-	return rowdef.header || key;
+	// only return icons in grid but not remove dialog
+	if (rowIndex !== undefined) {
+	    return icon + txt;
+	} else {
+	    return txt;
+	}
     },
 
     initComponent: function() {
@@ -34,6 +45,12 @@ Ext.define('PVE.lxc.RessourceView', {
 
 	var mpeditor = caps.vms['VM.Config.Disk'] ? 'PVE.lxc.MountPointEdit' : undefined;
 
+	const nodeInfo = PVE.data.ResourceStore.getNodes().find(node => node.node === nodename);
+	let cpuEditor = {
+	    xtype: 'pveLxcCPUEdit',
+	    cgroupMode: nodeInfo['cgroup-mode'],
+	};
+
 	var rows = {
 	    memory: {
 		header: gettext('Memory'),
@@ -49,7 +66,7 @@ Ext.define('PVE.lxc.RessourceView', {
 		header: gettext('Swap'),
 		editor: caps.vms['VM.Config.Memory'] ? 'PVE.lxc.MemoryEdit' : undefined,
 		defaultValue: 512,
-		tdCls: 'pve-itype-icon-swap',
+		iconCls: 'refresh',
 		group: 2,
 		renderer: function(value) {
 		    return Proxmox.Utils.format_size(value*1024*1024);
@@ -57,7 +74,7 @@ Ext.define('PVE.lxc.RessourceView', {
 	    },
 	    cores: {
 		header: gettext('Cores'),
-		editor: caps.vms['VM.Config.CPU'] ? 'PVE.lxc.CPUEdit' : undefined,
+		editor: caps.vms['VM.Config.CPU'] ? cpuEditor : undefined,
 		defaultValue: '',
 		tdCls: 'pmx-itype-icon-processor',
 		group: 3,
@@ -85,7 +102,7 @@ Ext.define('PVE.lxc.RessourceView', {
 		header: gettext('Root Disk'),
 		defaultValue: Proxmox.Utils.noneText,
 		editor: mpeditor,
-		tdCls: 'pve-itype-icon-storage',
+		iconCls: 'hdd-o',
 		group: 4,
 	    },
 	    cpulimit: {
@@ -151,7 +168,8 @@ Ext.define('PVE.lxc.RessourceView', {
 	    });
 	};
 
-	var run_move = function(b, e, rec) {
+	let run_move = function() {
+	    let rec = me.selModel.getSelection()[0];
 	    if (!rec) {
 		return;
 	    }
@@ -168,6 +186,24 @@ Ext.define('PVE.lxc.RessourceView', {
 	    win.on('destroy', me.reload, me);
 	};
 
+	let run_reassign = function() {
+	    let rec = me.selModel.getSelection()[0];
+	    if (!rec) {
+		return;
+	    }
+
+	    Ext.create('PVE.window.GuestDiskReassign', {
+		disk: rec.data.key,
+		nodename: nodename,
+		autoShow: true,
+		vmid: vmid,
+		type: 'lxc',
+		listeners: {
+		    destroy: () => me.reload(),
+		},
+	    });
+	};
+
 	var edit_btn = new Proxmox.button.Button({
 	    text: gettext('Edit'),
 	    selModel: me.selModel,
@@ -182,85 +218,129 @@ Ext.define('PVE.lxc.RessourceView', {
 	    handler: function() { me.run_editor(); },
 	});
 
-	var resize_btn = new Proxmox.button.Button({
-	    text: gettext('Resize disk'),
-	    selModel: me.selModel,
-	    disabled: true,
-	    handler: run_resize,
-	});
-
 	var remove_btn = new Proxmox.button.Button({
 	    text: gettext('Remove'),
+	    defaultText: gettext('Remove'),
+	    altText: gettext('Detach'),
 	    selModel: me.selModel,
 	    disabled: true,
 	    dangerous: true,
 	    confirmMsg: function(rec) {
-		var msg = Ext.String.format(gettext('Are you sure you want to remove entry {0}'),
-					    "'" + me.renderKey(rec.data.key, {}, rec) + "'");
+		let warn = Ext.String.format(gettext('Are you sure you want to remove entry {0}'));
+		if (this.text === this.altText) {
+		    warn = gettext('Are you sure you want to detach entry {0}');
+		}
+		let rendered = me.renderKey(rec.data.key, {}, rec);
+		let msg = Ext.String.format(warn, `'${rendered}'`);
+
 		if (rec.data.key.match(/^unused\d+$/)) {
 		    msg += " " + gettext('This will permanently erase all data.');
 		}
-
 		return msg;
 	    },
 	    handler: run_remove,
+	    listeners: {
+		render: function(btn) {
+		    // hack: calculate the max button width on first display to prevent the whole
+		    // toolbar to move when we switch between the "Remove" and "Detach" labels
+		    let def = btn.getSize().width;
+
+		    btn.setText(btn.altText);
+		    let alt = btn.getSize().width;
+
+		    btn.setText(btn.defaultText);
+
+		    let optimal = alt > def ? alt : def;
+		    btn.setSize({ width: optimal });
+		},
+	    },
 	});
 
-	var move_btn = new Proxmox.button.Button({
-	    text: gettext('Move Volume'),
+	let move_menuitem = new Ext.menu.Item({
+	    text: gettext('Move Storage'),
+	    tooltip: gettext('Move volume to another storage'),
+	    iconCls: 'fa fa-database',
 	    selModel: me.selModel,
-	    disabled: true,
-	    dangerous: true,
 	    handler: run_move,
 	});
 
-	var revert_btn = new PVE.button.PendingRevert();
+	let reassign_menuitem = new Ext.menu.Item({
+	    text: gettext('Reassign Owner'),
+	    tooltip: gettext('Reassign volume to another CT'),
+	    iconCls: 'fa fa-cube',
+	    handler: run_reassign,
+	    reference: 'reassing_item',
+	});
 
-	var set_button_status = function() {
-	    var rec = me.selModel.getSelection()[0];
+	let resize_menuitem = new Ext.menu.Item({
+	    text: gettext('Resize'),
+	    iconCls: 'fa fa-plus',
+	    selModel: me.selModel,
+	    handler: run_resize,
+	});
+
+	let volumeaction_btn = new Proxmox.button.Button({
+	    text: gettext('Volume Action'),
+	    disabled: true,
+	    menu: {
+		items: [
+		    move_menuitem,
+		    reassign_menuitem,
+		    resize_menuitem,
+		],
+	    },
+	});
+
+	let revert_btn = new PVE.button.PendingRevert();
+
+	let set_button_status = function() {
+	    let rec = me.selModel.getSelection()[0];
 
 	    if (!rec) {
 		edit_btn.disable();
 		remove_btn.disable();
-		resize_btn.disable();
+		volumeaction_btn.disable();
 		revert_btn.disable();
 		return;
 	    }
-	    var key = rec.data.key;
-	    var value = rec.data.value;
-	    var rowdef = rows[key];
+	    let { key, value, 'delete': isDelete } = rec.data;
+	    let rowdef = rows[key];
 
-	    var pending = rec.data.delete || me.hasPendingChanges(key);
-	    var isDisk = rowdef.tdCls === 'pve-itype-icon-storage';
-	    var isUnusedDisk = key.match(/^unused\d+/);
+	    let pending = isDelete || me.hasPendingChanges(key);
+	    let isRootFS = key === 'rootfs';
+	    let isDisk = isRootFS || key.match(/^(mp|unused)\d+/);
+	    let isUnusedDisk = key.match(/^unused\d+/);
+	    let isUsedDisk = isDisk && !isUnusedDisk;
 
-	    var noedit = rec.data.delete || !rowdef.editor;
+	    let noedit = isDelete || !rowdef.editor;
 	    if (!noedit && Proxmox.UserName !== 'root@pam' && key.match(/^mp\d+$/)) {
-		var mp = PVE.Parser.parseLxcMountPoint(value);
+		let mp = PVE.Parser.parseLxcMountPoint(value);
 		if (mp.type !== 'volume') {
 		    noedit = true;
 		}
 	    }
 	    edit_btn.setDisabled(noedit);
 
-	    remove_btn.setDisabled(!isDisk || rec.data.key === 'rootfs' || !diskCap || pending);
-	    resize_btn.setDisabled(!isDisk || !diskCap || isUnusedDisk);
-	    move_btn.setDisabled(!isDisk || !diskCap);
+	    volumeaction_btn.setDisabled(!isDisk || !diskCap);
+	    move_menuitem.setDisabled(isUnusedDisk);
+	    reassign_menuitem.setDisabled(isRootFS);
+	    resize_menuitem.setDisabled(isUnusedDisk);
+
+	    remove_btn.setDisabled(!isDisk || isRootFS || !diskCap || pending);
 	    revert_btn.setDisabled(!pending);
+
+	    remove_btn.setText(isUsedDisk ? remove_btn.altText : remove_btn.defaultText);
 	};
 
-	var sorterFn = function(rec1, rec2) {
-	    var v1 = rec1.data.key;
-	    var v2 = rec2.data.key;
-	    var g1 = rows[v1].group || 0;
-	    var g2 = rows[v2].group || 0;
-	    var order1 = rows[v1].order || 0;
-	    var order2 = rows[v2].order || 0;
+	let sorterFn = function(rec1, rec2) {
+	    let v1 = rec1.data.key, v2 = rec2.data.key;
 
+	    let g1 = rows[v1].group || 0, g2 = rows[v2].group || 0;
 	    if (g1 - g2 !== 0) {
 		return g1 - g2;
 	    }
 
+	    let order1 = rows[v1].order || 0, order2 = rows[v2].order || 0;
 	    if (order1 - order2 !== 0) {
 		return order1 - order2;
 	    }
@@ -275,7 +355,7 @@ Ext.define('PVE.lxc.RessourceView', {
 	};
 
 	Ext.apply(me, {
-	    url: "/api2/json/nodes/" + nodename + "/lxc/" + vmid + "/pending",
+	    url: `/api2/json/nodes/${nodename}/lxc/${vmid}/pending`,
 	    selModel: me.selModel,
 	    interval: 2000,
 	    cwidth1: 170,
@@ -286,16 +366,18 @@ Ext.define('PVE.lxc.RessourceView', {
 			items: [
 			    {
 				text: gettext('Mount Point'),
-				iconCls: 'pve-itype-icon-storage',
+				iconCls: 'fa fa-fw fa-hdd-o black',
 				disabled: !caps.vms['VM.Config.Disk'],
 				handler: function() {
-				    var win = Ext.create('PVE.lxc.MountPointEdit', {
-					url: '/api2/extjs/' + baseurl,
+				    Ext.create('PVE.lxc.MountPointEdit', {
+					autoShow: true,
+					url: `/api2/extjs/${baseurl}`,
 					unprivileged: me.getObjectValue('unprivileged'),
 					pveSelNode: me.pveSelNode,
+					listeners: {
+					    destroy: () => me.reload(),
+					},
 				    });
-				    win.on('destroy', me.reload, me);
-				    win.show();
 				},
 			    },
 			],
@@ -303,8 +385,7 @@ Ext.define('PVE.lxc.RessourceView', {
 		},
 		edit_btn,
 		remove_btn,
-		resize_btn,
-		move_btn,
+		volumeaction_btn,
 		revert_btn,
 	    ],
 	    rows: rows,

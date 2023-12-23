@@ -62,6 +62,7 @@ __PACKAGE__->register_method ({
 	return [
 	    { name => 'account' },
 	    { name => 'tos' },
+	    { name => 'meta' },
 	    { name => 'directories' },
 	    { name => 'plugins' },
 	    { name => 'challenge-schema' },
@@ -107,14 +108,26 @@ __PACKAGE__->register_method ({
 	    name => get_standard_option('pve-acme-account-name'),
 	    contact => get_standard_option('pve-acme-account-contact'),
 	    tos_url => {
-		type => 'string',
 		description => 'URL of CA TermsOfService - setting this indicates agreement.',
+		type => 'string',
 		optional => 1,
 	    },
 	    directory => get_standard_option('pve-acme-directory-url', {
 		default => $acme_default_directory_url,
 		optional => 1,
 	    }),
+	    'eab-kid' => {
+		description => 'Key Identifier for External Account Binding.',
+		type => 'string',
+		requires => 'eab-hmac-key',
+		optional => 1,
+	    },
+	    'eab-hmac-key' => {
+		description => 'HMAC key for External Account Binding.',
+		type => 'string',
+		requires => 'eab-kid',
+		optional => 1,
+	    },
 	},
     },
     returns => {
@@ -129,6 +142,9 @@ __PACKAGE__->register_method ({
 	my $account_name = extract_param($param, 'name') // 'default';
 	my $account_file = "${acme_account_dir}/${account_name}";
 	mkdir $acme_account_dir if ! -e $acme_account_dir;
+
+	my $eab_kid = extract_param($param, 'eab-kid');
+	my $eab_hmac_key = extract_param($param, 'eab-hmac-key');
 
 	raise_param_exc({'name' => "ACME account config file '${account_name}' already exists."})
 	    if -e $account_file;
@@ -145,7 +161,17 @@ __PACKAGE__->register_method ({
 		print "Generating ACME account key..\n";
 		$acme->init(4096);
 		print "Registering ACME account..\n";
-		eval { $acme->new_account($param->{tos_url}, contact => $contact); };
+
+		my %info = (contact => $contact);
+		if (defined($eab_kid)) {
+		    $info{eab} = {
+			kid => $eab_kid,
+			hmac_key => $eab_hmac_key
+		    };
+		}
+
+		eval { $acme->new_account($param->{tos_url}, %info); };
+
 		if (my $err = $@) {
 		    unlink $account_file;
 		    die "Registration failed: $err\n";
@@ -308,11 +334,12 @@ __PACKAGE__->register_method ({
 	return $update_account->($param, 'deactivate', status => 'deactivated');
     }});
 
+# TODO: deprecated, remove with pve 9
 __PACKAGE__->register_method ({
     name => 'get_tos',
     path => 'tos',
     method => 'GET',
-    description => "Retrieve ACME TermsOfService URL from CA.",
+    description => "Retrieve ACME TermsOfService URL from CA. Deprecated, please use /cluster/acme/meta.",
     permissions => { user => 'all' },
     parameters => {
 	additionalProperties => 0,
@@ -337,6 +364,63 @@ __PACKAGE__->register_method ({
 	my $meta = $acme->get_meta();
 
 	return $meta ? $meta->{termsOfService} : undef;
+    }});
+
+__PACKAGE__->register_method ({
+    name => 'get_meta',
+    path => 'meta',
+    method => 'GET',
+    description => "Retrieve ACME Directory Meta Information",
+    permissions => {
+	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ]],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    directory => get_standard_option('pve-acme-directory-url', {
+		default => $acme_default_directory_url,
+		optional => 1,
+	    }),
+	},
+    },
+    returns => {
+	type => 'object',
+	additionalProperties => 1,
+	properties => {
+	    termsOfService => {
+		description => 'ACME TermsOfService URL.',
+		type => 'string',
+		optional => 1,
+	    },
+	    externalAccountRequired => {
+		description => 'EAB Required',
+		type => 'boolean',
+		optional => 1,
+	    },
+	    website => {
+		description => 'URL to more information about the ACME server.',
+		type => 'string',
+		optional => 1,
+	    },
+	    caaIdentities => {
+		description => 'Hostnames referring to the ACME servers.',
+		type => 'array',
+		items => {
+		    type => 'string',
+		},
+		optional => 1,
+	    },
+	},
+    },
+    code => sub {
+	my ($param) = @_;
+
+	my $directory = extract_param($param, 'directory') // $acme_default_directory_url;
+
+	my $acme = PVE::ACME->new(undef, $directory);
+	my $meta = $acme->get_meta();
+
+	return $meta;
     }});
 
 __PACKAGE__->register_method ({

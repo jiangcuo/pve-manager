@@ -4,6 +4,7 @@ include ../../defines.mk
 # extjs/classic/classic/src/util/Cookies.js
 
 JSSRC= 				                 	\
+	WidgetToolkitUtils.js				\
 	Cookies.js 					\
 	../manager6/Utils.js				\
 	../manager6/Parser.js				\
@@ -27,14 +28,16 @@ JSSRC= 				                 	\
 
 all:
 
-pvemanager-mobile.js: ${JSSRC}
-	cat ${JSSRC} >$@.tmp
+pvemanager-mobile.js: $(JSSRC)
+	cat $(JSSRC) >$@.tmp
 	mv $@.tmp $@
 
 .PHONY: install 
-install: pvemanager-mobile.js
-	install -d ${WWWTOUCHDIR}
-	install -m 0644 pvemanager-mobile.js ${WWWTOUCHDIR}
+install: pvemanager-mobile.js index.html.tpl pve.css
+	install -d $(WWWTOUCHDIR)
+	install -m 0644 index.html.tpl $(WWWTOUCHDIR)
+	install -m 0644 pve.css $(WWWTOUCHDIR)
+	install -m 0644 pvemanager-mobile.js $(WWWTOUCHDIR)
 
 .PHONY: clean
 clean:

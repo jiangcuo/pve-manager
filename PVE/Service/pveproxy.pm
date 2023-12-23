@@ -3,26 +3,25 @@ package PVE::Service::pveproxy;
 use strict;
 use warnings;
 
-use PVE::SafeSyslog;
-use PVE::Daemon;
-use HTTP::Response;
-use Encode;
-use URI;
-use URI::QueryParam;
 use Data::Dumper;
-use PVE::Cluster;
-use PVE::DataCenterConfig;
-use PVE::APIServer::Utils;
-use PVE::API2;
-use PVE::APIServer::Formatter;
-use PVE::APIServer::Formatter::Standard;
-use PVE::APIServer::Formatter::HTML;
-use PVE::APIServer::AnyEvent;
-use PVE::HTTPServer;
-use PVE::pvecfg;
-
+use Encode;
+use HTTP::Response;
 use Template;
+use URI::QueryParam;
+use URI;
 
+use PVE::API2;
+use PVE::APIServer::AnyEvent;
+use PVE::APIServer::Formatter::HTML;
+use PVE::APIServer::Formatter::Standard;
+use PVE::APIServer::Formatter;
+use PVE::APIServer::Utils;
+use PVE::Cluster;
+use PVE::Daemon;
+use PVE::DataCenterConfig;
+use PVE::HTTPServer;
+use PVE::SafeSyslog;
+use PVE::pvecfg;
 use PVE::Tools;
 
 use base qw(PVE::Daemon);
@@ -48,14 +47,16 @@ sub add_dirs {
 }
 
 my $basedirs = {
-    novnc => '/usr/share/novnc-pve',
-    extjs => '/usr/share/javascript/extjs',
-    manager => '/usr/share/pve-manager',
-    i18n => '/usr/share/pve-i18n',
     docs => '/usr/share/pve-docs',
+    extjs => '/usr/share/javascript/extjs',
     fontawesome => '/usr/share/fonts-font-awesome',
-    xtermjs => '/usr/share/pve-xtermjs',
+    fontlogos => '/usr/share/fonts-font-logos',
+    i18n => '/usr/share/pve-i18n',
+    manager => '/usr/share/pve-manager',
+    novnc => '/usr/share/novnc-pve',
+    sencha_touch => '/usr/share/javascript/sencha-touch',
     widgettoolkit => '/usr/share/javascript/proxmox-widget-toolkit',
+    xtermjs => '/usr/share/pve-xtermjs',
 };
 
 sub init {
@@ -74,20 +75,23 @@ sub init {
 
     my $dirs = {};
 
-    add_dirs($dirs, '/pve2/locale/', "$basedirs->{i18n}/");
-    add_dirs($dirs, '/pve2/touch/', "$basedirs->{manager}/touch/");
-    add_dirs($dirs, '/pve2/ext6/', "$basedirs->{extjs}/");
-    add_dirs($dirs, '/pve2/images/' =>  "$basedirs->{manager}/images/");
-    add_dirs($dirs, '/pve2/css/' =>  "$basedirs->{manager}/css/");
-    add_dirs($dirs, '/pve2/js/' =>  "$basedirs->{manager}/js/");
-    add_dirs($dirs, '/pve2/fa/fonts/' =>  "$basedirs->{fontawesome}/fonts/");
-    add_dirs($dirs, '/pve2/fa/css/' =>  "$basedirs->{fontawesome}/css/");
+    add_dirs($dirs, '/novnc/' => "$basedirs->{novnc}/");
     add_dirs($dirs, '/pve-docs/' => "$basedirs->{docs}/");
     add_dirs($dirs, '/pve-docs/api-viewer/extjs/' => "$basedirs->{extjs}/");
-    add_dirs($dirs, '/novnc/' => "$basedirs->{novnc}/");
-    add_dirs($dirs, '/xtermjs/' => "$basedirs->{xtermjs}/");
-    add_dirs($dirs, '/pwt/images/' => "$basedirs->{widgettoolkit}/images/");
+    add_dirs($dirs, '/pve2/css/' =>  "$basedirs->{manager}/css/");
+    add_dirs($dirs, '/pve2/ext6/', "$basedirs->{extjs}/");
+    add_dirs($dirs, '/pve2/fa/css/' =>  "$basedirs->{fontawesome}/css/");
+    add_dirs($dirs, '/pve2/fa/fonts/' =>  "$basedirs->{fontawesome}/fonts/");
+    add_dirs($dirs, '/pve2/font-logos/' =>  "$basedirs->{fontlogos}/");
+    add_dirs($dirs, '/pve2/images/' =>  "$basedirs->{manager}/images/");
+    add_dirs($dirs, '/pve2/js/' =>  "$basedirs->{manager}/js/");
+    add_dirs($dirs, '/pve2/locale/', "$basedirs->{i18n}/");
+    add_dirs($dirs, '/pve2/sencha-touch/', "$basedirs->{sencha_touch}/");
+    add_dirs($dirs, '/pve2/touch/', "$basedirs->{manager}/touch/");
     add_dirs($dirs, '/pwt/css/' => "$basedirs->{widgettoolkit}/css/");
+    add_dirs($dirs, '/pwt/images/' => "$basedirs->{widgettoolkit}/images/");
+    add_dirs($dirs, '/pwt/themes/' => "$basedirs->{widgettoolkit}/themes/");
+    add_dirs($dirs, '/xtermjs/' => "$basedirs->{xtermjs}/");
 
     $self->{server_config} = {
 	title => 'Proxmox VE API',
@@ -105,6 +109,7 @@ sub init {
 	policy => $proxyconf->{POLICY},
 	ssl => {
 	    cipher_list => $proxyconf->{CIPHERS},
+	    ciphersuites => $proxyconf->{CIPHERSUITES},
 	    key_file => '/etc/pve/local/pve-ssl.key',
 	    cert_file => '/etc/pve/local/pve-ssl.pem',
 	    honor_cipher_order => $proxyconf->{HONOR_CIPHER_ORDER},
@@ -120,6 +125,9 @@ sub init {
 	    '/proxmoxlib.js' => {
 		file => "$basedirs->{widgettoolkit}/proxmoxlib.js",
 	    },
+	    '/qrcode.min.js' => {
+		file => '/usr/share/javascript/qrcodejs/qrcode.min.js',
+	    },
 	},
 	dirs => $dirs,
     };
@@ -127,9 +135,19 @@ sub init {
     if (defined($proxyconf->{DHPARAMS})) {
 	$self->{server_config}->{ssl}->{dh_file} = $proxyconf->{DHPARAMS};
     }
-    if (-f '/etc/pve/local/pveproxy-ssl.pem' && -f '/etc/pve/local/pveproxy-ssl.key') {
+    if (defined($proxyconf->{DISABLE_TLS_1_2})) {
+	$self->{server_config}->{ssl}->{tlsv1_2} = !$proxyconf->{DISABLE_TLS_1_2};
+    }
+    if (defined($proxyconf->{DISABLE_TLS_1_3})) {
+	$self->{server_config}->{ssl}->{tlsv1_3} = !$proxyconf->{DISABLE_TLS_1_3};
+    }
+    my $custom_key_path = '/etc/pve/local/pveproxy-ssl.key';
+    if (defined($proxyconf->{TLS_KEY_FILE})) {
+	$custom_key_path = $proxyconf->{TLS_KEY_FILE};
+    }
+    if (-f '/etc/pve/local/pveproxy-ssl.pem' && -f $custom_key_path) {
 	$self->{server_config}->{ssl}->{cert_file} = '/etc/pve/local/pveproxy-ssl.pem';
-	$self->{server_config}->{ssl}->{key_file} = '/etc/pve/local/pveproxy-ssl.key';
+	$self->{server_config}->{ssl}->{key_file} = $custom_key_path;
 	syslog('info', 'Using \'/etc/pve/local/pveproxy-ssl.pem\' as certificate for the web interface.');
     }
 }
@@ -177,6 +195,7 @@ sub get_index {
     my $lang;
     my $username;
     my $token = 'null';
+    my $theme = "auto";
 
     if (my $cookie = $r->header('Cookie')) {
 	if (my $newlang = ($cookie =~ /(?:^|\s)PVELangCookie=([^;]*)/)[0]) {
@@ -184,6 +203,15 @@ sub get_index {
 		$lang = $newlang;
 	    }
 	}
+
+	if (my $newtheme = ($cookie =~ /(?:^|\s)PVEThemeCookie=([^;]*)/)[0]) {
+	    # theme names need to be kebab case, with each segment a maximum of 10 characters long
+	    # and at most 6 segments
+	    if ($newtheme =~ m/^[a-z]{1,10}(-[a-z]{1,10}){0,5}$/) {
+		$theme = $newtheme;
+	    }
+	}
+
 	my $ticket = PVE::APIServer::Formatter::extract_auth_value($cookie, $server->{cookie_name});
 	if (($username = PVE::AccessControl::verify_ticket($ticket, 1))) {
 	    $token = PVE::AccessControl::assemble_csrf_prevention_token($username);
@@ -195,33 +223,17 @@ sub get_index {
 	$lang = $dc_conf->{language} // 'en';
     }
 
-    $username = '' if !$username;
-
-    my $mobile = is_phone($r->header('User-Agent')) ? 1 : 0;
-
-    if (defined($args->{mobile})) {
-	$mobile = $args->{mobile} ? 1 : 0;
-    }
+    my $mobile = (is_phone($r->header('User-Agent')) && (!defined($args->{mobile}) || $args->{mobile})) || $args->{mobile};
 
     my $novnc = defined($args->{console}) && $args->{novnc};
     my $xtermjs = defined($args->{console}) && $args->{xtermjs};
 
-    my $page = '';
-    my $template = Template->new({ABSOLUTE => 1});
-
-    my $langfile = 0;
-
-    if (-f  "$basedirs->{i18n}/pve-lang-$lang.js") {
-	$langfile = 1;
-    }
+    my $langfile = -f "$basedirs->{i18n}/pve-lang-$lang.js" ? 1 : 0;
 
     my $version = PVE::pvecfg::version();
 
     my $wtversionraw = PVE::Tools::file_read_firstline("$basedirs->{widgettoolkit}/proxmoxlib.js");
-    my $wtversion;
-    if ($wtversionraw =~ m|^// (.*)$|) {
-	$wtversion = $1;
-    };
+    my $wtversion = $wtversionraw =~ m|^// (.*)$| ? $1 : '';
 
     my $debug = $server->{debug};
     if (exists $args->{debug}) {
@@ -231,13 +243,14 @@ sub get_index {
     my $vars = {
 	lang => $lang,
 	langfile => $langfile,
-	username => $username,
+	username => $username || '',
 	token => $token,
 	console => $args->{console},
 	nodename => $nodename,
 	debug => $debug,
 	version => "$version",
 	wtversion => $wtversion,
+	theme => $theme,
     };
 
     # by default, load the normal index
@@ -251,8 +264,11 @@ sub get_index {
 	$dir = "$basedirs->{manager}/touch";
     }
 
-    $template->process("$dir/index.html.tpl", $vars, \$page)
-	|| die $template->error(), "\n";
+    my $page = '';
+    my $template = Template->new({ABSOLUTE => 1});
+
+    $template->process("$dir/index.html.tpl", $vars, \$page) || die $template->error(), "\n";
+
     my $headers = HTTP::Headers->new(Content_Type => "text/html; charset=utf-8");
     my $resp = HTTP::Response->new(200, "OK", $headers, $page);
 

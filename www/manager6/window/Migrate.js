@@ -155,7 +155,7 @@ Ext.define('PVE.window.Migrate', {
 	    });
 	},
 
-	checkMigratePreconditions: function(resetMigrationPossible) {
+	checkMigratePreconditions: async function(resetMigrationPossible) {
 	    var me = this,
 		vm = me.getViewModel();
 
@@ -165,12 +165,13 @@ Ext.define('PVE.window.Migrate', {
 		vm.set('running', true);
 	    }
 
+	    me.lookup('pveNodeSelector').disallowedNodes = [vm.get('nodename')];
+
 	    if (vm.get('vmtype') === 'qemu') {
-		me.checkQemuPreconditions(resetMigrationPossible);
+		await me.checkQemuPreconditions(resetMigrationPossible);
 	    } else {
 		me.checkLxcPreconditions(resetMigrationPossible);
 	    }
-	    me.lookup('pveNodeSelector').disallowedNodes = [vm.get('nodename')];
 
 	    // Only allow nodes where the local storage is available in case of offline migration
 	    // where storage migration is not possible
@@ -218,33 +219,65 @@ Ext.define('PVE.window.Migrate', {
 		migration.allowedNodes = migrateStats.allowed_nodes;
 		let target = me.lookup('pveNodeSelector').value;
 		if (target.length && !migrateStats.allowed_nodes.includes(target)) {
-		    let disallowed = migrateStats.not_allowed_nodes[target];
-		    let missingStorages = disallowed.unavailable_storages.join(', ');
+		    let disallowed = migrateStats.not_allowed_nodes[target] ?? {};
+		    if (disallowed.unavailable_storages !== undefined) {
+			let missingStorages = disallowed.unavailable_storages.join(', ');
 
-		    migration.possible = false;
-		    migration.preconditions.push({
-			text: 'Storage (' + missingStorages + ') not available on selected target. ' +
-			  'Start VM to use live storage migration or select other target node',
-			severity: 'error',
-		    });
+			migration.possible = false;
+			migration.preconditions.push({
+			    text: 'Storage (' + missingStorages + ') not available on selected target. ' +
+			      'Start VM to use live storage migration or select other target node',
+			    severity: 'error',
+			});
+		    }
+
+		    if (disallowed['unavailable-resources'] !== undefined) {
+			let unavailableResources = disallowed['unavailable-resources'].join(', ');
+
+			migration.possible = false;
+			migration.preconditions.push({
+			    text: 'Mapped Resources (' + unavailableResources + ') not available on selected target. ',
+			    severity: 'error',
+			});
+		    }
 		}
 	    }
 
-	    if (migrateStats.local_resources.length) {
+	    let blockingResources = [];
+	    let mappedResources = migrateStats['mapped-resources'] ?? [];
+
+	    for (const res of migrateStats.local_resources) {
+		if (mappedResources.indexOf(res) === -1) {
+		    blockingResources.push(res);
+		}
+	    }
+
+	    if (blockingResources.length) {
 		migration.hasLocalResources = true;
 		if (!migration.overwriteLocalResourceCheck || vm.get('running')) {
 		    migration.possible = false;
 		    migration.preconditions.push({
 			text: Ext.String.format('Can\'t migrate VM with local resources: {0}',
-			migrateStats.local_resources.join(', ')),
+			blockingResources.join(', ')),
 			severity: 'error',
 		    });
 		} else {
 		    migration.preconditions.push({
 			text: Ext.String.format('Migrate VM with local resources: {0}. ' +
 			'This might fail if resources aren\'t available on the target node.',
-			migrateStats.local_resources.join(', ')),
+			blockingResources.join(', ')),
 			severity: 'warning',
+		    });
+		}
+	    }
+
+	    if (mappedResources && mappedResources.length) {
+		if (vm.get('running')) {
+		    migration.possible = false;
+		    migration.preconditions.push({
+			text: Ext.String.format('Can\'t migrate running VM with mapped resources: {0}',
+			mappedResources.join(', ')),
+			severity: 'error',
 		    });
 		}
 	    }
@@ -252,15 +285,7 @@ Ext.define('PVE.window.Migrate', {
 	    if (migrateStats.local_disks.length) {
 		migrateStats.local_disks.forEach(function(disk) {
 		    if (disk.cdrom && disk.cdrom === 1) {
-			if (disk.volid.includes('vm-' + vm.get('vmid') + '-cloudinit')) {
-			    if (migrateStats.running) {
-				migration.possible = false;
-				migration.preconditions.push({
-				     text: "Can't live migrate VM with local cloudinit disk, use shared storage instead",
-				     severity: 'error',
-				});
-			    }
-			} else {
+			if (!disk.volid.includes('vm-' + vm.get('vmid') + '-cloudinit')) {
 			    migration.possible = false;
 			    migration.preconditions.push({
 				text: "Can't migrate VM with local CD/DVD",

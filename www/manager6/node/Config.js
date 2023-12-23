@@ -34,46 +34,64 @@ Ext.define('PVE.node.Config', {
 	var actionBtn = Ext.create('Ext.Button', {
 	    text: gettext('Bulk Actions'),
 	    iconCls: 'fa fa-fw fa-ellipsis-v',
-	    disabled: !caps.nodes['Sys.PowerMgmt'],
+	    disabled: !caps.vms['VM.PowerMgmt'] && !caps.vms['VM.Migrate'],
 	    menu: new Ext.menu.Menu({
 		items: [
 		    {
 			text: gettext('Bulk Start'),
 			iconCls: 'fa fa-fw fa-play',
+			disabled: !caps.vms['VM.PowerMgmt'],
 			handler: function() {
-			    var win = Ext.create('PVE.window.BulkAction', {
+			    Ext.create('PVE.window.BulkAction', {
+				autoShow: true,
 				nodename: nodename,
 				title: gettext('Bulk Start'),
 				btnText: gettext('Start'),
 				action: 'startall',
 			    });
-			    win.show();
 			},
 		    },
 		    {
-			text: gettext('Bulk Stop'),
+			text: gettext('Bulk Shutdown'),
 			iconCls: 'fa fa-fw fa-stop',
+			disabled: !caps.vms['VM.PowerMgmt'],
 			handler: function() {
-			    var win = Ext.create('PVE.window.BulkAction', {
+			    Ext.create('PVE.window.BulkAction', {
+				autoShow: true,
 				nodename: nodename,
-				title: gettext('Bulk Stop'),
-				btnText: gettext('Stop'),
+				title: gettext('Bulk Shutdown'),
+				btnText: gettext('Shutdown'),
 				action: 'stopall',
 			    });
-			    win.show();
+			},
+		    },
+		    {
+			text: gettext('Bulk Suspend'),
+			iconCls: 'fa fa-fw fa-download',
+			disabled: !caps.vms['VM.PowerMgmt'],
+			handler: function() {
+			    Ext.create('PVE.window.BulkAction', {
+				autoShow: true,
+				nodename: nodename,
+				title: gettext('Bulk Suspend'),
+				btnText: gettext('Suspend'),
+				action: 'suspendall',
+			    });
 			},
 		    },
 		    {
 			text: gettext('Bulk Migrate'),
 			iconCls: 'fa fa-fw fa-send-o',
+			disabled: !caps.vms['VM.Migrate'],
+			hidden: PVE.Utils.isStandaloneNode(),
 			handler: function() {
-			    var win = Ext.create('PVE.window.BulkAction', {
+			    Ext.create('PVE.window.BulkAction', {
+				autoShow: true,
 				nodename: nodename,
 				title: gettext('Bulk Migrate'),
 				btnText: gettext('Migrate'),
 				action: 'migrateall',
 			    });
-			    win.show();
 			},
 		    },
 		],
@@ -129,7 +147,7 @@ Ext.define('PVE.node.Config', {
 		    itemId: 'summary',
 		},
 		{
-		    xtype: 'pveNotesView',
+		    xtype: 'pmxNotesView',
 		    title: gettext('Notes'),
 		    iconCls: 'fa fa-sticky-note-o',
 		    itemId: 'notes',
@@ -205,6 +223,15 @@ Ext.define('PVE.node.Config', {
 		    onlineHelp: 'sysadmin_network_configuration',
 		},
 		{
+		    xtype: 'proxmoxNodeOptionsView',
+		    title: gettext('Options'),
+		    iconCls: 'fa fa-gear',
+		    groups: ['services'],
+		    itemId: 'options',
+		    nodename: nodename,
+		    onlineHelp: 'proxmox_node_management',
+		},
+		{
 		    xtype: 'proxmoxNodeTimeView',
 		    title: gettext('Time'),
 		    itemId: 'time',
@@ -230,6 +257,7 @@ Ext.define('PVE.node.Config', {
 		    xtype: 'proxmoxNodeAPT',
 		    title: gettext('Updates'),
 		    iconCls: 'fa fa-refresh',
+		    expandedOnInit: true,
 		    disabled: !caps.nodes['Sys.Console'],
 		    // do we want to link to system updates instead?
 		    itemId: 'apt',
@@ -241,6 +269,16 @@ Ext.define('PVE.node.Config', {
 			nodename: nodename,
 		    },
 		    nodename: nodename,
+		});
+
+		me.items.push({
+		    xtype: 'proxmoxNodeAPTRepositories',
+		    title: gettext('Repositories'),
+		    iconCls: 'fa fa-files-o',
+		    itemId: 'aptrepositories',
+		    nodename: nodename,
+		    onlineHelp: 'sysadmin_package_repositories',
+		    groups: ['apt'],
 		});
 	    }
 	}
@@ -350,7 +388,7 @@ Ext.define('PVE.node.Config', {
 		},
 		{
 		    xtype: 'pveNodeCephPoolList',
-		    title: 'Pools',
+		    title: gettext('Pools'),
 		    iconCls: 'fa fa-sitemap',
 		    groups: ['ceph'],
 		    itemId: 'ceph-pools',
@@ -374,6 +412,8 @@ Ext.define('PVE.node.Config', {
 		    onlineHelp: 'chapter_pve_firewall',
 		    url: '/api2/extjs/nodes/' + nodename + '/firewall/log',
 		    itemId: 'firewall-fwlog',
+		    log_select_timespan: true,
+		    submitFormat: 'U',
 		},
 		{
 		    xtype: 'cephLogView',
@@ -390,10 +430,18 @@ Ext.define('PVE.node.Config', {
 	me.items.push(
 	    {
 		title: gettext('Task History'),
-		iconCls: 'fa fa-list',
+		iconCls: 'fa fa-list-alt',
 		itemId: 'tasks',
 		nodename: nodename,
 		xtype: 'proxmoxNodeTasks',
+		extraFilter: [
+		    {
+			xtype: 'pveGuestIDSelector',
+			fieldLabel: 'VMID',
+			allowBlank: true,
+			name: 'vmid',
+		    },
+		],
 	    },
 	    {
 		title: gettext('Subscription'),

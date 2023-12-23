@@ -1,12 +1,11 @@
-/* This state provider keeps part of the state inside
- * the browser history.
+/* This state provider keeps part of the state inside the browser history.
  *
- * We compress (shorten) url using dictionary based compression
- * i.e. use column separated list instead of url encoded hash:
- * #v\d*       version/format
- * :=          indicates string values
- * :\d+        lookup value in dictionary hash
- * #v1:=value1:5:=value2:=value3:...
+ * We compress (shorten) url using dictionary based compression, i.e., we use
+ * column separated list instead of url encoded hash:
+ *  #v\d*       version/format
+ *  :=          indicates string values
+ *  :\d+        lookup value in dictionary hash
+ *  #v1:=value1:5:=value2:=value3:...
 */
 
 Ext.define('PVE.StateProvider', {
@@ -48,6 +47,7 @@ Ext.define('PVE.StateProvider', {
     hprefix: 'v1',
 
     compDict: {
+        tfa: 54,
 	sdn: 53,
 	cloudinit: 52,
 	replication: 51,

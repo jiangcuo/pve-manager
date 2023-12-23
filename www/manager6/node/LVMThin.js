@@ -24,6 +24,7 @@ Ext.define('PVE.node.CreateLVMThin', {
 		    name: 'device',
 		    nodename: me.nodename,
 		    diskType: 'unused',
+		    includePartitions: true,
 		    fieldLabel: gettext('Disk'),
 		    allowBlank: false,
 		},
@@ -50,7 +51,47 @@ Ext.define('PVE.node.LVMThinList', {
     extend: 'Ext.grid.Panel',
     xtype: 'pveLVMThinList',
 
-    emptyText: gettext('No thinpools found'),
+    viewModel: {
+	data: {
+	    thinPool: '',
+	    volumeGroup: '',
+	},
+    },
+
+    controller: {
+	xclass: 'Ext.app.ViewController',
+
+	destroyThinPool: function() {
+	    let me = this;
+	    let vm = me.getViewModel();
+	    let view = me.getView();
+
+	    const thinPool = vm.get('thinPool');
+	    const volumeGroup = vm.get('volumeGroup');
+
+	    if (!view.nodename) {
+		throw "no node name specified";
+	    }
+
+	    if (!thinPool) {
+		throw "no thin pool specified";
+	    }
+
+	    if (!volumeGroup) {
+		throw "no volume group specified";
+	    }
+
+	    Ext.create('PVE.window.SafeDestroyStorage', {
+		url: `/nodes/${view.nodename}/disks/lvmthin/${thinPool}`,
+		params: { 'volume-group': volumeGroup },
+		item: { id: `${volumeGroup}/${thinPool}` },
+		taskName: 'lvmthinremove',
+		taskDone: () => { view.reload(); },
+	    }).show();
+	},
+    },
+
+    emptyText: PVE.Utils.renderNotFound('Thin-Pool'),
 
     stateful: true,
     stateId: 'grid-node-lvmthin',
@@ -63,6 +104,11 @@ Ext.define('PVE.node.LVMThinList', {
 	    text: gettext('Name'),
 	    dataIndex: 'lv',
 	    flex: 1,
+	},
+	{
+	    header: 'Volume Group',
+	    width: 110,
+	    dataIndex: 'vg',
 	},
 	{
 	    header: gettext('Usage'),
@@ -137,6 +183,51 @@ Ext.define('PVE.node.LVMThinList', {
 		});
 	    },
 	},
+	'->',
+	{
+	    xtype: 'tbtext',
+	    data: {
+		thinPool: undefined,
+		volumeGroup: undefined,
+	    },
+	    bind: {
+		data: {
+		    thinPool: "{thinPool}",
+		    volumeGroup: "{volumeGroup}",
+		},
+	    },
+	    tpl: [
+		'<tpl if="thinPool">',
+		'<tpl if="volumeGroup">',
+		'Thinpool {volumeGroup}/{thinPool}:',
+		'<tpl else>', // volumeGroup
+		'Missing volume group (node running old version?)',
+		'</tpl>',
+		'<tpl else>', // thinPool
+		Ext.String.format(gettext('No {0} selected'), 'thinpool'),
+		'</tpl>',
+	    ],
+	},
+	{
+	    text: gettext('More'),
+	    iconCls: 'fa fa-bars',
+	    disabled: true,
+	    bind: {
+		disabled: '{!volumeGroup || !thinPool}',
+	    },
+	    menu: [
+		{
+		    text: gettext('Destroy'),
+		    itemId: 'remove',
+		    iconCls: 'fa fa-fw fa-trash-o',
+		    handler: 'destroyThinPool',
+		    disabled: true,
+		    bind: {
+			disabled: '{!volumeGroup || !thinPool}',
+		    },
+		},
+	    ],
+	},
     ],
 
     reload: function() {
@@ -148,6 +239,13 @@ Ext.define('PVE.node.LVMThinList', {
     listeners: {
 	activate: function() {
 	    this.reload();
+	},
+	selectionchange: function(model, selected) {
+	    let me = this;
+	    let vm = me.getViewModel();
+
+	    vm.set('volumeGroup', selected[0]?.data.vg || '');
+	    vm.set('thinPool', selected[0]?.data.lv || '');
 	},
     },
 

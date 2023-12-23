@@ -34,7 +34,7 @@ Ext.define('PVE.form.FWMacroSelector', {
 	    },
 	    sorters: {
 		property: 'macro',
-		order: 'DESC',
+		direction: 'ASC',
 	    },
 	});
 
@@ -44,6 +44,107 @@ Ext.define('PVE.form.FWMacroSelector', {
 
 	me.callParent();
     },
+});
+
+Ext.define('PVE.form.ICMPTypeSelector', {
+    extend: 'Proxmox.form.ComboGrid',
+    alias: 'widget.pveICMPTypeSelector',
+    allowBlank: true,
+    autoSelect: false,
+    valueField: 'name',
+    displayField: 'name',
+    listConfig: {
+	columns: [
+	    {
+		header: gettext('Type'),
+		dataIndex: 'type',
+		hideable: false,
+		sortable: false,
+		width: 50,
+	    },
+	    {
+		header: gettext('Name'),
+		dataIndex: 'name',
+		hideable: false,
+		sortable: false,
+		flex: 1,
+	    },
+	],
+    },
+    setName: function(value) {
+	this.name = value;
+    },
+});
+
+let ICMP_TYPE_NAMES_STORE = Ext.create('Ext.data.Store', {
+    field: ['type', 'name'],
+    data: [
+	{ type: 'any', name: 'any' },
+	{ type: '0', name: 'echo-reply' },
+	{ type: '3', name: 'destination-unreachable' },
+	{ type: '3/0', name: 'network-unreachable' },
+	{ type: '3/1', name: 'host-unreachable' },
+	{ type: '3/2', name: 'protocol-unreachable' },
+	{ type: '3/3', name: 'port-unreachable' },
+	{ type: '3/4', name: 'fragmentation-needed' },
+	{ type: '3/5', name: 'source-route-failed' },
+	{ type: '3/6', name: 'network-unknown' },
+	{ type: '3/7', name: 'host-unknown' },
+	{ type: '3/9', name: 'network-prohibited' },
+	{ type: '3/10', name: 'host-prohibited' },
+	{ type: '3/11', name: 'TOS-network-unreachable' },
+	{ type: '3/12', name: 'TOS-host-unreachable' },
+	{ type: '3/13', name: 'communication-prohibited' },
+	{ type: '3/14', name: 'host-precedence-violation' },
+	{ type: '3/15', name: 'precedence-cutoff' },
+	{ type: '4', name: 'source-quench' },
+	{ type: '5', name: 'redirect' },
+	{ type: '5/0', name: 'network-redirect' },
+	{ type: '5/1', name: 'host-redirect' },
+	{ type: '5/2', name: 'TOS-network-redirect' },
+	{ type: '5/3', name: 'TOS-host-redirect' },
+	{ type: '8', name: 'echo-request' },
+	{ type: '9', name: 'router-advertisement' },
+	{ type: '10', name: 'router-solicitation' },
+	{ type: '11', name: 'time-exceeded' },
+	{ type: '11/0', name: 'ttl-zero-during-transit' },
+	{ type: '11/1', name: 'ttl-zero-during-reassembly' },
+	{ type: '12', name: 'parameter-problem' },
+	{ type: '12/0', name: 'ip-header-bad' },
+	{ type: '12/1', name: 'required-option-missing' },
+	{ type: '13', name: 'timestamp-request' },
+	{ type: '14', name: 'timestamp-reply' },
+	{ type: '17', name: 'address-mask-request' },
+	{ type: '18', name: 'address-mask-reply' },
+    ],
+});
+let ICMPV6_TYPE_NAMES_STORE = Ext.create('Ext.data.Store', {
+    field: ['type', 'name'],
+    data: [
+	{ type: '1', name: 'destination-unreachable' },
+	{ type: '1/0', name: 'no-route' },
+	{ type: '1/1', name: 'communication-prohibited' },
+	{ type: '1/2', name: 'beyond-scope' },
+	{ type: '1/3', name: 'address-unreachable' },
+	{ type: '1/4', name: 'port-unreachable' },
+	{ type: '1/5', name: 'failed-policy' },
+	{ type: '1/6', name: 'reject-route' },
+	{ type: '2', name: 'packet-too-big' },
+	{ type: '3', name: 'time-exceeded' },
+	{ type: '3/0', name: 'ttl-zero-during-transit' },
+	{ type: '3/1', name: 'ttl-zero-during-reassembly' },
+	{ type: '4', name: 'parameter-problem' },
+	{ type: '4/0', name: 'bad-header' },
+	{ type: '4/1', name: 'unknown-header-type' },
+	{ type: '4/2', name: 'unknown-option' },
+	{ type: '128', name: 'echo-request' },
+	{ type: '129', name: 'echo-reply' },
+	{ type: '133', name: 'router-solicitation' },
+	{ type: '134', name: 'router-advertisement' },
+	{ type: '135', name: 'neighbour-solicitation' },
+	{ type: '136', name: 'neighbour-advertisement' },
+	{ type: '137', name: 'redirect' },
+    ],
 });
 
 Ext.define('PVE.FirewallRulePanel', {
@@ -59,7 +160,7 @@ Ext.define('PVE.FirewallRulePanel', {
 	// hack: editable ComboGrid returns nothing when empty, so we need to set ''
 	// Also, disabled text fields return nothing, so we need to set ''
 
-	Ext.Array.each(['source', 'dest', 'macro', 'proto', 'sport', 'dport', 'log'], function(key) {
+	Ext.Array.each(['source', 'dest', 'macro', 'proto', 'sport', 'dport', 'icmp-type', 'log'], function(key) {
 	    if (values[key] === undefined) {
 		values[key] = '';
 	    }
@@ -133,7 +234,6 @@ Ext.define('PVE.FirewallRulePanel', {
 		autoSelect: false,
 		editable: true,
 		base_url: me.list_refs_url,
-		value: '',
 		fieldLabel: gettext('Source'),
 		maxLength: 512,
 		maxLengthText: gettext('Too long, consider using IP sets.'),
@@ -144,7 +244,6 @@ Ext.define('PVE.FirewallRulePanel', {
 		autoSelect: false,
 		editable: true,
 		base_url: me.list_refs_url,
-		value: '',
 		fieldLabel: gettext('Destination'),
 		maxLength: 512,
 		maxLengthText: gettext('Too long, consider using IP sets.'),
@@ -190,6 +289,32 @@ Ext.define('PVE.FirewallRulePanel', {
 		editable: true,
 		value: '',
 		fieldLabel: gettext('Protocol'),
+		listeners: {
+		    change: function(f, value) {
+			if (value === 'icmp' || value === 'icmpv6' || value === 'ipv6-icmp') {
+			    me.down('field[name=dport]').setHidden(true);
+			    me.down('field[name=dport]').setDisabled(true);
+			    if (value === 'icmp') {
+				me.down('#icmpv4-type').setHidden(false);
+				me.down('#icmpv4-type').setDisabled(false);
+				me.down('#icmpv6-type').setHidden(true);
+				me.down('#icmpv6-type').setDisabled(true);
+			    } else {
+				me.down('#icmpv6-type').setHidden(false);
+				me.down('#icmpv6-type').setDisabled(false);
+				me.down('#icmpv4-type').setHidden(true);
+				me.down('#icmpv4-type').setDisabled(true);
+			    }
+			} else {
+			    me.down('#icmpv4-type').setHidden(true);
+			    me.down('#icmpv4-type').setDisabled(true);
+			    me.down('#icmpv6-type').setHidden(true);
+			    me.down('#icmpv6-type').setDisabled(true);
+			    me.down('field[name=dport]').setHidden(false);
+			    me.down('field[name=dport]').setDisabled(false);
+			}
+		    },
+		},
 	    },
 	    {
 		xtype: 'displayfield',
@@ -208,6 +333,30 @@ Ext.define('PVE.FirewallRulePanel', {
 		name: 'dport',
 		value: '',
 		fieldLabel: gettext('Dest. port'),
+	    },
+	    {
+		xtype: 'pveICMPTypeSelector',
+		name: 'icmp-type',
+		id: 'icmpv4-type',
+		autoSelect: false,
+		editable: true,
+		hidden: true,
+		disabled: true,
+		value: '',
+		fieldLabel: gettext('ICMP type'),
+		store: ICMP_TYPE_NAMES_STORE,
+	    },
+	    {
+		xtype: 'pveICMPTypeSelector',
+		name: 'icmp-type',
+		id: 'icmpv6-type',
+		autoSelect: false,
+		editable: true,
+		hidden: true,
+		disabled: true,
+		value: '',
+		fieldLabel: gettext('ICMP type'),
+		store: ICMPV6_TYPE_NAMES_STORE,
 	    },
 	];
 
@@ -278,6 +427,10 @@ Ext.define('PVE.FirewallRuleEdit', {
 		success: function(response, options) {
 		    var values = response.result.data;
 		    ipanel.setValues(values);
+		    // set icmp-type again after protocol has been set
+		    if (values["icmp-type"] !== undefined) {
+			ipanel.setValues({ "icmp-type": values["icmp-type"] });
+		    }
 		    if (values.errors) {
 			var field = me.query('[isFormField][name=modified_marker]')[0];
 			field.setValue(1);
@@ -414,11 +567,14 @@ Ext.define('PVE.FirewallRules', {
 	    }
 	    me.store.removeAll();
 	} else {
-	    me.addBtn.setDisabled(false);
-	    me.removeBtn.baseurl = url + '/';
-	    if (me.groupBtn) {
-		me.groupBtn.setDisabled(false);
+	    if (me.canEdit) {
+		me.addBtn.setDisabled(false);
+		if (me.groupBtn) {
+		    me.groupBtn.setDisabled(false);
+		}
 	    }
+	    me.removeBtn.baseurl = url + '/';
+
 	    me.store.setProxy({
 		type: 'proxmox',
 		url: '/api2/json' + url,
@@ -494,9 +650,12 @@ Ext.define('PVE.FirewallRules', {
 
 	var sm = Ext.create('Ext.selection.RowModel', {});
 
+	me.caps = Ext.state.Manager.get('GuiCap');
+	me.canEdit = !!me.caps.vms['VM.Config.Network'] || !!me.caps.dc['Sys.Modify'] || !!me.caps.nodes['Sys.Modify'];
+
 	var run_editor = function() {
 	    var rec = sm.getSelection()[0];
-	    if (!rec) {
+	    if (!rec || !me.canEdit) {
 		return;
 	    }
 	    var type = rec.data.type;
@@ -525,6 +684,7 @@ Ext.define('PVE.FirewallRules', {
 	me.editBtn = Ext.create('Proxmox.button.Button', {
 	    text: gettext('Edit'),
 	    disabled: true,
+	    enableFn: rec => me.canEdit,
 	    selModel: sm,
 	    handler: run_editor,
 	});
@@ -566,7 +726,7 @@ Ext.define('PVE.FirewallRules', {
 	me.copyBtn = Ext.create('Proxmox.button.Button', {
 	    text: gettext('Copy'),
 	    selModel: sm,
-	    enableFn: ({ data }) => data.type === 'in' || data.type === 'out',
+	    enableFn: ({ data }) => (data.type === 'in' || data.type === 'out') && me.canEdit,
 	    disabled: true,
 	    handler: run_copy_editor,
 	});
@@ -588,6 +748,7 @@ Ext.define('PVE.FirewallRules', {
 	}
 
 	me.removeBtn = Ext.create('Proxmox.button.StdRemoveButton', {
+	    enableFn: rec => me.canEdit,
 	    selModel: sm,
 	    baseurl: me.base_url + '/',
 	    confirmMsg: false,
@@ -623,19 +784,19 @@ Ext.define('PVE.FirewallRules', {
 		// similar to xtype: 'rownumberer',
 		dataIndex: 'pos',
 		resizable: false,
-		minWidth: 42,
-		maxWidth: 60,
+		minWidth: 65,
+		maxWidth: 83,
 		flex: 1,
 		sortable: false,
-		align: 'right',
 		hideable: false,
 		menuDisabled: true,
 		renderer: function(value, metaData, record, rowIdx, colIdx) {
 		    metaData.tdCls = Ext.baseCSSPrefix + 'grid-cell-special';
+		    let dragHandle = "<i class='pve-grid-fa fa fa-fw fa-reorder cursor-move'></i>";
 		    if (value >= 0) {
-			return value;
+			return dragHandle + value;
 		    }
-		    return '';
+		    return dragHandle;
 		},
 	    },
 	    {

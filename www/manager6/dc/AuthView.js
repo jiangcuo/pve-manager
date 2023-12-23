@@ -44,7 +44,7 @@ Ext.define('PVE.dc.AuthView', {
 	model: 'pmx-domains',
 	sorters: {
 	    property: 'realm',
-	    order: 'DESC',
+	    direction: 'ASC',
 	},
     },
 
@@ -93,9 +93,9 @@ Ext.define('PVE.dc.AuthView', {
 	let items = [];
 	for (const [authType, config] of Object.entries(PVE.Utils.authSchema)) {
 	    if (!config.add) { continue; }
-
 	    items.push({
 		text: config.name,
+		iconCls: 'fa fa-fw ' + (config.iconCls || 'fa-address-book-o'),
 		handler: () => me.openEditWindow(authType),
 	    });
 	}
@@ -130,11 +130,11 @@ Ext.define('PVE.dc.AuthView', {
 		},
 	    ],
 	    listeners: {
-		activate: () => me.reload(),
 		itemdblclick: () => me.run_editor(),
 	    },
 	});
 
 	me.callParent();
+	me.reload();
     },
 });

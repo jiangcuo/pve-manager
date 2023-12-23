@@ -158,6 +158,8 @@ Ext.define('PVE.StdWorkspace', {
 		},
 	    });
 
+	    PVE.UIOptions.update();
+
 	    Proxmox.Utils.API2Request({
 		url: '/cluster/sdn',
 		method: 'GET',
@@ -170,6 +172,23 @@ Ext.define('PVE.StdWorkspace', {
 		    if (ui) {
 			ui.addCls('x-hidden-display');
 		    }
+		},
+	    });
+
+	    Proxmox.Utils.API2Request({
+		url: '/access/domains',
+		method: 'GET',
+		success: function(response) {
+		    let [_username, realm] = Proxmox.Utils.parse_userid(Proxmox.UserName);
+		    response.result.data.forEach((domain) => {
+			if (domain.realm === realm) {
+			    let schema = PVE.Utils.authSchema[domain.type];
+			    if (schema) {
+				me.query('#tfaitem')[0].setHidden(!schema.tfa);
+				me.query('#passworditem')[0].setHidden(!schema.pwchange);
+			    }
+			}
+		    });
 		},
 	    });
 	}
@@ -204,7 +223,10 @@ Ext.define('PVE.StdWorkspace', {
 	let appState = Ext.create('PVE.StateProvider');
 	Ext.state.Manager.setProvider(appState);
 
-	let selview = Ext.create('PVE.form.ViewSelector');
+	let selview = Ext.create('PVE.form.ViewSelector', {
+	    flex: 1,
+	    padding: '0 5 0 0',
+	});
 
 	let rtree = Ext.createWidget('pveResourceTree', {
 	    viewFilter: selview.getViewFilter(),
@@ -221,7 +243,7 @@ Ext.define('PVE.StdWorkspace', {
 			    root: 'PVE.dc.Config',
 			    node: 'PVE.node.Config',
 			    qemu: 'PVE.qemu.Config',
-			    lxc: 'PVE.lxc.Config',
+			    lxc: 'pveLXCConfig',
 			    storage: 'PVE.storage.Browser',
 			    sdn: 'PVE.sdn.Browser',
 			    pool: 'pvePoolConfig',
@@ -288,6 +310,8 @@ Ext.define('PVE.StdWorkspace', {
 	    items: [
 		{
 		    region: 'north',
+		    title: gettext('Header'), // for ARIA
+		    header: false, // avoid rendering the title
 		    layout: {
 			type: 'hbox',
 			align: 'middle',
@@ -306,6 +330,10 @@ Ext.define('PVE.StdWorkspace', {
 			    minWidth: 150,
 			    id: 'versioninfo',
 			    html: 'Virtual Environment',
+			    style: {
+				'font-size': '14px',
+				'line-height': '18px',
+			    },
 			},
 			{
 			    xtype: 'pveGlobalSearchField',
@@ -352,6 +380,7 @@ Ext.define('PVE.StdWorkspace', {
 				},
 				{
 				    text: gettext('Password'),
+				    itemId: 'passworditem',
 				    iconCls: 'fa fa-fw fa-key',
 				    handler: function() {
 					var win = Ext.create('Proxmox.window.PasswordEdit', {
@@ -362,12 +391,19 @@ Ext.define('PVE.StdWorkspace', {
 				},
 				{
 				    text: 'TFA',
+				    itemId: 'tfaitem',
 				    iconCls: 'fa fa-fw fa-lock',
 				    handler: function(btn, event, rec) {
-					var win = Ext.create('PVE.window.TFAEdit', {
-					    userid: Proxmox.UserName,
-					});
-					win.show();
+					Ext.state.Manager.getProvider().set('dctab', { value: 'tfa' }, true);
+					me.selectById('root');
+				    },
+				},
+				{
+				    iconCls: 'fa fa-paint-brush',
+				    text: gettext('Color Theme'),
+				    handler: function() {
+					Ext.create('Proxmox.window.ThemeEditWindow')
+					    .show();
 				    },
 				},
 				{
@@ -426,12 +462,33 @@ Ext.define('PVE.StdWorkspace', {
 		    layout: { type: 'vbox', align: 'stretch' },
 		    margin: '0 0 0 5',
 		    split: true,
-		    width: 200,
-		    items: [selview, rtree],
+		    width: 300,
+		    items: [
+			{
+			    xtype: 'container',
+			    layout: 'hbox',
+			    padding: '0 0 5 0',
+			    items: [
+				selview,
+				{
+				    xtype: 'button',
+				    cls: 'x-btn-default-toolbar-small',
+				    iconCls: 'fa fa-fw fa-gear x-btn-icon-el-default-toolbar-small',
+				    handler: () => {
+					Ext.create('PVE.window.TreeSettingsEdit', {
+					    autoShow: true,
+					    apiCallDone: () => PVE.UIOptions.fireUIConfigChanged(),
+					});
+				    },
+				},
+			    ],
+			},
+			rtree,
+		    ],
 		    listeners: {
 			resize: function(panel, width, height) {
 			    var viewWidth = me.getSize().width;
-			    if (width > viewWidth - 100) {
+			    if (width > viewWidth - 100 && viewWidth > 150) {
 				panel.setWidth(viewWidth - 100);
 			    }
 			},
@@ -452,7 +509,7 @@ Ext.define('PVE.StdWorkspace', {
 		    listeners: {
 			resize: function(panel, width, height) {
 			    var viewHeight = me.getSize().height;
-			    if (height > viewHeight - 150) {
+			    if (height > viewHeight - 150 && viewHeight > 200) {
 				panel.setHeight(viewHeight - 150);
 			    }
 			},
@@ -471,6 +528,35 @@ Ext.define('PVE.StdWorkspace', {
 	    if (modalWindows.length > 0) {
 		modalWindows.forEach(win => win.alignTo(me, 'c-c'));
 	    }
+	});
+
+	let tagSelectors = [];
+	['circle', 'dense'].forEach((style) => {
+	    ['dark', 'light'].forEach((variant) => {
+		tagSelectors.push(`.proxmox-tags-${style} .proxmox-tag-${variant}`);
+	    });
+	});
+
+	Ext.create('Ext.tip.ToolTip', {
+	    target: me.el,
+	    delegate: tagSelectors.join(', '),
+	    trackMouse: true,
+	    renderTo: Ext.getBody(),
+	    border: 0,
+	    minWidth: 0,
+	    padding: 0,
+	    bodyBorder: 0,
+	    bodyPadding: 0,
+	    dismissDelay: 0,
+	    userCls: 'pmx-tag-tooltip',
+	    shadow: false,
+	    listeners: {
+		beforeshow: function(tip) {
+		    let tag = Ext.htmlEncode(tip.triggerElement.innerHTML);
+		    let tagEl = Proxmox.Utils.getTagElement(tag, PVE.UIOptions.tagOverrides);
+		    tip.update(`<span class="proxmox-tags-full">${tagEl}</span>`);
+		},
+	    },
 	});
     },
 });

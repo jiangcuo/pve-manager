@@ -2,8 +2,8 @@ Ext.define('PVE.node.StatusView', {
     extend: 'Proxmox.panel.StatusView',
     alias: 'widget.pveNodeStatus',
 
-    height: 300,
-    bodyPadding: '20 15 20 15',
+    height: 350,
+    bodyPadding: '15 5 15 5',
 
     layout: {
 	type: 'table',
@@ -17,7 +17,7 @@ Ext.define('PVE.node.StatusView', {
 
     defaults: {
 	xtype: 'pmxInfoWidget',
-	padding: '0 15 5 15',
+	padding: '0 10 5 10',
     },
 
     items: [
@@ -64,12 +64,12 @@ Ext.define('PVE.node.StatusView', {
 	    renderer: function(record) {
 		return Proxmox.Utils.render_size(record.shared);
 	    },
-	    padding: '0 15 10 15',
+	    padding: '0 10 10 10',
 	},
 	{
 	    iconCls: 'fa fa-fw fa-hdd-o',
 	    itemId: 'rootfs',
-	    title: gettext('HD space') + '(root)',
+	    title: '/ ' + gettext('HD space'),
 	    valueField: 'rootfs',
 	    maxField: 'rootfs',
 	    renderer: Proxmox.Utils.render_node_size_usage,
@@ -98,18 +98,42 @@ Ext.define('PVE.node.StatusView', {
 	    value: '',
 	},
 	{
-	    itemId: 'kversion',
 	    colspan: 2,
 	    title: gettext('Kernel Version'),
 	    printBar: false,
-	    textField: 'kversion',
+	    // TODO: remove with next major and only use newish current-kernel textfield
+	    multiField: true,
+	    //textField: 'current-kernel',
+	    renderer: ({ data }) => {
+		if (!data['current-kernel']) {
+		    return data.kversion;
+		}
+		let kernel = data['current-kernel'];
+		let buildDate = kernel.version.match(/\((.+)\)\s*$/)[1] ?? 'unknown';
+		return `${kernel.sysname} ${kernel.release} (${buildDate})`;
+	    },
+	    value: '',
+	},
+	{
+	    colspan: 2,
+	    title: gettext('Boot Mode'),
+	    printBar: false,
+	    textField: 'boot-info',
+	    renderer: boot => {
+		if (boot.mode === 'legacy-bios') {
+		    return 'Legacy BIOS';
+		} else if (boot.mode === 'efi') {
+		    return `EFI${boot.secureboot ? ' (Secure Boot)' : ''}`;
+		}
+		return Proxmox.Utils.unknownText;
+	    },
 	    value: '',
 	},
 	{
 	    itemId: 'version',
 	    colspan: 2,
 	    printBar: false,
-	    title: gettext('PVE Manager Version'),
+	    title: gettext('Manager Version'),
 	    textField: 'pveversion',
 	    value: '',
 	},
@@ -121,4 +145,24 @@ Ext.define('PVE.node.StatusView', {
 	me.setTitle(me.pveSelNode.data.node + ' (' + gettext('Uptime') + ': ' + uptime + ')');
     },
 
+    initComponent: function() {
+	let me = this;
+
+	let stateProvider = Ext.state.Manager.getProvider();
+	let repoLink = stateProvider.encodeHToken({
+	    view: "server",
+	    rid: `node/${me.pveSelNode.data.node}`,
+	    ltab: "tasks",
+	    nodetab: "aptrepositories",
+	});
+
+	me.items.push({
+	    xtype: 'pmxNodeInfoRepoStatus',
+	    itemId: 'repositoryStatus',
+	    product: 'Proxmox VE',
+	    repoLink: `#${repoLink}`,
+	});
+
+	me.callParent();
+    },
 });

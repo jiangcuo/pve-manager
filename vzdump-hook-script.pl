@@ -11,15 +11,30 @@ print "HOOK: " . join (' ', @ARGV) . "\n";
 
 my $phase = shift;
 
-if ($phase eq 'job-start' ||
+if ($phase eq 'job-init' ||
+    $phase eq 'job-start' ||
     $phase eq 'job-end'  ||
     $phase eq 'job-abort') {
 
+    # undef for Proxmox Backup Server storages
+    # undef in phase 'job-init' except when --dumpdir is used directly
     my $dumpdir = $ENV{DUMPDIR};
 
+    # undef when --dumpdir is used directly
     my $storeid = $ENV{STOREID};
 
-    print "HOOK-ENV: dumpdir=$dumpdir;storeid=$storeid\n";
+    print "HOOK-ENV: ";
+    print "dumpdir=$dumpdir;" if defined($dumpdir);
+    print "storeid=$storeid;" if defined($storeid);
+    print "\n";
+
+    # example: wake up remote storage node and enable storage
+    if ($phase eq 'job-init') {
+	#system("wakeonlan AA:BB:CC:DD:EE:FF");
+	#sleep(30);
+	#system ("/sbin/pvesm set $storeid --disable 0") == 0 ||
+	#    die "enabling storage $storeid failed";
+    }
 
     # do what you want
 
@@ -37,8 +52,10 @@ if ($phase eq 'job-start' ||
 
     my $vmtype = $ENV{VMTYPE}; # lxc/qemu
 
+    # undef for Proxmox Backup Server storages
     my $dumpdir = $ENV{DUMPDIR};
 
+    # undef when --dumpdir is used directly
     my $storeid = $ENV{STOREID};
 
     my $hostname = $ENV{HOSTNAME};
@@ -47,9 +64,14 @@ if ($phase eq 'job-start' ||
     my $target = $ENV{TARGET};
 
     # logfile is only available in phase 'log-end'
+    # undef for Proxmox Backup Server storages
     my $logfile = $ENV{LOGFILE};
 
-    print "HOOK-ENV: vmtype=$vmtype;dumpdir=$dumpdir;storeid=$storeid;hostname=$hostname;target=$target;logfile=$logfile\n";
+    print "HOOK-ENV: ";
+    for my $var (qw(vmtype dumpdir storeid hostname target logfile)) {
+	print "$var=$ENV{uc($var)};" if defined($ENV{uc($var)});
+    }
+    print "\n";
 
     # example: copy resulting backup file to another host using scp
     if ($phase eq 'backup-end') {

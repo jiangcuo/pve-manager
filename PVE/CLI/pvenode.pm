@@ -36,7 +36,7 @@ my $upid_exit = sub {
     my $upid = shift;
     my $status = PVE::Tools::upid_read_status($upid);
     print "Task $status\n";
-    exit($status eq 'OK' ? 0 : -1);
+    exit(PVE::Tools::upid_status_is_error($status) ? -1 : 0);
 };
 
 sub param_mapping {
@@ -83,6 +83,7 @@ __PACKAGE__->register_method({
     code => sub {
 	my ($param) = @_;
 
+	my $custom_directory = 0;
 	if (!$param->{directory}) {
 	    my $directories = PVE::API2::ACMEAccount->get_directories({});
 	    print "Directory endpoints:\n";
@@ -100,6 +101,7 @@ __PACKAGE__->register_method({
 		    $selection = $1;
 		    if ($selection == $i) {
 			$param->{directory} = $term->readline("Enter custom URL: ");
+			$custom_directory = 1;
 			return;
 		    } elsif ($selection < $i && $selection >= 0) {
 			$param->{directory} = $directories->[$selection]->{url};
@@ -117,8 +119,9 @@ __PACKAGE__->register_method({
 	    }
 	}
 	print "\nAttempting to fetch Terms of Service from '$param->{directory}'..\n";
-	my $tos = PVE::API2::ACMEAccount->get_tos({ directory => $param->{directory} });
-	if ($tos) {
+	my $meta = PVE::API2::ACMEAccount->get_meta({ directory => $param->{directory} });
+	if ($meta->{termsOfService}) {
+	    my $tos = $meta->{termsOfService};
 	    print "Terms of Service: $tos\n";
 	    my $term = Term::ReadLine->new('pvenode');
 	    my $agreed = $term->readline('Do you agree to the above terms? [y|N]: ');
@@ -129,6 +132,25 @@ __PACKAGE__->register_method({
 	} else {
 	    print "No Terms of Service found, proceeding.\n";
 	}
+
+	my $eab_enabled = $meta->{externalAccountRequired};
+	if (!$eab_enabled && $custom_directory) {
+	    my $term = Term::ReadLine->new('pvenode');
+	    my $agreed = $term->readline('Do you want to use external account binding? [y|N]: ');
+	    $eab_enabled = ($agreed =~ /^y$/i);
+	} elsif ($eab_enabled) {
+	    print "The CA requires external account binding.\n";
+	}
+	if ($eab_enabled) {
+	    print "You should have received a key id and a key from your CA.\n";
+	    my $term = Term::ReadLine->new('pvenode');
+	    my $eab_kid = $term->readline('Enter EAB key id: ');
+	    my $eab_hmac_key = $term->readline('Enter EAB key: ');
+
+	    $param->{'eab-kid'} = $eab_kid;
+	    $param->{'eab-hmac-key'} = $eab_hmac_key;
+	}
+
 	print "\nAttempting to register account with '$param->{directory}'..\n";
 
 	$upid_exit->(PVE::API2::ACMEAccount->register_account($param));
@@ -181,7 +203,10 @@ our $cmddef = {
 	    foreach my $task (@$data) {
 		if (!defined($task->{status})) {
 		    $task->{status} = 'UNKNOWN';
-		} elsif ($task->{status} ne 'OK' && $task->{status} ne 'RUNNING') {
+		# RUNNING is set by the API call and needs to be checked explicitly
+		} elsif (PVE::Tools::upid_status_is_error($task->{status}) &&
+		    $task->{status} ne 'RUNNING')
+		{
 		    $task->{status} = 'ERROR';
 		}
 	    }

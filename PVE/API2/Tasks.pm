@@ -82,6 +82,7 @@ __PACKAGE__->register_method({
 		type => 'boolean',
 		default => 0,
 		optional => 1,
+		description => 'Only list tasks with a status of ERROR.',
 	    },
 	    source => {
 		type => 'string',
@@ -89,6 +90,22 @@ __PACKAGE__->register_method({
 		default => 'archive',
 		optional => 1,
 		description => 'List archived, active or all tasks.',
+	    },
+	    since => {
+		type => 'integer',
+		description => "Only list tasks since this UNIX epoch.",
+		optional => 1,
+	    },
+	    until => {
+		type => 'integer',
+		description => "Only list tasks until this UNIX epoch.",
+		optional => 1,
+	    },
+	    statusfilter => {
+		type => 'string',
+		format => 'pve-task-status-type-list',
+		optional => 1,
+		description => 'List of Task States that should be returned.',
 	    },
 	},
     },
@@ -128,6 +145,28 @@ __PACKAGE__->register_method({
 	my $typefilter = $param->{typefilter};
 	my $errors = $param->{errors} // 0;
 	my $source = $param->{source} // 'archive';
+	my $since = $param->{since};
+	my $until = $param->{until};
+	my $statusfilter = {
+	    ok => 1,
+	    warning => 1,
+	    error => 1,
+	    unknown => 1,
+	};
+
+	if (defined($param->{statusfilter}) && !$errors) {
+	    $statusfilter = {
+		ok => 0,
+		warning => 0,
+		error => 0,
+		unknown => 0,
+	    };
+	    for my $filter (PVE::Tools::split_list($param->{statusfilter})) {
+		$statusfilter->{lc($filter)} = 1 ;
+	    }
+	} elsif ($errors) {
+	    $statusfilter->{ok} = 0;
+	}
 
 	my $count = 0;
 	my $line;
@@ -142,8 +181,13 @@ __PACKAGE__->register_method({
 
 	    return 1 if $typefilter && $task->{type} ne $typefilter;
 
-	    return 1 if $errors && $task->{status} && $task->{status} eq 'OK';
 	    return 1 if $param->{vmid} && (!$task->{id} || $task->{id} ne $param->{vmid});
+
+	    return 1 if defined($since) && $task->{starttime} < $since;
+	    return 1 if defined($until) && $task->{starttime} > $until;
+
+	    my $type = PVE::Tools::upid_normalize_status_type($task->{status});
+	    return 1 if !$statusfilter->{$type};
 
 	    return 1 if $count++ < $start;
 	    return 1 if $limit <= 0;
@@ -239,7 +283,7 @@ __PACKAGE__->register_method({
     method => 'DELETE',
     description => 'Stop a task.',
     permissions => {
-	description => "The user needs 'Sys.Modify' permissions on '/nodes/<node>' if the task does not belong to him.",
+	description => "The user needs 'Sys.Modify' permissions on '/nodes/<node>' if they aren't the owner of the task.",
 	user => 'all',
     },
     protected => 1,
@@ -279,7 +323,7 @@ __PACKAGE__->register_method({
     path => '{upid}/log',
     method => 'GET',
     permissions => {
-	description => "The user needs 'Sys.Audit' permissions on '/nodes/<node>' if the task does not belong to him.",
+	description => "The user needs 'Sys.Audit' permissions on '/nodes/<node>' if they aren't the owner of the task.",
 	user => 'all',
     },
     protected => 1,
@@ -289,19 +333,29 @@ __PACKAGE__->register_method({
     	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
-	    upid => { type => 'string' },
+	    upid => {
+		type => 'string',
+		description => "The task's unique ID.",
+	    },
 	    start => {
 		type => 'integer',
 		minimum => 0,
 		default => 0,
 		optional => 1,
+		description => "Start at this line when reading the tasklog",
 	    },
 	    limit => {
 		type => 'integer',
 		minimum => 0,
 		default => 50,
 		optional => 1,
+		description => "The amount of lines to read from the tasklog.",
 	    },
+	    download => {
+		type => 'boolean',
+		optional => 1,
+		description => "Whether the tasklog file should be downloaded. This parameter can't be used in conjunction with other parameters",
+	    }
 	},
     },
     returns => {
@@ -329,8 +383,6 @@ __PACKAGE__->register_method({
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $user = $rpcenv->get_user();
 	my $node = $param->{node};
-	my $start = $param->{start} // 0;
-	my $limit = $param->{limit} // 50;
 
 	$convert_token_task->($task);
 
@@ -338,11 +390,43 @@ __PACKAGE__->register_method({
 	    $rpcenv->check($user, "/nodes/$node", [ 'Sys.Audit' ]);
 	}
 
-	my ($count, $lines) = PVE::Tools::dump_logfile($filename, $start, $limit);
+	if ($param->{download}) {
+	    if (defined($param->{start}) || defined($param->{limit})) {
+		die "'download' cannot be used together with 'start' or 'limit' parameters\n";
+	    }
+	    # 1024 is a practical cutoff for the size distribution of our log files.
+	    my $use_compression = ( -s $filename ) > 1024;
 
-	$rpcenv->set_result_attrib('total', $count);
+	    my $fh;
+	    if ($use_compression) {
+		open($fh, "-|", "/usr/bin/gzip", "-c", "$filename")
+		    or die "Could not create compressed file stream for file '$filename' - $!\n";
+	    } else {
+		open($fh, '<', $filename) or die "Could not open file '$filename' - $!\n";
+	    }
 
-	return $lines;
+	    my $task_time = strftime('%FT%TZ', gmtime($task->{starttime}));
+	    my $download_name = 'task-'.$task->{node}.'-'.$task->{type}.'-'.$task_time.'.log';
+
+	    return {
+		download => {
+		    fh => $fh,
+		    stream => 1,
+		    'content-encoding' => $use_compression ? 'gzip' : undef,
+		    'content-type' => "text/plain",
+		    'content-disposition' => "attachment; filename=\"".$download_name."\"",
+		},
+	    },
+	} else {
+	    my $start = $param->{start} // 0;
+	    my $limit = $param->{limit} // 50;
+
+	    my ($count, $lines) = PVE::Tools::dump_logfile($filename, $start, $limit);
+
+	    $rpcenv->set_result_attrib('total', $count);
+
+	    return $lines;
+	}
     }});
 
 
@@ -353,7 +437,7 @@ __PACKAGE__->register_method({
     path => '{upid}/status',
     method => 'GET',
     permissions => {
-	description => "The user needs 'Sys.Audit' permissions on '/nodes/<node>' if the task does not belong to him.",
+	description => "The user needs 'Sys.Audit' permissions on '/nodes/<node>' if they are not the owner of the task.",
 	user => 'all',
     },
     protected => 1,
@@ -363,7 +447,10 @@ __PACKAGE__->register_method({
     	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
-	    upid => { type => 'string' },
+	    upid => {
+		type => 'string',
+		description => "The task's unique ID.",
+	    },
 	},
     },
     returns => {

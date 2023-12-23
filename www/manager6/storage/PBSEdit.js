@@ -181,6 +181,7 @@ ${prettifiedKey}
 
 	printFrame.src = "data:text/html;base64," + btoa(html);
 	document.body.appendChild(printFrame);
+	me.on('destroy', () => document.body.removeChild(printFrame));
     },
 });
 
@@ -365,7 +366,7 @@ Ext.define('PVE.panel.PBSEncryptionKeyTab', {
 			    } catch (e) {
 				return "Failed to parse key - " + e;
 			    }
-			    if (typeof key.data === undefined) {
+			    if (key.data === undefined) {
 				return "Does not seems like a valid Proxmox Backup key!";
 			    }
 			}
@@ -453,17 +454,68 @@ Ext.define('PVE.storage.PBSInputPanel', {
 	},
     ],
 
+    setValues: function(values) {
+	let me = this;
+
+	let server = values.server;
+	if (values.port !== undefined) {
+	    if (Proxmox.Utils.IP6_match.test(server)) {
+		server = `[${server}]`;
+	    }
+	    server += `:${values.port}`;
+	}
+	values.hostport = server;
+
+	return me.callParent([values]);
+    },
+
     initComponent: function() {
 	var me = this;
 
 	me.column1 = [
 	    {
-		xtype: me.isCreate ? 'textfield' : 'displayfield',
-		name: 'server',
-		value: '',
-		vtype: 'DnsOrIp',
+		xtype: me.isCreate ? 'proxmoxtextfield' : 'displayfield',
 		fieldLabel: gettext('Server'),
 		allowBlank: false,
+		name: 'hostport',
+		submitValue: false,
+		vtype: 'HostPort',
+		listeners: {
+		    change: function(field, newvalue) {
+			let server = newvalue;
+			let port;
+
+			let match = Proxmox.Utils.HostPort_match.exec(newvalue);
+			if (match === null) {
+			    match = Proxmox.Utils.HostPortBrackets_match.exec(newvalue);
+			    if (match === null) {
+				match = Proxmox.Utils.IP6_dotnotation_match.exec(newvalue);
+			    }
+			}
+
+			if (match !== null) {
+			    server = match[1];
+			    if (match[2] !== undefined) {
+				port = match[2];
+			    }
+			}
+
+			field.up('inputpanel').down('field[name=server]').setValue(server);
+			field.up('inputpanel').down('field[name=port]').setValue(port);
+		    },
+		},
+	    },
+	    {
+		xtype: 'proxmoxtextfield',
+		hidden: true,
+		name: 'server',
+		submitValue: me.isCreate, // it is fixed
+	    },
+	    {
+		xtype: 'proxmoxtextfield',
+		hidden: true,
+		deleteEmpty: !me.isCreate,
+		name: 'port',
 	    },
 	    {
 		xtype: me.isCreate ? 'textfield' : 'displayfield',
@@ -500,6 +552,14 @@ Ext.define('PVE.storage.PBSInputPanel', {
 		value: '',
 		fieldLabel: 'Datastore',
 		allowBlank: false,
+	    },
+	    {
+		xtype: me.isCreate ? 'textfield' : 'displayfield',
+		name: 'namespace',
+		value: '',
+		emptyText: gettext('Root'),
+		fieldLabel: gettext('Namespace'),
+		allowBlank: true,
 	    },
 	];
 

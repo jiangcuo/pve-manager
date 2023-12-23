@@ -176,13 +176,16 @@ Ext.define('PVE.panel.Config', {
 	me.tbar = undefined;
 
 	if (!me.onlineHelp) {
-	    switch (me.pveSelNode.data.id) {
-		case 'type/storage': me.onlineHelp = 'chapter-pvesm.html'; break;
-		case 'type/qemu': me.onlineHelp = 'chapter-qm.html'; break;
-		case 'type/lxc': me.onlineHelp = 'chapter-pct.html'; break;
-		case 'type/pool': me.onlineHelp = 'chapter-pveum.html#_pools'; break;
-		case 'type/node': me.onlineHelp = 'chapter-sysadmin.html'; break;
-	    }
+	    // use the onlineHelp property indirection to enforce checking reference validity
+	    let typeToOnlineHelp = {
+		'type/lxc': { onlineHelp: 'chapter_pct' },
+		'type/node': { onlineHelp: 'chapter_system_administration' },
+		'type/pool': { onlineHelp: 'pveum_pools' },
+		'type/qemu': { onlineHelp: 'chapter_virtual_machines' },
+		'type/sdn': { onlineHelp: 'chapter_pvesdn' },
+		'type/storage': { onlineHelp: 'chapter_storage' },
+	    };
+	    me.onlineHelp = typeToOnlineHelp[me.pveSelNode.data.id]?.onlineHelp;
 	}
 
 	if (me.tbarSpacing) {
@@ -208,10 +211,10 @@ Ext.define('PVE.panel.Config', {
 	me.items = me.items || [];
 	if (me.showSearch) {
 	    me.items.unshift({
+		xtype: 'pveResourceGrid',
 		itemId: 'search',
 		title: gettext('Search'),
 		iconCls: 'fa fa-search',
-		xtype: 'pveResourceGrid',
 		pveSelNode: me.pveSelNode,
 	    });
 	}

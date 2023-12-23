@@ -22,8 +22,8 @@ Ext.define('PVE.qemu.CloudInit', {
 	    enableFn: function(record) {
 		let view = this.up('grid');
 		var caps = Ext.state.Manager.get('GuiCap');
-		if (view.rows[record.data.key].never_delete ||
-		    !caps.vms['VM.Config.Network']) {
+		let caps_ci = caps.vms['VM.Config.Network'] || caps.vms['VM.Config.Cloudinit'];
+		if (view.rows[record.data.key].never_delete || !caps_ci) {
 		    return false;
 		}
 
@@ -214,7 +214,7 @@ Ext.define('PVE.qemu.CloudInit', {
 		    ],
 		} : undefined,
 		renderer: function(value) {
-		    return value || Proxmox.Utils.defaultText;
+		    return Ext.String.htmlEncode(value || Proxmox.Utils.defaultText);
 		},
 	    },
 	    cipassword: {
@@ -236,20 +236,20 @@ Ext.define('PVE.qemu.CloudInit', {
 		    ],
 		} : undefined,
 		renderer: function(value) {
-		    return value || Proxmox.Utils.noneText;
+		    return Ext.String.htmlEncode(value || Proxmox.Utils.noneText);
 		},
 	    },
 	    searchdomain: {
 		header: gettext('DNS domain'),
 		iconCls: 'fa fa-globe',
-		editor: caps.vms['VM.Config.Network'] ? 'PVE.lxc.DNSEdit' : undefined,
+		editor: caps_ci ? 'PVE.lxc.DNSEdit' : undefined,
 		never_delete: true,
 		defaultValue: gettext('use host settings'),
 	    },
 	    nameserver: {
 		header: gettext('DNS servers'),
 		iconCls: 'fa fa-globe',
-		editor: caps.vms['VM.Config.Network'] ? 'PVE.lxc.DNSEdit' : undefined,
+		editor: caps_ci ? 'PVE.lxc.DNSEdit' : undefined,
 		never_delete: true,
 		defaultValue: gettext('use host settings'),
 	    },
@@ -286,6 +286,24 @@ Ext.define('PVE.qemu.CloudInit', {
 		},
 		defaultValue: '',
 	    },
+	    ciupgrade: {
+		header: gettext('Upgrade packages'),
+		iconCls: 'fa fa-archive',
+		renderer: Proxmox.Utils.format_boolean,
+		defaultValue: 1,
+		editor: {
+		    xtype: 'proxmoxWindowEdit',
+		    subject: gettext('Upgrade packages on boot'),
+		    items: {
+			xtype: 'proxmoxcheckbox',
+			name: 'ciupgrade',
+			uncheckedValue: 0,
+			value: 1, // serves as default value, using defaultValue is not enough
+			fieldLabel: gettext('Upgrade packages'),
+			labelWidth: 140,
+		    },
+		},
+	    },
 	};
 	var i;
 	var ipconfig_renderer = function(value, md, record, ri, ci, store, pending) {
@@ -303,7 +321,7 @@ Ext.define('PVE.qemu.CloudInit', {
 	    me.rows['net' + i.toString()] = {
 		multiKey: ['ipconfig' + i.toString(), 'net' + i.toString()],
 		header: gettext('IP Config') + ' (net' + i.toString() +')',
-		editor: caps.vms['VM.Config.Network'] ? 'PVE.qemu.IPConfigEdit' : undefined,
+		editor: caps_ci ? 'PVE.qemu.IPConfigEdit' : undefined,
 		iconCls: 'fa fa-exchange',
 		renderer: ipconfig_renderer,
 	    };

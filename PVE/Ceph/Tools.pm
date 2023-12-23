@@ -8,7 +8,7 @@ use File::Basename;
 use IO::File;
 use JSON;
 
-use PVE::Tools qw(run_command dir_glob_foreach);
+use PVE::Tools qw(run_command dir_glob_foreach extract_param);
 use PVE::Cluster qw(cfs_read_file);
 use PVE::RADOS;
 use PVE::Ceph::Services;
@@ -150,12 +150,16 @@ sub purge_all_ceph_services {
     }
 }
 
+sub ceph_install_flag_file { return '/run/pve-ceph-install-flag' };
+
 sub check_ceph_installed {
     my ($service, $noerr) = @_;
 
     $service = 'ceph_bin' if !defined($service);
 
-    if (! -x $ceph_service->{$service}) {
+    # NOTE: the flag file is checked as on a new installation, the binary gets
+    # extracted by dpkg before the installation is finished
+    if (! -x $ceph_service->{$service} || -f ceph_install_flag_file()) {
 	die "binary not installed: $ceph_service->{$service}\n" if !$noerr;
 	return undef;
     }
@@ -201,7 +205,7 @@ sub check_ceph_enabled {
 }
 
 my $set_pool_setting = sub {
-    my ($pool, $setting, $value) = @_;
+    my ($pool, $setting, $value, $rados) = @_;
 
     my $command;
     if ($setting eq 'application') {
@@ -220,7 +224,7 @@ my $set_pool_setting = sub {
 	};
     }
 
-    my $rados = PVE::RADOS->new();
+    $rados = PVE::RADOS->new() if !$rados;
     eval { $rados->mon_command($command); };
     return $@ ? $@ : undef;
 };
@@ -228,6 +232,18 @@ my $set_pool_setting = sub {
 sub set_pool {
     my ($pool, $param) = @_;
 
+    my $rados = PVE::RADOS->new();
+
+    if (get_pool_type($pool, $rados) eq 'erasure') {
+	#remove parameters that cannot be changed for erasure coded pools
+	my $ignore_params = ['size', 'crush_rule'];
+	for my $setting (@$ignore_params) {
+	    if ($param->{$setting}) {
+		print "cannot set '${setting}' for erasure coded pool\n";
+		delete $param->{$setting};
+	    }
+	}
+    }
     # by default, pool size always resets min_size, so set it as first item
     # https://tracker.ceph.com/issues/44862
     my $keys = [ grep { $_ ne 'size' } sort keys %$param ];
@@ -237,7 +253,7 @@ sub set_pool {
 	my $value = $param->{$setting};
 
 	print "pool $pool: applying $setting = $value\n";
-	if (my $err = $set_pool_setting->($pool, $setting, $value)) {
+	if (my $err = $set_pool_setting->($pool, $setting, $value, $rados)) {
 	    print "$err";
 	} else {
 	    delete $param->{$setting};
@@ -251,21 +267,42 @@ sub set_pool {
 
 }
 
+sub get_pool_properties {
+    my ($pool, $rados) = @_;
+    $rados = PVE::RADOS->new() if !defined($rados);
+    my $command = {
+	prefix => "osd pool get",
+	pool   => "$pool",
+	var    => "all",
+	format => 'json',
+    };
+    return $rados->mon_command($command);
+}
+
+sub get_pool_type {
+    my ($pool, $rados) = @_;
+    $rados = PVE::RADOS->new() if !defined($rados);
+    return 'erasure' if get_pool_properties($pool, $rados)->{erasure_code_profile};
+    return 'replicated';
+}
+
 sub create_pool {
     my ($pool, $param, $rados) = @_;
-
-    if (!defined($rados)) {
-	$rados = PVE::RADOS->new();
-    }
+    $rados = PVE::RADOS->new() if !defined($rados);
 
     my $pg_num = $param->{pg_num} || 128;
 
-    $rados->mon_command({
+    my $mon_params = {
 	prefix => "osd pool create",
 	pool => $pool,
 	pg_num => int($pg_num),
 	format => 'plain',
-    });
+    };
+    $mon_params->{pool_type} = extract_param($param, 'pool_type') if $param->{pool_type};
+    $mon_params->{erasure_code_profile} = extract_param($param, 'erasure_code_profile')
+	if $param->{erasure_code_profile};
+
+    $rados->mon_command($mon_params);
 
     set_pool($pool, $param);
 
@@ -273,10 +310,7 @@ sub create_pool {
 
 sub ls_pools {
     my ($pool, $rados) = @_;
-
-    if (!defined($rados)) {
-	$rados = PVE::RADOS->new();
-    }
+    $rados = PVE::RADOS->new() if !defined($rados);
 
     my $res = $rados->mon_command({ prefix => "osd lspools" });
 
@@ -285,10 +319,7 @@ sub ls_pools {
 
 sub destroy_pool {
     my ($pool, $rados) = @_;
-
-    if (!defined($rados)) {
-	$rados = PVE::RADOS->new();
-    }
+    $rados = PVE::RADOS->new() if !defined($rados);
 
     # fixme: '--yes-i-really-really-mean-it'
     $rados->mon_command({
@@ -296,6 +327,51 @@ sub destroy_pool {
 	pool => $pool,
 	pool2 => $pool,
 	'yes_i_really_really_mean_it' => JSON::true,
+	format => 'plain',
+    });
+}
+
+# we get something like:
+#[{
+#   'metadata_pool_id' => 2,
+#   'data_pool_ids' => [ 1 ],
+#   'metadata_pool' => 'cephfs_metadata',
+#   'data_pools' => [ 'cephfs_data' ],
+#   'name' => 'cephfs',
+#}]
+sub ls_fs {
+    my ($rados) = @_;
+    $rados = PVE::RADOS->new() if !defined($rados);
+
+    my $res = $rados->mon_command({ prefix => "fs ls" });
+
+    return $res;
+}
+
+sub create_fs {
+    my ($fs, $param, $rados) = @_;
+
+    if (!defined($rados)) {
+	$rados = PVE::RADOS->new();
+    }
+
+    $rados->mon_command({
+	prefix => "fs new",
+	fs_name => $fs,
+	metadata => $param->{pool_metadata},
+	data => $param->{pool_data},
+	format => 'plain',
+    });
+}
+
+sub destroy_fs {
+    my ($fs, $rados) = @_;
+    $rados = PVE::RADOS->new() if !defined($rados);
+
+    $rados->mon_command({
+	prefix => "fs rm",
+	fs_name => $fs,
+	'yes_i_really_mean_it' => JSON::true,
 	format => 'plain',
     });
 }
@@ -332,29 +408,6 @@ sub get_or_create_admin_keyring {
     }
     return $pve_ckeyring_path;
 }
-
-# wipe the first 200 MB to clear off leftovers from previous use, otherwise a
-# create OSD fails.
-sub wipe_disks {
-    my (@devs) = @_;
-
-    my @wipe_cmd = qw(/bin/dd if=/dev/zero bs=1M conv=fdatasync);
-
-    foreach my $devpath (@devs) {
-	my $devname = basename($devpath);
-	my $dev_size = PVE::Tools::file_get_contents("/sys/class/block/$devname/size");
-
-	($dev_size) = $dev_size =~ m|(\d+)|; # untaint $dev_size
-	die "Coulnd't get the size of the device $devname\n" if (!defined($dev_size));
-
-	my $size = ($dev_size * 512 / 1024 / 1024);
-	my $count = ($size < 200) ? $size : 200;
-
-	print "wipe disk/partition: $devpath\n";
-	eval { run_command([@wipe_cmd, "count=$count", "of=${devpath}"]) };
-	warn $@ if $@;
-    }
-};
 
 # get ceph-volume managed osds
 sub ceph_volume_list {
@@ -497,6 +550,66 @@ sub ceph_cluster_status {
     }
 
     return $status;
+}
+
+sub ecprofile_exists {
+    my ($name, $rados) = @_;
+    $rados = PVE::RADOS->new() if !$rados;
+
+    my $res = $rados->mon_command({ prefix => 'osd erasure-code-profile ls' });
+
+    my $profiles = { map { $_ => 1 } @$res };
+    return $profiles->{$name};
+}
+
+sub create_ecprofile {
+    my ($name, $k, $m, $failure_domain, $device_class, $rados) = @_;
+    $rados = PVE::RADOS->new() if !$rados;
+
+    $failure_domain = 'host' if !$failure_domain;
+
+    my $profile = [
+	"crush-failure-domain=${failure_domain}",
+	"k=${k}",
+	"m=${m}",
+    ];
+
+    push(@$profile, "crush-device-class=${device_class}") if $device_class;
+
+    $rados->mon_command({
+	prefix => 'osd erasure-code-profile set',
+	name => $name,
+	profile => $profile,
+    });
+}
+
+sub destroy_ecprofile {
+    my ($profile, $rados) = @_;
+    $rados = PVE::RADOS->new() if !$rados;
+
+    my $command = {
+	prefix => 'osd erasure-code-profile rm',
+	name => $profile,
+	format => 'plain',
+    };
+    return $rados->mon_command($command);
+}
+
+sub get_ecprofile_name {
+    my ($name) = @_;
+    return "pve_ec_${name}";
+}
+
+sub destroy_crush_rule {
+    my ($rule, $rados) = @_;
+    $rados = PVE::RADOS->new() if !$rados;
+
+    my $command = {
+	prefix => 'osd crush rule rm',
+	name => $rule,
+	format => 'plain',
+    };
+    return $rados->mon_command($command);
 }
 
 1;

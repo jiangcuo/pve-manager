@@ -1,9 +1,12 @@
 include ../../defines.mk
 
+ESLINT ?= $(if $(shell command -v pve-eslint), pve-eslint, eslint)
+
 JSSRC= 							\
 	Parser.js					\
 	StateProvider.js				\
 	Utils.js					\
+	UIOptions.js					\
 	Toolkit.js					\
 	VNCConsole.js					\
 	button/ConsoleButton.js				\
@@ -17,37 +20,44 @@ JSSRC= 							\
 	form/ACMEAccountSelector.js			\
 	form/ACMEPluginSelector.js			\
 	form/AgentFeatureSelector.js			\
+	form/BackupCompressionSelector.js		\
 	form/BackupModeSelector.js			\
 	form/BandwidthSelector.js			\
-	form/Boolean.js					\
 	form/BridgeSelector.js				\
 	form/BusTypeSelector.js				\
 	form/CPUModelSelector.js			\
 	form/CacheTypeSelector.js			\
 	form/CalendarEvent.js				\
 	form/CephPoolSelector.js			\
-	form/CompressionSelector.js			\
+	form/CephFSSelector.js				\
+	form/ComboBoxSetStoreNode.js			\
 	form/ContentTypeSelector.js			\
 	form/ControllerSelector.js			\
 	form/DayOfWeekSelector.js			\
 	form/DiskFormatSelector.js			\
 	form/DiskStorageSelector.js			\
-	form/EmailNotificationSelector.js		\
 	form/FileSelector.js				\
 	form/FirewallPolicySelector.js			\
 	form/GlobalSearchField.js			\
 	form/GroupSelector.js				\
 	form/GuestIDSelector.js				\
+	form/HashAlgorithmSelector.js			\
 	form/HotplugFeatureSelector.js			\
 	form/IPProtocolSelector.js			\
 	form/IPRefSelector.js				\
 	form/MDevSelector.js				\
 	form/MemoryField.js				\
+	form/MultiPCISelector.js			\
 	form/NetworkCardSelector.js			\
 	form/NodeSelector.js				\
+	form/NotificationModeSelector.js		\
+	form/NotificationTargetSelector.js		\
+	form/NotificationPolicySelector.js		\
 	form/PCISelector.js				\
+	form/PCIMapSelector.js				\
 	form/PermPathSelector.js			\
 	form/PoolSelector.js				\
+	form/PreallocationSelector.js			\
 	form/PrivilegesSelector.js			\
 	form/QemuBiosSelector.js			\
 	form/SDNControllerSelector.js			\
@@ -59,10 +69,12 @@ JSSRC= 							\
 	form/SecurityGroupSelector.js			\
 	form/SnapshotSelector.js			\
 	form/SpiceEnhancementSelector.js		\
+	form/StorageScanNodeSelector.js	    		\
 	form/StorageSelector.js				\
 	form/TFASelector.js				\
 	form/TokenSelector.js 				\
 	form/USBSelector.js				\
+	form/USBMapSelector.js				\
 	form/UserSelector.js				\
 	form/VLanField.js				\
 	form/VMCPUFlagSelector.js			\
@@ -70,6 +82,13 @@ JSSRC= 							\
 	form/VNCKeyboardSelector.js			\
 	form/ViewSelector.js				\
 	form/iScsiProviderSelector.js			\
+	form/TagColorGrid.js				\
+	form/ListField.js				\
+	form/Tag.js					\
+	form/TagEdit.js					\
+	form/MultiFileButton.js				\
+	form/TagFieldSet.js				\
+	form/IsoSelector.js				\
 	grid/BackupView.js				\
 	grid/FirewallAliases.js				\
 	grid/FirewallOptions.js				\
@@ -78,16 +97,19 @@ JSSRC= 							\
 	grid/Replication.js				\
 	grid/ResourceGrid.js				\
 	panel/ConfigPanel.js				\
+	panel/BackupJobPrune.js				\
 	panel/HealthWidget.js				\
 	panel/IPSet.js					\
-	panel/NotesView.js				\
 	panel/RunningChart.js				\
 	panel/StatusPanel.js				\
 	panel/GuestStatusView.js			\
 	panel/GuestSummary.js				\
 	panel/TemplateStatusView.js			\
+	panel/MultiDiskEdit.js				\
 	tree/ResourceTree.js				\
 	tree/SnapshotTree.js				\
+	tree/ResourceMapTree.js				\
+	tree/DhcpTree.js				\
 	window/Backup.js				\
 	window/BackupConfig.js				\
 	window/BulkAction.js				\
@@ -97,14 +119,21 @@ JSSRC= 							\
 	window/FirewallLograteEdit.js			\
 	window/LoginWindow.js				\
 	window/Migrate.js				\
-	window/NotesEdit.js				\
 	window/Prune.js					\
 	window/Restore.js				\
 	window/SafeDestroyGuest.js			\
+	window/SafeDestroyStorage.js			\
 	window/Settings.js				\
 	window/Snapshot.js				\
 	window/StartupEdit.js				\
+	window/DownloadUrlToStorage.js 			\
+	window/UploadToStorage.js 			\
+	window/ScheduleSimulator.js			\
 	window/Wizard.js				\
+	window/GuestDiskReassign.js				\
+	window/TreeSettingsEdit.js			\
+	window/PCIMapEdit.js				\
+	window/USBMapEdit.js				\
 	ha/Fencing.js					\
 	ha/GroupEdit.js					\
 	ha/GroupSelector.js				\
@@ -119,7 +148,9 @@ JSSRC= 							\
 	dc/AuthEditBase.js				\
 	dc/AuthEditAD.js				\
 	dc/AuthEditLDAP.js				\
+	dc/AuthEditOpenId.js				\
 	dc/AuthView.js					\
+	dc/BackupJobDetail.js				\
 	dc/Backup.js					\
 	dc/Cluster.js					\
 	dc/ClusterEdit.js				\
@@ -142,13 +173,17 @@ JSSRC= 							\
 	dc/Summary.js					\
 	dc/Support.js					\
 	dc/SyncWindow.js				\
-	dc/TFAEdit.js					\
 	dc/Tasks.js					\
 	dc/TokenEdit.js					\
 	dc/TokenView.js					\
 	dc/UserEdit.js					\
 	dc/UserView.js					\
 	dc/MetricServerView.js				\
+	dc/UserTagAccessEdit.js				\
+	dc/RegisteredTagsEdit.js			\
+	dc/RealmSyncJob.js				\
+	dc/PCIMapView.js				\
+	dc/USBMapView.js				\
 	lxc/CmdMenu.js					\
 	lxc/Config.js					\
 	lxc/CreateWizard.js				\
@@ -160,6 +195,7 @@ JSSRC= 							\
 	lxc/Options.js					\
 	lxc/ResourceEdit.js				\
 	lxc/Resources.js				\
+	lxc/MultiMPEdit.js				\
 	menu/MenuItem.js				\
 	menu/TemplateMenu.js				\
 	ceph/CephInstallWizard.js			\
@@ -169,6 +205,7 @@ JSSRC= 							\
 	ceph/Log.js					\
 	ceph/Monitor.js					\
 	ceph/OSD.js					\
+	ceph/OSDDetails.js				\
 	ceph/Pool.js					\
 	ceph/ServiceList.js				\
 	ceph/Services.js				\
@@ -185,6 +222,7 @@ JSSRC= 							\
 	node/Subscription.js				\
 	node/Summary.js					\
 	node/ZFS.js					\
+	node/NodeOptionsView.js				\
 	pool/Config.js					\
 	pool/StatusView.js				\
 	pool/Summary.js					\
@@ -200,6 +238,7 @@ JSSRC= 							\
 	qemu/DisplayEdit.js				\
 	qemu/HDEdit.js					\
 	qemu/HDEfi.js					\
+	qemu/HDTPM.js					\
 	qemu/HDMove.js					\
 	qemu/HDResize.js				\
 	qemu/HardwareView.js				\
@@ -208,6 +247,7 @@ JSSRC= 							\
 	qemu/MachineEdit.js				\
 	qemu/MemoryEdit.js				\
 	qemu/Monitor.js					\
+	qemu/MultiHDEdit.js				\
 	qemu/NetworkEdit.js				\
 	qemu/OSDefaults.js				\
 	qemu/OSTypeEdit.js				\
@@ -228,15 +268,19 @@ JSSRC= 							\
 	sdn/StatusView.js				\
 	sdn/VnetEdit.js					\
 	sdn/VnetView.js					\
+	sdn/VnetACLView.js					\
 	sdn/VnetPanel.js				\
 	sdn/SubnetEdit.js				\
 	sdn/SubnetView.js				\
 	sdn/ZoneContentView.js				\
+	sdn/ZoneContentPanel.js				\
 	sdn/ZoneView.js					\
+	sdn/IpamEdit.js					\
 	sdn/OptionsPanel.js				\
 	sdn/controllers/Base.js				\
 	sdn/controllers/EvpnEdit.js			\
 	sdn/controllers/BgpEdit.js			\
+	sdn/controllers/IsisEdit.js			\
 	sdn/IpamView.js					\
 	sdn/ipams/Base.js				\
 	sdn/ipams/NetboxEdit.js				\
@@ -263,6 +307,7 @@ JSSRC= 							\
 	storage/IScsiEdit.js				\
 	storage/LVMEdit.js				\
 	storage/LvmThinEdit.js				\
+	storage/BTRFSEdit.js				\
 	storage/NFSEdit.js				\
 	storage/PBSEdit.js				\
 	storage/RBDEdit.js				\
@@ -274,35 +319,33 @@ JSSRC= 							\
 	Workspace.js					\
 # end of JSSRC list
 
+WIDGETKIT=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+
 all:
 
-.lint-incremental: ${JSSRC}
-	eslint $?
+.lint-incremental: $(JSSRC)
+	$(ESLINT) $?
 	touch "$@"
 
 .PHONY: lint
 check: lint
-lint: ${JSSRC}
-	eslint --strict ${JSSRC}
+lint: $(JSSRC)
+	$(ESLINT) --strict $(JSSRC)
 	touch ".lint-incremental"
 
-pvemanagerlib.js: .lint-incremental OnlineHelpInfo.js ${JSSRC}
-	cat OnlineHelpInfo.js ${JSSRC} >$@.tmp
+pvemanagerlib.js: .lint-incremental OnlineHelpInfo.js $(JSSRC)
+	cat OnlineHelpInfo.js $(JSSRC) >$@.tmp
 	mv $@.tmp $@
 
-OnlineHelpInfo.js: /usr/bin/asciidoc-pve
-	/usr/bin/asciidoc-pve scan-extjs ${JSSRC} >$@.tmp
+OnlineHelpInfo.js: $(JSSRC) $(WIDGETKIT)
+	/usr/bin/asciidoc-pve scan-extjs $^ >$@.tmp
 	mv $@.tmp $@
 
 .PHONY: install
 install: pvemanagerlib.js
-	install -d ${WWWJSDIR}
-	install -m 0644 pvemanagerlib.js ${WWWJSDIR}
+	install -d $(WWWJSDIR)
+	install -m 0644 pvemanagerlib.js $(WWWJSDIR)
 
 .PHONY: clean
 clean:
-	find . -name '*~' -exec rm {} ';'
 	rm -rf pvemanagerlib.js OnlineHelpInfo.js .lint-incremental
-
-
-

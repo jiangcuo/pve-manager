@@ -5,7 +5,9 @@ use strict;
 
 use PVE::JSONSchema qw(get_standard_option);
 use PVE::RPCEnvironment;
+use PVE::Format qw(render_timestamp);
 use PVE::ProcFSTools;
+
 use PVE::ReplicationConfig;
 use PVE::ReplicationState;
 use PVE::Replication;
@@ -13,6 +15,7 @@ use PVE::QemuConfig;
 use PVE::QemuServer;
 use PVE::LXC::Config;
 use PVE::LXC;
+use PVE::Notify;
 
 use PVE::RESTHandler;
 
@@ -70,6 +73,89 @@ sub run_single_job {
     die $@ if $@;
 }
 
+
+# TODO: below two should probably part of the general job framework/plugin system
+my sub _should_mail_at_failcount {
+    my ($fail_count) = @_;
+
+    # avoid spam during migration (bug #4111): when failing to obtain the guest's migration lock,
+    # fail_count will be 0
+    return 0 if $fail_count == 0;
+
+    return 1 if $fail_count <= 3; # always send the first few for better visibility of the issue
+
+    # failing job is re-tried every half hour, try to send one mail after 1, 2, 4, 8, etc. days
+    my $i = 1;
+    while ($i * 48 < $fail_count) {
+	$i = $i * 2;
+    }
+    return $i * 48 == $fail_count;
+};
+
+my $replication_error_subject_template = "Replication Job: '{{job-id}}' failed";
+my $replication_error_body_template = <<EOT;
+{{#verbatim}}
+Replication job '{{job-id}}' with target '{{job-target}}' and schedule '{{job-schedule}}' failed!
+
+Last successful sync: {{timestamp last-sync}}
+Next sync try: {{timestamp next-sync}}
+Failure count: {{failure-count}}
+
+{{#if (eq failure-count 3)}}
+Note: The system  will now reduce the frequency of error reports, as the job
+appears to be stuck.
+{{/if}}
+Error:
+{{verbatim-monospaced error}}
+{{/verbatim}}
+EOT
+
+my sub _handle_job_err {
+    my ($job, $err, $mail) = @_;
+
+    warn "$job->{id}: got unexpected replication job error - $err";
+    return if !$mail;
+
+    my $state = PVE::ReplicationState::read_state();
+    my $jobstate = PVE::ReplicationState::extract_job_state($state, $job);
+    my $fail_count = $jobstate->{fail_count};
+
+    return if !_should_mail_at_failcount($fail_count);
+
+    # not yet updated, so $job->next_sync here is actually the current one.
+    # NOTE: Copied from PVE::ReplicationState::job_status()
+    my $next_sync = $job->{next_sync} + 60 * ($fail_count <= 3 ? 5 * $fail_count : 30);
+
+    # The replication job is run every 15 mins if no schedule is set.
+    my $schedule = $job->{schedule} // '*/15';
+
+    my $template_data = {
+	"failure-count" => $fail_count,
+	"last-sync"     => $jobstate->{last_sync},
+	"next-sync"     => $next_sync,
+	"job-id"        => $job->{id},
+	"job-target"    => $job->{target},
+	"job-schedule"  => $schedule,
+	"error"         => $err,
+    };
+
+    my $metadata_fields = {
+	# TODO: Add job-id?
+	type => "replication",
+    };
+
+    eval {
+	PVE::Notify::error(
+	    $replication_error_subject_template,
+	    $replication_error_body_template,
+	    $template_data,
+	    $metadata_fields
+	);
+
+    };
+    warn ": $@" if $@;
+}
+
 # passing $now and $verbose is useful for regression testing
 sub run_jobs {
     my ($now, $logfunc, $verbose, $mail) = @_;
@@ -88,14 +174,7 @@ sub run_jobs {
 		PVE::Replication::run_replication($guest_class, $jobcfg, $iteration, $start_time, $logfunc, $verbose);
 	    };
 	    if (my $err = $@) {
-		warn "$jobcfg->{id}: got unexpected replication job error - $err";
-		my $state = PVE::ReplicationState::read_state();
-		my $jobstate = PVE::ReplicationState::extract_job_state($state, $jobcfg);
-		eval {
-		    PVE::Tools::sendmail('root', "Replication Job: $jobcfg->{id} failed", $err)
-			if $jobstate->{fail_count} == 1 && $mail;
-		};
-		warn ": $@" if $@;
+		_handle_job_err($jobcfg, $err, $mail);
 	    }
 
 	    $start_time = $now // time();
@@ -239,7 +318,7 @@ __PACKAGE__->register_method ({
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $authuser = $rpcenv->get_user();
 
-	my $jobs = PVE::ReplicationState::job_status();
+	my $jobs = PVE::ReplicationState::job_status(1);
 	my $jobid = $param->{id};
 	my $jobcfg = $jobs->{$jobid};
 

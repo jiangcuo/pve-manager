@@ -32,7 +32,7 @@ Ext.define('PVE.dc.ACLAdd', {
 	} else if (me.aclType === 'user') {
 	    me.subject = gettext("User Permission");
 	    items.push({
-		xtype: 'pveUserSelector',
+		xtype: 'pmxUserSelector',
 		name: 'users',
 		fieldLabel: gettext('User'),
 	    });
@@ -101,7 +101,7 @@ Ext.define('PVE.dc.ACLView', {
 	    },
 	    sorters: {
 		property: 'path',
-		order: 'DESC',
+		direction: 'ASC',
 	    },
 	});
 

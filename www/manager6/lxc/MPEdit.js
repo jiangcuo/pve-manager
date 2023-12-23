@@ -75,12 +75,18 @@ Ext.define('PVE.lxc.MountPointInputPanel', {
 	}
     },
 
-    setVMConfig: function(vmconfig) {
+    updateVMConfig: function(vmconfig) {
 	let me = this;
 	let vm = me.getViewModel();
 	me.vmconfig = vmconfig;
 	vm.set('unpriv', vmconfig.unprivileged);
+	me.down('field[name=mpid]').validate();
+    },
 
+    setVMConfig: function(vmconfig) {
+	let me = this;
+
+	me.updateVMConfig(vmconfig);
 	PVE.Utils.forEachMP((bus, i) => {
 	    let name = "mp" + i.toString();
 	    if (!Ext.isDefined(vmconfig[name])) {
@@ -104,6 +110,11 @@ Ext.define('PVE.lxc.MountPointInputPanel', {
 	control: {
 	    'field[name=mpid]': {
 		change: function(field, value) {
+		    let me = this;
+		    let view = this.getView();
+		    if (view.confid !== 'rootfs') {
+			view.fireEvent('diskidchange', view, `mp${value}`);
+		    }
 		    field.validate();
 		},
 	    },
@@ -137,6 +148,9 @@ Ext.define('PVE.lxc.MountPointInputPanel', {
 		if (view.insideWizard) {
 		    view.filterMountOptions();
 		}
+	    }
+	    if (view.selectFree) {
+		view.setVMConfig(view.vmconfig);
 	    }
 	},
     },
@@ -180,7 +194,7 @@ Ext.define('PVE.lxc.MountPointInputPanel', {
 	    name: 'mpid',
 	    fieldLabel: gettext('Mount Point ID'),
 	    minValue: 0,
-	    maxValue: PVE.Utils.mp_counts.mps - 1,
+	    maxValue: PVE.Utils.mp_counts.mp - 1,
 	    hidden: true,
 	    allowBlank: false,
 	    disabled: true,
@@ -286,6 +300,7 @@ Ext.define('PVE.lxc.MountPointInputPanel', {
 	    fieldLabel: gettext('Mount options'),
 	    deleteEmpty: false,
 	    comboItems: [
+		['lazytime', 'lazytime'],
 		['noatime', 'noatime'],
 		['nodev', 'nodev'],
 		['noexec', 'noexec'],

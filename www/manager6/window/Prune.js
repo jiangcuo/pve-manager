@@ -63,9 +63,7 @@ Ext.define('PVE.PruneInputPanel', {
 		];
 		let counter = {};
 
-		backups.sort(function(a, b) {
-		    return a.ctime < b.ctime;
-		});
+		backups.sort((a, b) => b.ctime - a.ctime);
 
 		let ruleIndex = -1;
 		let nextRule = function() {
@@ -188,6 +186,8 @@ Ext.define('PVE.PruneInputPanel', {
 			    if (record.data.mark === 'keep') {
 				return 'true (' + record.data.keepReason + ')';
 			    } else if (record.data.mark === 'protected') {
+				return 'true (protected)';
+			    } else if (record.data.mark === 'renamed') {
 				return 'true (renamed)';
 			    } else {
 				return 'false';

@@ -18,17 +18,23 @@ use PVE::RPCEnvironment;
 use PVE::Storage;
 use PVE::Tools qw(run_command file_get_contents file_set_contents extract_param);
 
+use PVE::API2::Ceph::Cfg;
 use PVE::API2::Ceph::OSD;
 use PVE::API2::Ceph::FS;
 use PVE::API2::Ceph::MDS;
 use PVE::API2::Ceph::MGR;
 use PVE::API2::Ceph::MON;
-use PVE::API2::Ceph::Pools;
+use PVE::API2::Ceph::Pool;
 use PVE::API2::Storage::Config;
 
 use base qw(PVE::RESTHandler);
 
 my $pve_osd_default_journal_size = 1024*5;
+
+__PACKAGE__->register_method ({
+    subclass => "PVE::API2::Ceph::Cfg",
+    path => 'cfg',
+});
 
 __PACKAGE__->register_method ({
     subclass => "PVE::API2::Ceph::OSD",
@@ -56,8 +62,8 @@ __PACKAGE__->register_method ({
 });
 
 __PACKAGE__->register_method ({
-    subclass => "PVE::API2::Ceph::Pools",
-    path => 'pools',
+    subclass => "PVE::API2::Ceph::Pool",
+    path => 'pool',
 });
 
 __PACKAGE__->register_method ({
@@ -87,95 +93,26 @@ __PACKAGE__->register_method ({
 	my ($param) = @_;
 
 	my $result = [
+	    { name => 'cmd-safety' },
+	    { name => 'cfg' },
+	    { name => 'crush' },
+	    { name => 'fs' },
 	    { name => 'init' },
+	    { name => 'log' },
+	    { name => 'mds' },
+	    { name => 'mgr' },
 	    { name => 'mon' },
 	    { name => 'osd' },
-	    { name => 'pools' },
-	    { name => 'fs' },
-	    { name => 'mds' },
-	    { name => 'stop' },
-	    { name => 'start' },
+	    { name => 'pool' },
 	    { name => 'restart' },
-	    { name => 'status' },
-	    { name => 'crush' },
-	    { name => 'config' },
-	    { name => 'log' },
 	    { name => 'rules' },
+	    { name => 'start' },
+	    { name => 'status' },
+	    { name => 'stop' },
 	];
 
 	return $result;
     }});
-
-__PACKAGE__->register_method ({
-    name => 'config',
-    path => 'config',
-    method => 'GET',
-    proxyto => 'node',
-    permissions => {
-	check => ['perm', '/', [ 'Sys.Audit', 'Datastore.Audit' ], any => 1],
-    },
-    description => "Get Ceph configuration.",
-    parameters => {
-	additionalProperties => 0,
-	properties => {
-	    node => get_standard_option('pve-node'),
-	},
-    },
-    returns => { type => 'string' },
-    code => sub {
-	my ($param) = @_;
-
-	PVE::Ceph::Tools::check_ceph_inited();
-
-	my $path = PVE::Ceph::Tools::get_config('pve_ceph_cfgpath');
-	return file_get_contents($path);
-
-    }});
-
-__PACKAGE__->register_method ({
-    name => 'configdb',
-    path => 'configdb',
-    method => 'GET',
-    proxyto => 'node',
-    protected => 1,
-    permissions => {
-	check => ['perm', '/', [ 'Sys.Audit', 'Datastore.Audit' ], any => 1],
-    },
-    description => "Get Ceph configuration database.",
-    parameters => {
-	additionalProperties => 0,
-	properties => {
-	    node => get_standard_option('pve-node'),
-	},
-    },
-    returns => {
-	type => 'array',
-	items => {
-	    type => 'object',
-	    properties => {
-		section => { type => "string", },
-		name => { type => "string", },
-		value => { type => "string", },
-		level => { type => "string", },
-		'can_update_at_runtime' => { type => "boolean", },
-		mask => { type => "string" },
-	    },
-	},
-    },
-    code => sub {
-	my ($param) = @_;
-
-	PVE::Ceph::Tools::check_ceph_inited();
-
-	my $rados = PVE::RADOS->new();
-	my $res = $rados->mon_command( { prefix => 'config dump', format => 'json' });
-	foreach my $entry (@$res) {
-	    $entry->{can_update_at_runtime} = $entry->{can_update_at_runtime}? 1 : 0; # JSON::true/false -> 1/0
-	}
-
-	return $res;
-    }});
-
 
 __PACKAGE__->register_method ({
     name => 'init',
@@ -221,10 +158,11 @@ __PACKAGE__->register_method ({
 		minimum => 1,
 		maximum => 7,
 	    },
+	    # TODO: deprecrated, remove with PVE 9
 	    pg_bits => {
 		description => "Placement group bits, used to specify the " .
-		    "default number of placement groups.\n\nNOTE: 'osd pool " .
-		    "default pg num' does not work for default pools.",
+		    "default number of placement groups.\n\nDepreacted. This " .
+		    "setting was deprecated in recent Ceph versions.",
 		type => 'integer',
 		default => 6,
 		optional => 1,
@@ -270,12 +208,12 @@ __PACKAGE__->register_method ({
 
 		$cfg->{global} = {
 		    'fsid' => $fsid,
-		    'auth cluster required' => $auth,
-		    'auth service required' => $auth,
-		    'auth client required' => $auth,
-		    'osd pool default size' => $param->{size} // 3,
-		    'osd pool default min size' => $param->{min_size} // 2,
-		    'mon allow pool delete' => 'true',
+		    'auth_cluster_required' => $auth,
+		    'auth_service_required' => $auth,
+		    'auth_client_required' => $auth,
+		    'osd_pool_default_size' => $param->{size} // 3,
+		    'osd_pool_default_min_size' => $param->{min_size} // 2,
+		    'mon_allow_pool_delete' => 'true',
 		};
 
 		# this does not work for default pools
@@ -287,18 +225,13 @@ __PACKAGE__->register_method ({
 		$cfg->{client}->{keyring} = '/etc/pve/priv/$cluster.$name.keyring';
 	    }
 
-	    if ($param->{pg_bits}) {
-		$cfg->{global}->{'osd pg bits'} = $param->{pg_bits};
-		$cfg->{global}->{'osd pgp bits'} = $param->{pg_bits};
-	    }
-
 	    if ($param->{network}) {
-		$cfg->{global}->{'public network'} = $param->{network};
-		$cfg->{global}->{'cluster network'} = $param->{network};
+		$cfg->{global}->{'public_network'} = $param->{network};
+		$cfg->{global}->{'cluster_network'} = $param->{network};
 	    }
 
 	    if ($param->{'cluster-network'}) {
-		$cfg->{global}->{'cluster network'} = $param->{'cluster-network'};
+		$cfg->{global}->{'cluster_network'} = $param->{'cluster-network'};
 	    }
 
 	    cfs_write_file('ceph.conf', $cfg);
@@ -619,7 +552,12 @@ __PACKAGE__->register_method ({
 	type => 'array',
 	items => {
 	    type => "object",
-	    properties => {},
+	    properties => {
+		name => {
+		    description => "Name of the CRUSH rule.",
+		    type => "string",
+		}
+	    },
 	},
 	links => [ { rel => 'child', href => "{name}" } ],
     },
@@ -639,6 +577,102 @@ __PACKAGE__->register_method ({
 	}
 
 	return $res;
+    }});
+
+__PACKAGE__->register_method ({
+    name => 'cmd_safety',
+    path => 'cmd-safety',
+    method => 'GET',
+    description => "Heuristical check if it is safe to perform an action.",
+    proxyto => 'node',
+    protected => 1,
+    permissions => {
+	check => ['perm', '/', [ 'Sys.Audit' ]],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    service => {
+		description => 'Service type',
+		type => 'string',
+		enum => ['osd', 'mon', 'mds'],
+	    },
+	    id => {
+		description => 'ID of the service',
+		type => 'string',
+	    },
+	    action => {
+		description => 'Action to check',
+		type => 'string',
+		enum => ['stop', 'destroy'],
+	    },
+	},
+    },
+    returns => {
+	type => 'object',
+	properties => {
+	   safe  => {
+		type => 'boolean',
+		description => 'If it is safe to run the command.',
+	    },
+	    status => {
+		type => 'string',
+		optional => 1,
+		description => 'Status message given by Ceph.'
+	    },
+	},
+    },
+    code => sub {
+	my ($param) = @_;
+
+	PVE::Ceph::Tools::check_ceph_inited();
+
+	my $id = $param->{id};
+	my $service = $param->{service};
+	my $action = $param->{action};
+
+	my $rados = PVE::RADOS->new();
+
+	my $supported_actions = {
+	    osd => {
+		stop => 'ok-to-stop',
+		destroy => 'safe-to-destroy',
+	    },
+	    mon => {
+		stop => 'ok-to-stop',
+		destroy => 'ok-to-rm',
+	    },
+	    mds => {
+		stop => 'ok-to-stop',
+	    },
+	};
+
+	die "Service does not support this action: ${service}: ${action}\n"
+	    if !$supported_actions->{$service}->{$action};
+
+	my $result = {
+	    safe => 0,
+	    status => '',
+	};
+
+	my $params = {
+	    prefix => "${service} $supported_actions->{$service}->{$action}",
+	    format => 'plain',
+	};
+	if ($service eq 'mon' && $action eq 'destroy') {
+	    $params->{id} = $id;
+	} else {
+	    $params->{ids} = [ $id ];
+	}
+
+	$result = $rados->mon_cmd($params, 1);
+	die $@ if $@;
+
+	$result->{safe} = $result->{return_code} == 0 ? 1 : 0;
+	$result->{status} = $result->{status_message};
+
+	return $result;
     }});
 
 1;

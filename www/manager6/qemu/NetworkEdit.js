@@ -19,6 +19,7 @@ Ext.define('PVE.qemu.NetworkInputPanel', {
 	me.network.macaddr = values.macaddr;
 	me.network.disconnect = values.disconnect;
 	me.network.queues = values.queues;
+	me.network.mtu = values.mtu;
 
 	if (values.rate) {
 	    me.network.rate = values.rate;
@@ -31,6 +32,17 @@ Ext.define('PVE.qemu.NetworkInputPanel', {
 	params[me.confid] = PVE.Parser.printQemuNetwork(me.network);
 
 	return params;
+    },
+
+    viewModel: {
+	data: {
+	    networkModel: undefined,
+	    mtu: '',
+	},
+	formulas: {
+	    isVirtio: get => get('networkModel') === 'virtio',
+	    showMtuHint: get => get('mtu') === 1,
+	},
     },
 
     setNetwork: function(confid, data) {
@@ -93,6 +105,22 @@ Ext.define('PVE.qemu.NetworkInputPanel', {
 		fieldLabel: gettext('Disconnect'),
 		name: 'disconnect',
 	    },
+	    {
+		xtype: 'proxmoxintegerfield',
+		name: 'mtu',
+		fieldLabel: 'MTU',
+		bind: {
+		    disabled: '{!isVirtio}',
+		    value: '{mtu}',
+		},
+		emptyText: '1500 (1 = bridge MTU)',
+		minValue: 1,
+		maxValue: 65520,
+		allowBlank: true,
+		validator: val => val === '' || val >= 576 || val === '1'
+		    ? true
+		    : gettext('MTU needs to be >= 576 or 1 to inherit the MTU from the underlying bridge.'),
+	    },
 	];
 
 	if (me.insideWizard) {
@@ -112,6 +140,7 @@ Ext.define('PVE.qemu.NetworkInputPanel', {
 			    'macaddr',
 			    'rate',
 			    'queues',
+			    'mtu',
 			];
 			fields.forEach(function(fieldname) {
 			    me.down('field[name='+fieldname+']').setDisabled(value);
@@ -130,6 +159,7 @@ Ext.define('PVE.qemu.NetworkInputPanel', {
 		xtype: 'pveNetworkCardSelector',
 		name: 'model',
 		fieldLabel: gettext('Model'),
+		bind: '{networkModel}',
 		value: PVE.qemu.OSDefaults.generic.networkCard,
 		allowBlank: false,
 	    },
@@ -157,9 +187,19 @@ Ext.define('PVE.qemu.NetworkInputPanel', {
 		name: 'queues',
 		fieldLabel: 'Multiqueue',
 		minValue: 1,
-		maxValue: 8,
+		maxValue: 64,
 		value: '',
 		allowBlank: true,
+	    },
+	];
+	me.advancedColumnB = [
+	    {
+		xtype: 'displayfield',
+		userCls: 'pmx-hint',
+		value: gettext("Use the special value '1' to inherit the MTU value from the underlying bridge"),
+		bind: {
+		    hidden: '{!showMtuHint}',
+		},
 	    },
 	];
 

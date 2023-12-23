@@ -28,6 +28,12 @@ Ext.define('PVE.dc.Config', {
 		itemId: 'summary',
 	    },
 	    {
+		xtype: 'pmxNotesView',
+		title: gettext('Notes'),
+		iconCls: 'fa fa-sticky-note-o',
+		itemId: 'notes',
+	    },
+	    {
 		title: gettext('Cluster'),
 		xtype: 'pveClusterAdministration',
 		iconCls: 'fa fa-server',
@@ -95,6 +101,16 @@ Ext.define('PVE.dc.Config', {
 	    itemId: 'apitokens',
 	});
 
+	me.items.push({
+	    xtype: 'pmxTfaView',
+	    title: gettext('Two Factor'),
+	    groups: ['permissions'],
+	    iconCls: 'fa fa-key',
+	    itemId: 'tfa',
+	    yubicoEnabled: true,
+	    issuerName: `Proxmox VE - ${PVE.ClusterName || Proxmox.NodeName}`,
+	});
+
 	if (caps.dc['Sys.Audit']) {
 	    me.items.push({
 		xtype: 'pveGroupView',
@@ -118,11 +134,30 @@ Ext.define('PVE.dc.Config', {
 		itemId: 'roles',
 	    },
 	    {
-		xtype: 'pveAuthView',
-		title: gettext('Authentication'),
+		title: gettext('Realms'),
+		xtype: 'panel',
+		layout: {
+		    type: 'border',
+		},
 		groups: ['permissions'],
-		iconCls: 'fa fa-key',
+		iconCls: 'fa fa-address-book-o',
 		itemId: 'domains',
+		items: [
+		    {
+			xtype: 'pveAuthView',
+			region: 'center',
+			border: false,
+		    },
+		    {
+			xtype: 'pveRealmSyncJobView',
+			title: gettext('Realm Sync Jobs'),
+			region: 'south',
+			collapsible: true,
+			animCollapse: false,
+			border: false,
+			height: '50%',
+		    },
+		],
 	    },
 	    {
 		xtype: 'pveHAStatus',
@@ -144,11 +179,13 @@ Ext.define('PVE.dc.Config', {
 		xtype: 'pveFencingView',
 		itemId: 'ha-fencing',
 	    });
+	    // always show on initial load, will be hiddea later if the SDN API calls don't exist,
+	    // else it won't be shown at first if the user initially loads with DC selected
 	    if (PVE.SDNInfo || PVE.SDNInfo === undefined) {
 		me.items.push({
 		    xtype: 'pveSDNStatus',
 		    title: gettext('SDN'),
-		    iconCls: 'fa fa-sdn',
+		    iconCls: 'fa fa-sdn x-fa-sdn-treelist',
 		    hidden: true,
 		    itemId: 'sdn',
 		    expandedOnInit: true,
@@ -164,9 +201,9 @@ Ext.define('PVE.dc.Config', {
 		{
 		    xtype: 'pveSDNVnet',
 		    groups: ['sdn'],
-		    title: gettext('Vnets'),
+		    title: 'VNets',
 		    hidden: true,
-		    iconCls: 'fa fa-network-wired',
+		    iconCls: 'fa fa-network-wired x-fa-sdn-treelist',
 		    itemId: 'sdnvnet',
 		},
 		{
@@ -176,6 +213,14 @@ Ext.define('PVE.dc.Config', {
 		    hidden: true,
 		    iconCls: 'fa fa-gear',
 		    itemId: 'sdnoptions',
+		},
+		{
+		    xtype: 'pveDhcpTree',
+		    groups: ['sdn'],
+		    title: gettext('IPAM'),
+		    hidden: true,
+		    iconCls: 'fa fa-map-signs',
+		    itemId: 'sdnmappings',
 		});
 	    }
 
@@ -237,8 +282,65 @@ Ext.define('PVE.dc.Config', {
 		iconCls: 'fa fa-bar-chart',
 		itemId: 'metricservers',
 		onlineHelp: 'external_metric_server',
-	    },
-	    {
+	    });
+	}
+
+	if (caps.mapping['Mapping.Audit'] ||
+	    caps.mapping['Mapping.Use'] ||
+	    caps.mapping['Mapping.Modify']) {
+	    me.items.push(
+		{
+		    xtype: 'container',
+		    onlineHelp: 'resource_mapping',
+		    title: gettext('Resource Mappings'),
+		    itemId: 'resources',
+		    iconCls: 'fa fa-folder-o',
+		    layout: {
+			type: 'vbox',
+			align: 'stretch',
+			multi: true,
+		    },
+		    scrollable: true,
+		    defaults: {
+			border: false,
+		    },
+		    items: [
+			{
+			    xtype: 'pveDcPCIMapView',
+			    title: gettext('PCI Devices'),
+			    flex: 1,
+			},
+			{
+			    xtype: 'splitter',
+			    collapsible: false,
+			    performCollapse: false,
+			},
+			{
+			    xtype: 'pveDcUSBMapView',
+			    title: gettext('USB Devices'),
+			    flex: 1,
+			},
+		    ],
+		},
+	    );
+	}
+
+	if (caps.mapping['Mapping.Audit'] ||
+	    caps.mapping['Mapping.Use'] ||
+	    caps.mapping['Mapping.Modify']) {
+	    me.items.push(
+		{
+		    xtype: 'pmxNotificationConfigView',
+		    title: gettext('Notifications'),
+		    itemId: 'notification-targets',
+		    iconCls: 'fa fa-bell-o',
+		    baseUrl: '/cluster/notifications',
+		},
+	    );
+	}
+
+	if (caps.dc['Sys.Audit']) {
+	    me.items.push({
 		xtype: 'pveDcSupport',
 		title: gettext('Support'),
 		itemId: 'support',

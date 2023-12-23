@@ -101,7 +101,7 @@ Ext.define('PVE.sdn.SubnetView', {
 	    ],
 	    columns: [
 		{
-		    header: 'ID',
+		    header: gettext('Subnet'),
 		    flex: 2,
 		    dataIndex: 'cidr',
 		    renderer: function(value, metaData, rec) {
@@ -125,7 +125,7 @@ Ext.define('PVE.sdn.SubnetView', {
 		    },
 		},
 		{
-		    header: gettext('Dns prefix'),
+		    header: gettext('DNS Prefix'),
 		    flex: 1,
 		    dataIndex: 'dnszoneprefix',
                     renderer: function(value, metaData, rec) {

@@ -62,9 +62,19 @@ Ext.define('PVE.ClusterAdministration', {
 		    view.on('destroy', view.store.stopUpdate);
 		},
 
-		onLoad: function(store, records, success) {
+		onLoad: function(store, records, success, operation) {
 		    let vm = this.getViewModel();
-		    if (!success || !records || !records[0].data) {
+
+		    let data = records?.[0]?.data;
+		    if (!success || !data || !data.nodelist?.length) {
+			let error = operation.getError();
+			if (error) {
+			    let msg = Proxmox.Utils.getResponseErrorMessage(error);
+			    if (error.status !== 424 && !msg.match(/node is not in a cluster/i)) {
+				// an actual error, not just the "not in a cluster one", so show it!
+				Proxmox.Utils.setErrorMask(this.getView(), msg);
+			    }
+			}
 			vm.set('totem', {});
 			vm.set('isInCluster', false);
 			vm.set('nodelist', []);
@@ -75,14 +85,11 @@ Ext.define('PVE.ClusterAdministration', {
 			});
 			return;
 		    }
-		    let data = records[0].data;
 		    vm.set('totem', data.totem);
 		    vm.set('isInCluster', !!data.totem.cluster_name);
 		    vm.set('nodelist', data.nodelist);
 
-		    var nodeinfo = Ext.Array.findBy(data.nodelist, function(el) {
-			return el.name === data.preferred_node;
-		    });
+		    let nodeinfo = data.nodelist.find(el => el.name === data.preferred_node);
 
 		    let links = {};
 		    let ring_addr = [];
@@ -228,7 +235,7 @@ Ext.define('PVE.ClusterAdministration', {
 			rstore: view.rstore,
 			sorters: {
 			    property: 'nodeid',
-			    order: 'DESC',
+			    direction: 'ASC',
 			},
 		    }));
 		    Proxmox.Utils.monStoreErrors(view, view.rstore);

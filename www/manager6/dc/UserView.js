@@ -15,47 +15,37 @@ Ext.define('PVE.dc.UserView', {
 
 	var store = new Ext.data.Store({
             id: "users",
-	    model: 'pve-users',
+	    model: 'pmx-users',
 	    sorters: {
 		property: 'userid',
-		order: 'DESC',
+		direction: 'ASC',
 	    },
 	});
+	let reload = () => store.load();
 
-	var reload = function() {
-	    store.load();
-	};
+	let sm = Ext.create('Ext.selection.RowModel', {});
 
-	var sm = Ext.create('Ext.selection.RowModel', {});
-
-	var remove_btn = Ext.create('Proxmox.button.StdRemoveButton', {
+	let remove_btn = Ext.create('Proxmox.button.StdRemoveButton', {
 	    selModel: sm,
 	    baseurl: '/access/users/',
-	    enableFn: function(rec) {
-		if (!caps.access['User.Modify']) {
-		    return false;
-		}
-		return rec.data.userid !== 'root@pam';
-	    },
-	    callback: function() {
-		reload();
-	    },
-        });
-
-	var run_editor = function() {
+	    dangerous: true,
+	    enableFn: rec => caps.access['User.Modify'] && rec.data.userid !== 'root@pam',
+	    callback: () => reload(),
+	});
+	let run_editor = function() {
 	    var rec = sm.getSelection()[0];
 	    if (!rec || !caps.access['User.Modify']) {
 		return;
 	    }
-
-            var win = Ext.create('PVE.dc.UserEdit', {
-                userid: rec.data.userid,
-            });
-            win.on('destroy', reload);
-            win.show();
+	    Ext.create('PVE.dc.UserEdit', {
+		userid: rec.data.userid,
+		autoShow: true,
+		listeners: {
+		    destroy: () => reload(),
+		},
+	    });
 	};
-
-	var edit_btn = new Proxmox.button.Button({
+	let edit_btn = new Proxmox.button.Button({
 	    text: gettext('Edit'),
 	    disabled: true,
 	    enableFn: function(rec) {
@@ -64,74 +54,100 @@ Ext.define('PVE.dc.UserView', {
 	    selModel: sm,
 	    handler: run_editor,
 	});
-
-	var pwchange_btn = new Proxmox.button.Button({
+	let pwchange_btn = new Proxmox.button.Button({
 	    text: gettext('Password'),
 	    disabled: true,
 	    selModel: sm,
-	    handler: function(btn, event, rec) {
-		var win = Ext.create('Proxmox.window.PasswordEdit', {
-                    userid: rec.data.userid,
-		});
-		win.on('destroy', reload);
-		win.show();
+	    enableFn: function(record) {
+		let type = record.data['realm-type'];
+		if (type) {
+		    if (PVE.Utils.authSchema[type]) {
+			return !!PVE.Utils.authSchema[type].pwchange;
+		    }
+		}
+		return false;
 	    },
-	});
-
-	var tfachange_btn = new Proxmox.button.Button({
-	    text: 'TFA',
-	    disabled: true,
-	    selModel: sm,
 	    handler: function(btn, event, rec) {
-		var d = rec.data;
-		var tfa_type = PVE.Parser.parseTfaType(d.keys);
-		var win = Ext.create('PVE.window.TFAEdit', {
-		    tfa_type: tfa_type,
-		    userid: d.userid,
+		Ext.create('Proxmox.window.PasswordEdit', {
+		    userid: rec.data.userid,
+		    autoShow: true,
+		    listeners: {
+			destroy: () => reload(),
+		    },
 		});
-		win.on('destroy', reload);
-		win.show();
 	    },
 	});
 
 	var perm_btn = new Proxmox.button.Button({
 	    text: gettext('Permissions'),
-	    disabled: false,
+	    disabled: true,
 	    selModel: sm,
 	    handler: function(btn, event, rec) {
-		var win = Ext.create('PVE.dc.PermissionView', {
-                    userid: rec.data.userid,
+		Ext.create('PVE.dc.PermissionView', {
+		    userid: rec.data.userid,
+		    autoShow: true,
+		    listeners: {
+			destroy: () => reload(),
+		    },
 		});
-		win.show();
 	    },
 	});
 
-        var tbar = [
-            {
-		text: gettext('Add'),
-		disabled: !caps.access['User.Modify'],
-		handler: function() {
-                    var win = Ext.create('PVE.dc.UserEdit', {
-                    });
-                    win.on('destroy', reload);
-                    win.show();
-		},
-            },
-	    edit_btn, remove_btn, pwchange_btn, tfachange_btn, perm_btn,
-        ];
-
-	var render_username = function(userid) {
-	    return Ext.String.htmlEncode(userid.match(/^(.+)(@[^@]+)$/)[1]);
-	};
-
-	var render_realm = function(userid) {
-	    return Ext.String.htmlEncode(userid.match(/@([^@]+)$/)[1]);
-	};
+	let unlock_btn = new Proxmox.button.Button({
+	    text: gettext('Unlock TFA'),
+	    disabled: true,
+	    selModel: sm,
+	    enableFn: rec => !!(caps.access['User.Modify'] &&
+	        (rec.data['totp-locked'] || rec.data['tfa-locked-until'])),
+	    handler: function(btn, event, rec) {
+		Ext.Msg.confirm(
+		    Ext.String.format(gettext('Unlock TFA authentication for {0}'), rec.data.userid),
+		    gettext("Locked 2nd factors can happen if the user's password was leaked. Are you sure you want to unlock the user?"),
+		    function(btn_response) {
+			if (btn_response === 'yes') {
+			    Proxmox.Utils.API2Request({
+				url: `/access/users/${rec.data.userid}/unlock-tfa`,
+				waitMsgTarget: me,
+				method: 'PUT',
+				failure: function(response, options) {
+				    Ext.Msg.alert(gettext('Error'), response.htmlStatus);
+				},
+				success: function(response, options) {
+				    reload();
+				},
+			    });
+			}
+		    },
+		);
+	    },
+	});
 
 	Ext.apply(me, {
 	    store: store,
 	    selModel: sm,
-	    tbar: tbar,
+	    tbar: [
+		{
+		    text: gettext('Add'),
+		    disabled: !caps.access['User.Modify'],
+		    handler: function() {
+			Ext.create('PVE.dc.UserEdit', {
+			    autoShow: true,
+			    listeners: {
+				destroy: () => reload(),
+			    },
+			});
+		    },
+		},
+		'-',
+		edit_btn,
+		remove_btn,
+		'-',
+		pwchange_btn,
+		'-',
+		perm_btn,
+		'-',
+		unlock_btn,
+	    ],
 	    viewConfig: {
 		trackOver: false,
 	    },
@@ -140,14 +156,14 @@ Ext.define('PVE.dc.UserView', {
 		    header: gettext('User name'),
 		    width: 200,
 		    sortable: true,
-		    renderer: render_username,
+		    renderer: Proxmox.Utils.render_username,
 		    dataIndex: 'userid',
 		},
 		{
 		    header: gettext('Realm'),
 		    width: 100,
 		    sortable: true,
-		    renderer: render_realm,
+		    renderer: Proxmox.Utils.render_realm,
 		    dataIndex: 'userid',
 		},
 		{
@@ -173,26 +189,46 @@ Ext.define('PVE.dc.UserView', {
 		},
 		{
 		    header: 'TFA',
-		    width: 50,
+		    width: 120,
 		    sortable: true,
-		    renderer: function(v) {
-			var tfa_type = PVE.Parser.parseTfaType(v);
+		    renderer: function(v, metaData, record) {
+			let tfa_type = PVE.Parser.parseTfaType(v);
 			if (tfa_type === undefined) {
 			    return Proxmox.Utils.noText;
-			} else if (tfa_type === 1) {
-			    return Proxmox.Utils.yesText;
-			} else {
+			}
+
+			if (tfa_type !== 1) {
 			    return tfa_type;
 			}
+
+			let locked_until = record.data['tfa-locked-until'];
+			if (locked_until !== undefined) {
+			    let now = new Date().getTime() / 1000;
+			    if (locked_until > now) {
+				return gettext('Locked');
+			    }
+			}
+
+			if (record.data['totp-locked']) {
+			    return gettext('TOTP Locked');
+			}
+
+			return Proxmox.Utils.yesText;
 		    },
 		    dataIndex: 'keys',
+		},
+		{
+		    header: gettext('Groups'),
+		    dataIndex: 'groups',
+		    renderer: Ext.htmlEncode,
+		    flex: 2,
 		},
 		{
 		    header: gettext('Comment'),
 		    sortable: false,
 		    renderer: Ext.String.htmlEncode,
 		    dataIndex: 'comment',
-		    flex: 1,
+		    flex: 3,
 		},
 	    ],
 	    listeners: {

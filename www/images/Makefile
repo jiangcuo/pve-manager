@@ -46,7 +46,7 @@ GNOME_IMAGES = 			\
 	computer-template.png   \
 	computer.png
 
-IMAGES = ${GNOME_IMAGES}	\
+IMAGES = $(GNOME_IMAGES)	\
 	virt-viewer.png		\
 	tigervnc.png		\
 	novnc.png		\
@@ -75,20 +75,23 @@ IMAGES = ${GNOME_IMAGES}	\
 	logo-128.png		\
 	icon-serial.svg		\
 	icon-cloud.svg		\
-	icon-pci.png		\
+	icon-pci.svg		\
 	icon-usb.png 		\
 	icon-die.svg		\
 	icon-sdn.svg		\
 	icon-fa-network-wired.svg\
+	icon-cpu.svg		\
+	icon-memory.svg		\
+	icon-cd-drive.svg	\
 
 
 icon-sdn.svg: icon-sdn.dot
 	fdp -Tsvg $< > $@
 
 .PHONY: install 
-install: ${IMAGES}
-	install -d ${WWWIMAGEDIR}
-	install -m 0644 ${IMAGES} ${WWWIMAGEDIR}
+install: $(IMAGES)
+	install -d $(WWWIMAGEDIR)
+	install -m 0644 $(IMAGES) $(WWWIMAGEDIR)
 
 .PHONY: clean
 clean:

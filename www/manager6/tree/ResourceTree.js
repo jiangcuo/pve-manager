@@ -5,6 +5,8 @@ Ext.define('PVE.tree.ResourceTree', {
     extend: 'Ext.tree.TreePanel',
     alias: ['widget.pveResourceTree'],
 
+    userCls: 'proxmox-tags-circle',
+
     statics: {
 	typeDefaults: {
 	    node: {
@@ -42,24 +44,34 @@ Ext.define('PVE.tree.ResourceTree', {
 
     // private
     nodeSortFn: function(node1, node2) {
+	let me = this;
 	let n1 = node1.data, n2 = node2.data;
 
 	if (!n1.groupbyid === !n2.groupbyid) {
-	    // first sort (group) by type
-	    if (n1.type > n2.type) {
-		return 1;
-	    } else if (n1.type < n2.type) {
-		return -1;
+	    let n1IsGuest = n1.type === 'qemu' || n1.type === 'lxc';
+	    let n2IsGuest = n2.type === 'qemu' || n2.type === 'lxc';
+	    if (me['group-guest-types'] || !n1IsGuest || !n2IsGuest) {
+		// first sort (group) by type
+		if (n1.type > n2.type) {
+		    return 1;
+		} else if (n1.type < n2.type) {
+		    return -1;
+		}
 	    }
+
 	    // then sort (group) by ID
-	    if (n1.type === 'qemu' || n2.type === 'lxc') {
-		if (!n1.template !== !n2.template) {
+	    if (n1IsGuest) {
+		if (me['group-templates'] && (!n1.template !== !n2.template)) {
 		    return n1.template ? 1 : -1; // sort templates after regular VMs
 		}
-		if (n1.vmid > n2.vmid) { // prefer VMID as metric for guests
-		    return 1;
-		} else if (n1.vmid < n2.vmid) {
-		    return -1;
+		if (me['sort-field'] === 'vmid') {
+		    if (n1.vmid > n2.vmid) { // prefer VMID as metric for guests
+			return 1;
+		    } else if (n1.vmid < n2.vmid) {
+			return -1;
+		    }
+		} else {
+		    return n1.name.localeCompare(n2.name);
 		}
 	    }
 	    // same types but not a guest
@@ -97,7 +109,6 @@ Ext.define('PVE.tree.ResourceTree', {
 	}
     },
 
-    // add additional elements to text. Currently only the usage indicator for storages
     setText: function(info) {
 	let me = this;
 
@@ -113,13 +124,18 @@ Ext.define('PVE.tree.ResourceTree', {
 		status += '</div> ';
 	    }
 	}
-
-	info.text = status + info.text;
+	if (Ext.isNumeric(info.vmid) && info.vmid > 0) {
+	    if (PVE.UIOptions.getTreeSortingValue('sort-field') !== 'vmid') {
+		info.text = `${info.name} (${String(info.vmid)})`;
+	    }
+	}
+	info.text = `<span>${status}${info.text}</span>`;
+	info.text += PVE.Utils.renderTags(info.tags, PVE.UIOptions.tagOverrides);
     },
 
-    setToolTip: function(info) {
+    getToolTip: function(info) {
 	if (info.type === 'pool' || info.groupbyid !== undefined) {
-	    return;
+	    return undefined;
 	}
 
 	let qtips = [gettext('Status') + ': ' + (info.qmpstatus || info.status)];
@@ -129,8 +145,16 @@ Ext.define('PVE.tree.ResourceTree', {
 	if (info.hastate !== 'unmanaged') {
 	    qtips.push(gettext('HA State') + ": " + info.hastate);
 	}
+	if (info.type === 'storage') {
+	    let usage = info.disk / info.maxdisk;
+	    if (usage >= 0.0 && usage <= 1.0) {
+		qtips.push(Ext.String.format(gettext("Usage: {0}%"), (usage*100).toFixed(2)));
+	    }
+	}
 
-	info.qtip = qtips.join(', ');
+	let tip = qtips.join(', ');
+	info.tip = tip;
+	return tip;
     },
 
     // private
@@ -139,7 +163,6 @@ Ext.define('PVE.tree.ResourceTree', {
 
 	me.setIconCls(info);
 	me.setText(info);
-	me.setToolTip(info);
 
 	if (info.groupbyid) {
 	    info.text = info.groupbyid;
@@ -199,8 +222,22 @@ Ext.define('PVE.tree.ResourceTree', {
 	return me.addChildSorted(node, info);
     },
 
+    saveSortingOptions: function() {
+	let me = this;
+	let changed = false;
+	for (const key of ['sort-field', 'group-templates', 'group-guest-types']) {
+	    let newValue = PVE.UIOptions.getTreeSortingValue(key);
+	    if (me[key] !== newValue) {
+		me[key] = newValue;
+		changed = true;
+	    }
+	}
+	return changed;
+    },
+
     initComponent: function() {
 	let me = this;
+	me.saveSortingOptions();
 
 	let rstore = PVE.data.ResourceStore;
 	let sp = Ext.state.Manager.getProvider();
@@ -226,6 +263,10 @@ Ext.define('PVE.tree.ResourceTree', {
 
 	let stateid = 'rid';
 
+	const changedFields = [
+	    'text', 'running', 'template', 'status', 'qmpstatus', 'hastate', 'lock', 'tags',
+	];
+
 	let updateTree = function() {
 	    store.suspendEvents();
 
@@ -234,11 +275,15 @@ Ext.define('PVE.tree.ResourceTree', {
 	    let sm = me.getSelectionModel();
 	    let lastsel = sm.getSelection()[0];
 	    let parents = [];
+	    let sorting_changed = me.saveSortingOptions();
 	    for (let node = lastsel; node; node = node.parentNode) {
 		parents.push(node);
 	    }
 
 	    let groups = me.viewFilter.groups || [];
+	    // explicitly check for node/template, as those are not always grouping attributes
+	    // also check for name for when the tree is sorted by name
+	    let moveCheckAttrs = groups.concat(['node', 'template', 'name']);
 	    let filterfn = me.viewFilter.filterfn;
 
 	    let reselect = false; // for disappeared nodes
@@ -248,22 +293,18 @@ Ext.define('PVE.tree.ResourceTree', {
 		// getById() use find(), which is slow (ExtJS4 DP5)
 		let item = rstore.data.get(olditem.data.id);
 
-		let changed = false, moved = false;
+		let changed = sorting_changed, moved = sorting_changed;
 		if (item) {
 		    // test if any grouping attributes changed, catches migrated tree-nodes in server view too
-		    for (const attr of groups) {
+		    for (const attr of moveCheckAttrs) {
 			if (item.data[attr] !== olditem.data[attr]) {
 			    moved = true;
 			    break;
 			}
 		    }
-		    // explicitly check for node, as node is not a grouping attribute in some views
-		    if (!moved && item.data.node !== olditem.data.node) {
-			moved = true;
-		    }
 
 		    // tree item has been updated
-		    for (const field of ['text', 'running', 'template', 'status', 'qmpstatus', 'hastate', 'lock']) {
+		    for (const field of changedFields) {
 			if (item.data[field] !== olditem.data[field]) {
 			    changed = true;
 			    break;
@@ -278,7 +319,6 @@ Ext.define('PVE.tree.ResourceTree', {
 		    Ext.apply(info, item.data);
 		    me.setIconCls(info);
 		    me.setText(info);
-		    me.setToolTip(info);
 		    olditem.commit();
 		}
 		if ((!item || moved) && olditem.isLeaf()) {
@@ -366,6 +406,32 @@ Ext.define('PVE.tree.ResourceTree', {
 		    return allow;
 		},
 		itemdblclick: PVE.Utils.openTreeConsole,
+		afterrender: function() {
+		    if (me.tip) {
+			return;
+		    }
+		    let selectors = [
+			'.x-tree-node-text > span:not(.proxmox-tag-dark):not(.proxmox-tag-light)',
+			'.x-tree-icon',
+		    ];
+		    me.tip = Ext.create('Ext.tip.ToolTip', {
+			target: me.el,
+			delegate: selectors.join(', '),
+			trackMouse: true,
+			renderTo: Ext.getBody(),
+			listeners: {
+			    beforeshow: function(tip) {
+				let rec = me.getView().getRecord(tip.triggerElement);
+				let tipText = me.getToolTip(rec.data);
+				if (tipText) {
+				    tip.update(tipText);
+				    return true;
+				}
+				return false;
+			    },
+			},
+		    });
+		},
 	    },
 	    setViewFilter: function(view) {
 		me.viewFilter = view;

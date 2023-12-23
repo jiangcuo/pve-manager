@@ -16,6 +16,10 @@ Ext.define('PVE.window.HDResize', {
 		Ext.Msg.alert(gettext('Error'), response.htmlStatus);
 	    },
 	    success: function(response, options) {
+		Ext.create('Proxmox.window.TaskProgress', {
+		    autoShow: true,
+		    upid: response.result.data,
+		});
 		me.close();
 	    },
 	});
@@ -49,7 +53,7 @@ Ext.define('PVE.window.HDResize', {
 	    maxValue: 128*1024,
 	    decimalPrecision: 3,
 	    value: '0',
-	    fieldLabel: gettext('Size Increment') + ' (GiB)',
+	    fieldLabel: `${gettext('Size Increment')} (${gettext('GiB')})`,
 	    allowBlank: false,
 	});
 

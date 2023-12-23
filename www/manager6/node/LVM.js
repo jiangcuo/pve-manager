@@ -26,6 +26,7 @@ Ext.define('PVE.node.CreateLVM', {
 		    name: 'device',
 		    nodename: me.nodename,
 		    diskType: 'unused',
+		    includePartitions: true,
 		    fieldLabel: gettext('Disk'),
 		    allowBlank: false,
 		},
@@ -52,7 +53,40 @@ Ext.define('PVE.node.LVMList', {
     extend: 'Ext.tree.Panel',
     xtype: 'pveLVMList',
 
-    emptyText: gettext('No Volume Groups found'),
+    viewModel: {
+	data: {
+	    volumeGroup: '',
+	},
+    },
+
+    controller: {
+	xclass: 'Ext.app.ViewController',
+
+	destroyVolumeGroup: function() {
+	    let me = this;
+	    let vm = me.getViewModel();
+	    let view = me.getView();
+
+	    const volumeGroup = vm.get('volumeGroup');
+
+	    if (!view.nodename) {
+		throw "no node name specified";
+	    }
+
+	    if (!volumeGroup) {
+		throw "no volume group specified";
+	    }
+
+	    Ext.create('PVE.window.SafeDestroyStorage', {
+		url: `/nodes/${view.nodename}/disks/lvm/${volumeGroup}`,
+		item: { id: volumeGroup },
+		taskName: 'lvmremove',
+		taskDone: () => { view.reload(); },
+	    }).show();
+	},
+    },
+
+    emptyText: PVE.Utils.renderNotFound('VGs'),
 
     stateful: true,
     stateId: 'grid-node-lvm',
@@ -74,8 +108,8 @@ Ext.define('PVE.node.LVMList', {
 	    align: 'right',
 	},
 	{
-	    header: gettext('Usage'),
-	    width: 110,
+	    header: gettext('Assigned to LVs'),
+	    width: 130,
 	    dataIndex: 'usage',
 	    tdCls: 'x-progressbar-default-cell',
 	    xtype: 'widgetcolumn',
@@ -120,6 +154,45 @@ Ext.define('PVE.node.LVMList', {
 		});
 	    },
 	},
+	'->',
+	{
+	    xtype: 'tbtext',
+	    data: {
+		volumeGroup: undefined,
+	    },
+	    bind: {
+		data: {
+		    volumeGroup: "{volumeGroup}",
+		},
+	    },
+	    tpl: [
+		'<tpl if="volumeGroup">',
+		'Volume group {volumeGroup}:',
+		'<tpl else>',
+		Ext.String.format(gettext('No {0} selected'), 'volume group'),
+		'</tpl>',
+	    ],
+	},
+	{
+	    text: gettext('More'),
+	    iconCls: 'fa fa-bars',
+	    disabled: true,
+	    bind: {
+		disabled: '{!volumeGroup}',
+	    },
+	    menu: [
+		{
+		    text: gettext('Destroy'),
+		    itemId: 'remove',
+		    iconCls: 'fa fa-fw fa-trash-o',
+		    handler: 'destroyVolumeGroup',
+		    disabled: true,
+		    bind: {
+			disabled: '{!volumeGroup}',
+		    },
+		},
+	    ],
+	},
     ],
 
     reload: function() {
@@ -141,6 +214,16 @@ Ext.define('PVE.node.LVMList', {
     listeners: {
 	activate: function() {
 	    this.reload();
+	},
+	selectionchange: function(model, selected) {
+	    let me = this;
+	    let vm = me.getViewModel();
+
+	    if (selected.length < 1 || selected[0].data.parentId !== 'root') {
+		vm.set('volumeGroup', '');
+	    } else {
+		vm.set('volumeGroup', selected[0].data.name);
+	    }
 	},
     },
 

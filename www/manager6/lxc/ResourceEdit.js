@@ -20,9 +20,17 @@ Ext.define('PVE.lxc.MemoryEdit', {
 
 Ext.define('PVE.lxc.CPUEdit', {
     extend: 'Proxmox.window.Edit',
+    alias: 'widget.pveLxcCPUEdit',
+
+    viewModel: {
+	data: {
+	    cgroupMode: 2,
+	},
+    },
 
     initComponent: function() {
-	var me = this;
+	let me = this;
+	me.getViewModel().set('cgroupMode', me.cgroupMode);
 
 	Ext.apply(me, {
 	    subject: gettext('CPU'),
@@ -35,6 +43,7 @@ Ext.define('PVE.lxc.CPUEdit', {
     },
 });
 
+// The view model of the parent shoul contain a 'cgroupMode' variable (or params for v2 are used).
 Ext.define('PVE.lxc.CPUInputPanel', {
     extend: 'Proxmox.panel.InputPanel',
     alias: 'widget.pveLxcCPUInputPanel',
@@ -43,13 +52,19 @@ Ext.define('PVE.lxc.CPUInputPanel', {
 
     insideWizard: false,
 
-    onGetValues: function(values) {
-	var me = this;
+    viewModel: {
+	formulas: {
+	    cpuunitsDefault: (get) => get('cgroupMode') === 1 ? 1024 : 100,
+	    cpuunitsMax: (get) => get('cgroupMode') === 1 ? 500000 : 10000,
+	},
+    },
 
-	PVE.Utils.delete_if_default(values, 'cores', '', me.insideWizard);
-	// cpu{limit,unit} aren't in the wizard so create is always false
-	PVE.Utils.delete_if_default(values, 'cpulimit', '0', 0);
-	PVE.Utils.delete_if_default(values, 'cpuunits', '1024', 0);
+    onGetValues: function(values) {
+	let me = this;
+	let cpuunitsDefault = me.getViewModel().get('cpuunitsDefault');
+
+	PVE.Utils.delete_if_default(values, 'cpulimit', '0', me.insideWizard);
+	PVE.Utils.delete_if_default(values, 'cpuunits', `${cpuunitsDefault}`, me.insideWizard);
 
 	return values;
     },
@@ -72,11 +87,17 @@ Ext.define('PVE.lxc.CPUInputPanel', {
 	    xtype: 'proxmoxintegerfield',
 	    name: 'cpuunits',
 	    fieldLabel: gettext('CPU units'),
-	    value: 1024,
+	    value: '',
 	    minValue: 8,
-	    maxValue: 500000,
+	    maxValue: '10000',
+	    emptyText: '100',
+	    bind: {
+		emptyText: '{cpuunitsDefault}',
+		maxValue: '{cpuunitsMax}',
+	    },
 	    labelWidth: labelWidth,
-	    allowBlank: false,
+	    deleteEmpty: true,
+	    allowBlank: true,
 	},
     ],
 

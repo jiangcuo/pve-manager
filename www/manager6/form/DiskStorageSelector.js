@@ -28,6 +28,9 @@ Ext.define('PVE.form.DiskStorageSelector', {
     // hides the size field (e.g, for the efi disk dialog)
     hideSize: false,
 
+    // hides the format field (e.g. for TPM state)
+    hideFormat: false,
+
     // sets the initial size value
     // string because else we get a type confusion
     defaultSize: '32',
@@ -54,17 +57,24 @@ Ext.define('PVE.form.DiskStorageSelector', {
 	    return;
 	}
 
-	var selectformat = false;
+	let validFormats = {};
+	let selectFormat = 'raw';
 	if (rec.data.format) {
-	    var format = rec.data.format[0]; // 0 is the formats, 1 the default in the backend
-	    delete format.subvol; // we never need subvol in the gui
-	    selectformat = Ext.Object.getSize(format) > 1;
+	    validFormats = rec.data.format[0]; // 0 is the formats, 1 the default in the backend
+	    delete validFormats.subvol; // we never need subvol in the gui
+	    if (validFormats.qcow2) {
+		selectFormat = 'qcow2';
+	    } else if (validFormats.raw) {
+		selectFormat = 'raw';
+	    } else {
+		selectFormat = rec.data.format[1];
+	    }
 	}
 
 	var select = !!rec.data.select_existing && !me.hideSelection;
 
-	formatsel.setDisabled(!selectformat);
-	formatsel.setValue(selectformat ? 'qcow2' : 'raw');
+	formatsel.setDisabled(me.hideFormat || Ext.Object.getSize(validFormats) <= 1);
+	formatsel.setValue(selectFormat);
 
 	hdfilesel.setDisabled(!select);
 	hdfilesel.setVisible(select);
@@ -108,7 +118,6 @@ Ext.define('PVE.form.DiskStorageSelector', {
 		xtype: 'pveStorageSelector',
 		itemId: 'hdstorage',
 		name: 'hdstorage',
-		reference: 'hdstorage',
 		fieldLabel: me.storageLabel,
 		nodename: me.nodename,
 		storageContent: me.storageContent,
@@ -126,7 +135,6 @@ Ext.define('PVE.form.DiskStorageSelector', {
 	    {
 		xtype: 'pveFileSelector',
 		name: 'hdimage',
-		reference: 'hdimage',
 		itemId: 'hdimage',
 		fieldLabel: gettext('Disk image'),
 		nodename: me.nodename,
@@ -136,9 +144,8 @@ Ext.define('PVE.form.DiskStorageSelector', {
 	    {
 		xtype: 'numberfield',
 		itemId: 'disksize',
-		reference: 'disksize',
 		name: 'disksize',
-		fieldLabel: gettext('Disk size') + ' (GiB)',
+		fieldLabel: `${gettext('Disk size')} (${gettext('GiB')})`,
 		hidden: me.hideSize,
 		disabled: me.hideSize,
 		minValue: 0.001,
@@ -150,12 +157,11 @@ Ext.define('PVE.form.DiskStorageSelector', {
 	    {
 		xtype: 'pveDiskFormatSelector',
 		itemId: 'diskformat',
-		reference: 'diskformat',
 		name: 'diskformat',
 		fieldLabel: gettext('Format'),
 		nodename: me.nodename,
 		disabled: true,
-		hidden: me.storageContent === 'rootdir',
+		hidden: me.hideFormat || me.storageContent === 'rootdir',
 		value: 'qcow2',
 		allowBlank: false,
 	    },

@@ -7,6 +7,52 @@ Ext.define('PVE.CephPoolInputPanel', {
     onlineHelp: 'pve_ceph_pools',
 
     subject: 'Ceph Pool',
+
+    defaultSize: undefined,
+    defaultMinSize: undefined,
+
+    controller: {
+	xclass: 'Ext.app.ViewController',
+
+	init: function(view) {
+	    let vm = this.getViewModel();
+	    vm.set('size', Number(view.defaultSize));
+	    vm.set('minSize', Number(view.defaultMinSize));
+	},
+	sizeChange: function(field, val) {
+	    let vm = this.getViewModel();
+	    let minSize = Math.round(val / 2);
+	    if (minSize > 1) {
+		vm.set('minSize', minSize);
+	    }
+	    vm.set('size', val); // bind does not work in a pmxDisplayEditField, update manually
+	},
+    },
+
+    viewModel: {
+	data: {
+	    minSize: null,
+	    size: null,
+	},
+	formulas: {
+	    minSizeLabel: (get) => {
+		if (get('showMinSizeOneWarning') || get('showMinSizeHalfWarning')) {
+		    return `${gettext('Min. Size')} <i class="fa fa-exclamation-triangle warning"></i>`;
+		}
+		return gettext('Min. Size');
+	    },
+	    showMinSizeOneWarning: (get) => get('minSize') === 1,
+	    showMinSizeHalfWarning: (get) => {
+		let minSize = get('minSize');
+		let size = get('size');
+		if (minSize === 1) {
+		    return false;
+		}
+		return minSize < (size / 2) && minSize !== size;
+	    },
+	},
+    },
+
     column1: [
 	{
 	    xtype: 'pmxDisplayEditField',
@@ -19,19 +65,22 @@ Ext.define('PVE.CephPoolInputPanel', {
 	    allowBlank: false,
 	},
 	{
-	    xtype: 'proxmoxintegerfield',
+	    xtype: 'pmxDisplayEditField',
+	    cbind: {
+		editable: '{!isErasure}',
+	    },
 	    fieldLabel: gettext('Size'),
 	    name: 'size',
-	    value: 3,
-	    minValue: 2,
-	    maxValue: 7,
-	    allowBlank: false,
-	    listeners: {
-		change: function(field, val) {
-		    let size = Math.round(val / 2);
-		    if (size > 1) {
-			field.up('inputpanel').down('field[name=min_size]').setValue(size);
-		    }
+	    editConfig: {
+		xtype: 'proxmoxintegerfield',
+		cbind: {
+		    value: (get) => get('defaultSize'),
+		},
+		minValue: 2,
+		maxValue: 7,
+		allowBlank: false,
+		listeners: {
+		    change: 'sizeChange',
 		},
 	    },
 	},
@@ -69,46 +118,55 @@ Ext.define('PVE.CephPoolInputPanel', {
     advancedColumn1: [
 	{
 	    xtype: 'proxmoxintegerfield',
-	    fieldLabel: gettext('Min. Size'),
+	    bind: {
+		fieldLabel: '{minSizeLabel}',
+		value: '{minSize}',
+	    },
 	    name: 'min_size',
-	    value: 2,
 	    cbind: {
-		minValue: (get) => get('isCreate') ? 2 : 1,
+		value: (get) => get('defaultMinSize'),
+		minValue: (get) => {
+		    if (Number(get('defaultMinSize')) === 1) {
+			return 1;
+		    } else {
+			return get('isCreate') ? 2 : 1;
+		    }
+		},
 	    },
 	    maxValue: 7,
 	    allowBlank: false,
-	    listeners: {
-		change: function(field, minSize) {
-		    let panel = field.up('inputpanel');
-		    let size = panel.down('field[name=size]').getValue();
-
-		    let showWarning = minSize < (size / 2) && minSize !== size;
-
-		    let fieldLabel = gettext('Min. Size');
-		    if (showWarning) {
-			fieldLabel = gettext('Min. Size') + ' <i class="fa fa-exclamation-triangle warning"></i>';
-		    }
-		    panel.down('field[name=min_size-warning]').setHidden(!showWarning);
-		    field.setFieldLabel(fieldLabel);
-		},
-	    },
 	},
 	{
 	    xtype: 'displayfield',
-	    name: 'min_size-warning',
+	    bind: {
+		hidden: '{!showMinSizeHalfWarning}',
+	    },
+	    hidden: true,
 	    userCls: 'pmx-hint',
 	    value: gettext('min_size < size/2 can lead to data loss, incomplete PGs or unfound objects.'),
-	    hidden: true,
 	},
 	{
-	    xtype: 'pveCephRuleSelector',
-	    fieldLabel: 'Crush Rule', // do not localize
-	    name: 'crush_rule',
+	    xtype: 'displayfield',
+	    bind: {
+		hidden: '{!showMinSizeOneWarning}',
+	    },
+	    hidden: true,
+	    userCls: 'pmx-hint',
+	    value: gettext('a min_size of 1 is not recommended and can lead to data loss'),
+	},
+	{
+	    xtype: 'pmxDisplayEditField',
 	    cbind: {
+		editable: '{!isErasure}',
 		nodename: '{nodename}',
 		isCreate: '{isCreate}',
 	    },
-	    allowBlank: false,
+	    fieldLabel: 'Crush Rule', // do not localize
+	    name: 'crush_rule',
+	    editConfig: {
+		xtype: 'pveCephRuleSelector',
+		allowBlank: false,
+	    },
 	},
 	{
 	    xtype: 'proxmoxintegerfield',
@@ -184,13 +242,16 @@ Ext.define('PVE.Ceph.PoolEdit', {
     cbindData: {
 	pool_name: '',
 	isCreate: (cfg) => !cfg.pool_name,
+	defaultSize: undefined,
+	defaultMinSize: undefined,
     },
 
     cbind: {
 	autoLoad: get => !get('isCreate'),
 	url: get => get('isCreate')
-	    ? `/nodes/${get('nodename')}/ceph/pools`
-	    : `/nodes/${get('nodename')}/ceph/pools/${get('pool_name')}`,
+	    ? `/nodes/${get('nodename')}/ceph/pool`
+	    : `/nodes/${get('nodename')}/ceph/pool/${get('pool_name')}`,
+	loadUrl: get => `/nodes/${get('nodename')}/ceph/pool/${get('pool_name')}/status`,
 	method: get => get('isCreate') ? 'POST' : 'PUT',
     },
 
@@ -203,7 +264,10 @@ Ext.define('PVE.Ceph.PoolEdit', {
 	cbind: {
 	    nodename: '{nodename}',
 	    pool_name: '{pool_name}',
+	    isErasure: '{isErasure}',
 	    isCreate: '{isCreate}',
+	    defaultSize: '{defaultSize}',
+	    defaultMinSize: '{defaultMinSize}',
 	},
     }],
 });
@@ -222,11 +286,26 @@ Ext.define('PVE.node.Ceph.PoolList', {
 
     columns: [
 	{
+	    text: gettext('Pool #'),
+	    minWidth: 70,
+	    flex: 1,
+	    align: 'right',
+	    sortable: true,
+	    dataIndex: 'pool',
+	},
+	{
 	    text: gettext('Name'),
 	    minWidth: 120,
 	    flex: 2,
 	    sortable: true,
 	    dataIndex: 'pool_name',
+	},
+	{
+	    text: gettext('Type'),
+	    minWidth: 100,
+	    flex: 1,
+	    dataIndex: 'type',
+	    hidden: true,
 	},
 	{
 	    text: gettext('Size') + '/min',
@@ -337,7 +416,7 @@ Ext.define('PVE.node.Ceph.PoolList', {
 	    model: 'ceph-pool-list',
 	    proxy: {
 		type: 'proxmox',
-		url: `/api2/json/nodes/${nodename}/ceph/pools`,
+		url: `/api2/json/nodes/${nodename}/ceph/pool`,
 	    },
 	});
 	let store = Ext.create('Proxmox.data.DiffStore', { rstore: rstore });
@@ -354,6 +433,7 @@ Ext.define('PVE.node.Ceph.PoolList', {
 		title: gettext('Edit') + ': Ceph Pool',
 		nodename: nodename,
 		pool_name: rec.data.pool_name,
+		isErasure: rec.data.type === 'erasure',
 		autoShow: true,
 		listeners: {
 		    destroy: () => rstore.load(),
@@ -368,13 +448,37 @@ Ext.define('PVE.node.Ceph.PoolList', {
 		{
 		    text: gettext('Create'),
 		    handler: function() {
-			Ext.create('PVE.Ceph.PoolEdit', {
-			    title: gettext('Create') + ': Ceph Pool',
-			    isCreate: true,
-			    nodename: nodename,
-			    autoShow: true,
-			    listeners: {
-				destroy: () => rstore.load(),
+			let keys = [
+			    'global:osd-pool-default-min-size',
+			    'global:osd-pool-default-size',
+			];
+			let params = {
+			    'config-keys': keys.join(';'),
+			};
+
+			Proxmox.Utils.API2Request({
+			    url: '/nodes/localhost/ceph/cfg/value',
+			    method: 'GET',
+			    params,
+			    waitMsgTarget: me.getView(),
+			    failure: response => Ext.Msg.alert(gettext('Error'), response.htmlStatus),
+			    success: function({ result: { data } }) {
+				let global = data.global;
+				let defaultSize = global?.['osd-pool-default-size'] ?? 3;
+				let defaultMinSize = global?.['osd-pool-default-min-size'] ?? 2;
+
+				Ext.create('PVE.Ceph.PoolEdit', {
+				    title: gettext('Create') + ': Ceph Pool',
+				    isCreate: true,
+				    isErasure: false,
+				    defaultSize,
+				    defaultMinSize,
+				    nodename: nodename,
+				    autoShow: true,
+				    listeners: {
+					destroy: () => rstore.load(),
+				    },
+				});
 			    },
 			});
 		    },
@@ -399,7 +503,7 @@ Ext.define('PVE.node.Ceph.PoolList', {
 			let poolName = rec.data.pool_name;
 			Ext.create('Proxmox.window.SafeDestroy', {
 			    showProgress: true,
-			    url: `/nodes/${nodename}/ceph/pools/${poolName}`,
+			    url: `/nodes/${nodename}/ceph/pool/${poolName}`,
 			    params: {
 				remove_storages: 1,
 			    },
@@ -463,6 +567,10 @@ Ext.define('PVE.form.CephRuleSelector', {
 	if (!me.nodename) {
 	    throw "no nodename given";
 	}
+
+	me.originalAllowBlank = me.allowBlank;
+	me.allowBlank = true;
+
 	Ext.apply(me, {
 	    store: {
 		fields: ['name'],
@@ -471,13 +579,17 @@ Ext.define('PVE.form.CephRuleSelector', {
 		    type: 'proxmox',
 		    url: `/api2/json/nodes/${me.nodename}/ceph/rules`,
 		},
-		autoLoad: me.isCreate ? {
+		autoLoad: {
 		    callback: (records, op, success) => {
-			if (success && records.length > 0) {
+			if (me.isCreate && success && records.length > 0) {
 			    me.select(records[0]);
 			}
+
+			me.allowBlank = me.originalAllowBlank;
+			delete me.originalAllowBlank;
+			me.validate();
 		    },
-		} : true,
+		},
 	    },
 	});
 

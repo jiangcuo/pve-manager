@@ -59,15 +59,7 @@ __PACKAGE__->register_method ({
 
 	my $rados = PVE::RADOS->new();
 
-	my $cephfs_list = $rados->mon_command({ prefix => "fs ls" });
-	# we get something like:
-	#{
-	#   'metadata_pool_id' => 2,
-	#   'data_pool_ids' => [ 1 ],
-	#   'metadata_pool' => 'cephfs_metadata',
-	#   'data_pools' => [ 'cephfs_data' ],
-	#   'name' => 'cephfs',
-	#}
+	my $cephfs_list = PVE::Ceph::Tools::ls_fs($rados);
 
 	my $res = [
 	    map {{
@@ -136,8 +128,14 @@ __PACKAGE__->register_method ({
 	die "ceph pools '$pool_data' and/or '$pool_metadata' already exist\n"
 	    if $existing_pools->{$pool_data} || $existing_pools->{$pool_metadata};
 
+	my $fs = PVE::Ceph::Tools::ls_fs($rados);
+	die "ceph fs '$fs_name' already exists\n"
+	    if (grep { $_->{name} eq $fs_name } @$fs);
+
 	my $running_mds = PVE::Ceph::Services::get_cluster_mds_state($rados);
 	die "no running Metadata Server (MDS) found!\n" if !scalar(keys %$running_mds);
+	die "no standby Metadata Server (MDS) found!\n"
+	    if !grep { $_->{state} eq 'up:standby' } values(%$running_mds);
 
 	PVE::Storage::assert_sid_unused($fs_name) if $param->{add_storage};
 
@@ -161,13 +159,11 @@ __PACKAGE__->register_method ({
 		push @created_pools, $pool_metadata;
 
 		print "configuring new CephFS '$fs_name'\n";
-		$rados->mon_command({
-		    prefix => "fs new",
-		    fs_name => $fs_name,
-		    metadata => $pool_metadata,
-		    data => $pool_data,
-		    format => 'plain',
-		});
+		my $param = {
+		    pool_metadata => $pool_metadata,
+		    pool_data => $pool_data,
+		};
+		PVE::Ceph::Tools::create_fs($fs_name, $param, $rados);
 	    };
 	    if (my $err = $@) {
 		$@ = undef;
@@ -191,7 +187,7 @@ __PACKAGE__->register_method ({
 		print "Adding '$fs_name' to storage configuration...\n";
 
 		my $waittime = 0;
-		while (!PVE::Ceph::Services::is_any_mds_active($rados)) {
+		while (!PVE::Ceph::Services::is_mds_active($rados, $fs_name)) {
 		    if ($waittime >= 10) {
 			die "Need MDS to add storage, but none got active!\n";
 		    }
@@ -206,6 +202,7 @@ __PACKAGE__->register_method ({
 			type => 'cephfs',
 			storage => $fs_name,
 			content => 'backup,iso,vztmpl',
+			'fs-name' => $fs_name,
 		    })
 		};
 		die "adding storage for CephFS '$fs_name' failed, check log ".

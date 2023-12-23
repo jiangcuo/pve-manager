@@ -11,6 +11,7 @@ use JSON;
 use POSIX qw(LONG_MAX);
 use Time::Local qw(timegm_nocheck);
 use Socket;
+use IO::Socket::SSL;
 
 use PVE::API2Tools;
 use PVE::APLInfo;
@@ -27,13 +28,14 @@ use PVE::LXC;
 use PVE::ProcFSTools;
 use PVE::QemuConfig;
 use PVE::QemuServer;
+use PVE::RESTEnvironment qw(log_warn);
 use PVE::RESTHandler;
 use PVE::RPCEnvironment;
 use PVE::RRD;
 use PVE::Report;
 use PVE::SafeSyslog;
 use PVE::Storage;
-use PVE::Tools;
+use PVE::Tools qw(file_get_contents);
 use PVE::pvecfg;
 
 use PVE::API2::APT;
@@ -64,6 +66,48 @@ eval {
 };
 
 use base qw(PVE::RESTHandler);
+
+my $verify_command_item_desc = {
+    description => "An array of objects describing endpoints, methods and arguments.",
+    type => "array",
+    items => {
+	type => "object",
+	properties => {
+	    path => {
+		description => "A relative path to an API endpoint on this node.",
+		type => "string",
+		optional => 0,
+	    },
+	    method => {
+		description => "A method related to the API endpoint (GET, POST etc.).",
+		type => "string",
+		pattern => "(GET|POST|PUT|DELETE)",
+		optional => 0,
+	    },
+	    args => {
+		description => "A set of parameter names and their values.",
+		type => "object",
+		optional => 1,
+	    },
+	},
+    }
+};
+
+PVE::JSONSchema::register_format('pve-command-batch', \&verify_command_batch);
+sub verify_command_batch {
+    my ($value, $noerr) = @_;
+    my $commands = eval { decode_json($value); };
+
+    return if $noerr && $@;
+    die "commands param did not contain valid JSON: $@" if $@;
+
+    eval { PVE::JSONSchema::validate($commands, $verify_command_item_desc) };
+
+    return $commands if !$@;
+
+    return if $noerr;
+    die "commands is not a valid array of commands: $@";
+}
 
 __PACKAGE__->register_method ({
     subclass => "PVE::API2::Qemu",
@@ -225,12 +269,15 @@ __PACKAGE__->register_method ({
 	    { name => 'disks' },
 	    { name => 'dns' },
 	    { name => 'firewall' },
+	    { name => 'hardware' },
 	    { name => 'hosts' },
 	    { name => 'journal' },
 	    { name => 'lxc' },
+	    { name => 'migrateall' },
 	    { name => 'netstat' },
 	    { name => 'network' },
 	    { name => 'qemu' },
+	    { name => 'query-url-metadata' },
 	    { name => 'replication' },
 	    { name => 'report' },
 	    { name => 'rrd' }, # fixme: remove?
@@ -243,6 +290,7 @@ __PACKAGE__->register_method ({
 	    { name => 'stopall' },
 	    { name => 'storage' },
 	    { name => 'subscription' },
+	    { name => 'suspendall' },
 	    { name => 'syslog' },
 	    { name => 'tasks' },
 	    { name => 'termproxy' },
@@ -294,6 +342,41 @@ __PACKAGE__->register_method ({
 	return PVE::pvecfg::version_info();
     }});
 
+my sub get_current_kernel_info {
+    my ($sysname, $nodename, $release, $version, $machine) = POSIX::uname();
+
+    my $kernel_version_string = "$sysname $release $version"; # for legacy compat
+    my $current_kernel = {
+	sysname => $sysname,
+	release => $release,
+	version => $version,
+	machine => $machine,
+    };
+    return ($current_kernel, $kernel_version_string);
+}
+
+my $boot_mode_info_cache;
+my sub get_boot_mode_info {
+    return $boot_mode_info_cache if defined($boot_mode_info_cache);
+
+    my $is_efi_booted = -d "/sys/firmware/efi";
+
+    $boot_mode_info_cache = {
+	mode => $is_efi_booted ? 'efi' : 'legacy-bios',
+    };
+
+    if ($is_efi_booted) {
+	my $efi_var_sec_boot_entry = eval { file_get_contents("/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c") };
+	if ($@) {
+	    warn "Failed to read secure boot state: $@\n";
+	} else {
+	    my @secureboot = unpack("CCCCC", $efi_var_sec_boot_entry);
+	    $boot_mode_info_cache->{secureboot} = $secureboot[4] == 1 ? 1 : 0;
+	}
+    }
+    return $boot_mode_info_cache;
+}
+
 __PACKAGE__->register_method({
     name => 'status',
     path => 'status',
@@ -329,9 +412,11 @@ __PACKAGE__->register_method({
 	my ($avg1, $avg5, $avg15) = PVE::ProcFSTools::read_loadavg();
 	$res->{loadavg} = [ $avg1, $avg5, $avg15];
 
-	my ($sysname, $nodename, $release, $version, $machine) = POSIX::uname();
+	my ($current_kernel_info, $kversion_string) = get_current_kernel_info();
+	$res->{kversion} = $kversion_string;
+	$res->{'current-kernel'} = $current_kernel_info;
 
-	$res->{kversion} = "$sysname $release $version";
+	$res->{'boot-info'} = get_boot_mode_info();
 
 	$res->{cpuinfo} = PVE::ProcFSTools::read_cpuinfo();
 
@@ -418,10 +503,7 @@ __PACKAGE__->register_method({
     name => 'execute',
     path => 'execute',
     method => 'POST',
-    permissions => {
-	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ]],
-    },
-    description => "Execute multiple commands in order.",
+    description => "Execute multiple commands in order, root only.",
     proxyto => 'node',
     protected => 1, # avoid problems with proxy code
     parameters => {
@@ -431,13 +513,17 @@ __PACKAGE__->register_method({
 	    commands => {
 		description => "JSON encoded array of commands.",
 		type => "string",
+		verbose_description => "JSON encoded array of commands, where each command is an object with the following properties:\n"
+		 . PVE::RESTHandler::dump_properties($verify_command_item_desc->{items}->{properties}, 'full'),
+		format => "pve-command-batch",
 	    }
 	},
     },
     returns => {
 	type => 'array',
-	properties => {
-
+	items => {
+	    type => "object",
+	    properties => {},
 	},
     },
     code => sub {
@@ -446,16 +532,11 @@ __PACKAGE__->register_method({
 
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $user = $rpcenv->get_user();
-
+	# just parse the json again, it should already be validated
 	my $commands = eval { decode_json($param->{commands}); };
 
-	die "commands param did not contain valid JSON: $@" if $@;
-	die "commands is not an array" if ref($commands) ne "ARRAY";
-
-        foreach my $cmd (@$commands) {
+	foreach my $cmd (@$commands) {
 	    eval {
-		die "$cmd is not a valid command" if (ref($cmd) ne "HASH" || !$cmd->{path} || !$cmd->{method});
-
 		$cmd->{args} //= {};
 
 		my $path = "nodes/$param->{node}/$cmd->{path}";
@@ -527,7 +608,7 @@ __PACKAGE__->register_method({
 	    system ("(sleep 2;/sbin/poweroff)&");
 	}
 
-	return undef;
+	return;
     }});
 
 __PACKAGE__->register_method({
@@ -612,11 +693,11 @@ __PACKAGE__->register_method({
 	    },
 	    ds => {
 		description => "The list of datasources you want to display.",
- 		type => 'string', format => 'pve-configid-list',
+		type => 'string', format => 'pve-configid-list',
 	    },
 	    cf => {
 		description => "The RRD consolidation function",
- 		type => 'string',
+		type => 'string',
 		enum => [ 'AVERAGE', 'MAX' ],
 		optional => 1,
 	    },
@@ -657,7 +738,7 @@ __PACKAGE__->register_method({
 	    },
 	    cf => {
 		description => "The RRD consolidation function",
- 		type => 'string',
+		type => 'string',
 		enum => [ 'AVERAGE', 'MAX' ],
 		optional => 1,
 	    },
@@ -817,19 +898,25 @@ __PACKAGE__->register_method({
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $user = $rpcenv->get_user();
 
-	my $cmd = ["/usr/bin/mini-journalreader"];
+	my $cmd = ["/usr/bin/mini-journalreader", "-j"];
 	push @$cmd, '-n', $param->{lastentries} if $param->{lastentries};
 	push @$cmd, '-b', $param->{since} if $param->{since};
 	push @$cmd, '-e', $param->{until} if $param->{until};
-	push @$cmd, '-f', $param->{startcursor} if $param->{startcursor};
-	push @$cmd, '-t', $param->{endcursor} if $param->{endcursor};
+	push @$cmd, '-f', PVE::Tools::shellquote($param->{startcursor}) if $param->{startcursor};
+	push @$cmd, '-t', PVE::Tools::shellquote($param->{endcursor}) if $param->{endcursor};
+	push @$cmd, ' | gzip ';
 
-	my $lines = [];
-	my $parser = sub { push @$lines, shift };
+	open(my $fh, "-|", join(' ', @$cmd))
+	    or die "could not start mini-journalreader";
 
-	PVE::Tools::run_command($cmd, outfunc => $parser);
-
-	return $lines;
+	return {
+	    download => {
+		fh => $fh,
+		stream => 1,
+		'content-type' => 'application/json',
+		'content-encoding' => 'gzip',
+	    },
+	},
     }});
 
 my $sslcert;
@@ -891,7 +978,6 @@ __PACKAGE__->register_method ({
     method => 'POST',
     protected => 1,
     permissions => {
-	description => "Restricted to users on realm 'pam'",
 	check => ['perm', '/nodes/{node}', [ 'Sys.Console' ]],
     },
     description => "Creates a VNC Shell proxy.",
@@ -901,7 +987,7 @@ __PACKAGE__->register_method ({
 	    node => get_standard_option('pve-node'),
 	    cmd => {
 		type => 'string',
-		description => "Run specific command or default to login.",
+		description => "Run specific command or default to login (requires 'root\@pam')",
 		enum => [keys %$shell_cmd_map],
 		optional => 1,
 		default => 'login',
@@ -950,9 +1036,8 @@ __PACKAGE__->register_method ({
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my ($user, undef, $realm) = PVE::AccessControl::verify_username($rpcenv->get_user());
 
-	raise_perm_exc("realm != pam") if $realm ne 'pam';
 
-	if (defined($param->{cmd}) && $param->{cmd} eq 'upgrade' && $user ne 'root@pam') {
+	if (defined($param->{cmd}) && $param->{cmd} ne 'login' && $user ne 'root@pam') {
 	    raise_perm_exc('user != root@pam');
 	}
 
@@ -1031,7 +1116,6 @@ __PACKAGE__->register_method ({
     method => 'POST',
     protected => 1,
     permissions => {
-	description => "Restricted to users on realm 'pam'",
 	check => ['perm', '/nodes/{node}', [ 'Sys.Console' ]],
     },
     description => "Creates a VNC Shell proxy.",
@@ -1041,7 +1125,7 @@ __PACKAGE__->register_method ({
 	    node => get_standard_option('pve-node'),
 	    cmd => {
 		type => 'string',
-		description => "Run specific command or default to login.",
+		description => "Run specific command or default to login (requires 'root\@pam')",
 		enum => [keys %$shell_cmd_map],
 		optional => 1,
 		default => 'login',
@@ -1069,7 +1153,6 @@ __PACKAGE__->register_method ({
 
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my ($user, undef, $realm) = PVE::AccessControl::verify_username($rpcenv->get_user());
-	raise_perm_exc("realm $realm != pam") if $realm ne 'pam';
 
 	my $node = $param->{node};
 	my $authpath = "/nodes/$node";
@@ -1112,7 +1195,7 @@ __PACKAGE__->register_method({
     path => 'vncwebsocket',
     method => 'GET',
     permissions => {
-	description => "Restricted to users on realm 'pam'. You also need to pass a valid ticket (vncticket).",
+	description => "You also need to pass a valid ticket (vncticket).",
 	check => ['perm', '/nodes/{node}', [ 'Sys.Console' ]],
     },
     description => "Opens a websocket for VNC traffic.",
@@ -1146,8 +1229,6 @@ __PACKAGE__->register_method({
 
 	my ($user, undef, $realm) = PVE::AccessControl::verify_username($rpcenv->get_user());
 
-	raise_perm_exc("realm != pam") if $realm ne 'pam';
-
 	my $authpath = "/nodes/$param->{node}";
 
 	PVE::AccessControl::verify_vnc_ticket($param->{vncticket}, $user, $authpath);
@@ -1164,7 +1245,6 @@ __PACKAGE__->register_method ({
     protected => 1,
     proxyto => 'node',
     permissions => {
-	description => "Restricted to users on realm 'pam'",
 	check => ['perm', '/nodes/{node}', [ 'Sys.Console' ]],
     },
     description => "Creates a SPICE shell.",
@@ -1175,7 +1255,7 @@ __PACKAGE__->register_method ({
 	    proxy => get_standard_option('spice-proxy', { optional => 1 }),
 	    cmd => {
 		type => 'string',
-		description => "Run specific command or default to login.",
+		description => "Run specific command or default to login (requires 'root\@pam')",
 		enum => [keys %$shell_cmd_map],
 		optional => 1,
 		default => 'login',
@@ -1198,9 +1278,8 @@ __PACKAGE__->register_method ({
 
 	my ($user, undef, $realm) = PVE::AccessControl::verify_username($authuser);
 
-	raise_perm_exc("realm != pam") if $realm ne 'pam';
 
-	if (defined($param->{cmd}) && $param->{cmd} eq 'upgrade' && $user ne 'root@pam') {
+	if (defined($param->{cmd}) && $param->{cmd} ne 'login' && $user ne 'root@pam') {
 	    raise_perm_exc('user != root@pam');
 	}
 
@@ -1307,7 +1386,7 @@ __PACKAGE__->register_method({
 
 	PVE::INotify::update_file('resolvconf', $param);
 
-	return undef;
+	return;
     }});
 
 __PACKAGE__->register_method({
@@ -1320,7 +1399,7 @@ __PACKAGE__->register_method({
     description => "Read server time and time zone settings.",
     proxyto => 'node',
     parameters => {
-    	additionalProperties => 0,
+	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
 	},
@@ -1345,7 +1424,7 @@ __PACKAGE__->register_method({
 		minimum => 1297163644,
 		renderer => 'timestamp_gmt',
 	    },
-        },
+	},
     },
     code => sub {
 	my ($param) = @_;
@@ -1387,7 +1466,7 @@ __PACKAGE__->register_method({
 
 	PVE::INotify::write_file('timezone', $param->{timezone});
 
-	return undef;
+	return;
     }});
 
 __PACKAGE__->register_method({
@@ -1494,6 +1573,101 @@ __PACKAGE__->register_method({
     }});
 
 __PACKAGE__->register_method({
+    name => 'query_url_metadata',
+    path => 'query-url-metadata',
+    method => 'GET',
+    description => "Query metadata of an URL: file size, file name and mime type.",
+    proxyto => 'node',
+    permissions => {
+	check => ['perm', '/', [ 'Sys.Audit', 'Sys.Modify' ]],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    url => {
+		description => "The URL to query the metadata from.",
+		type => 'string',
+		pattern => 'https?://.*',
+	    },
+	    'verify-certificates' => {
+		description => "If false, no SSL/TLS certificates will be verified.",
+		type => 'boolean',
+		optional => 1,
+		default => 1,
+	    },
+	},
+    },
+    returns => {
+	type => "object",
+	properties => {
+	    filename => {
+		type => 'string',
+		optional => 1,
+	    },
+	    size => {
+		type => 'integer',
+		renderer => 'bytes',
+		optional => 1,
+	    },
+	    mimetype => {
+		type => 'string',
+		optional => 1,
+	    },
+	},
+    },
+    code => sub {
+	my ($param) = @_;
+
+	my $url = $param->{url};
+
+	my $ua = LWP::UserAgent->new();
+	$ua->agent("Proxmox VE");
+
+	my $dccfg = PVE::Cluster::cfs_read_file('datacenter.cfg');
+	if ($dccfg->{http_proxy}) {
+	    $ua->proxy('http', $dccfg->{http_proxy});
+	}
+
+	my $verify = $param->{'verify-certificates'} // 1;
+	if (!$verify) {
+	    $ua->ssl_opts(
+		verify_hostname => 0,
+		SSL_verify_mode => IO::Socket::SSL::SSL_VERIFY_NONE,
+	    );
+	}
+
+	my $req = HTTP::Request->new(HEAD => $url);
+	my $res = $ua->request($req);
+
+	die "invalid server response: '" . $res->status_line() . "'\n" if ($res->code() != 200);
+
+	my $size = $res->header("Content-Length");
+	my $disposition = $res->header("Content-Disposition");
+	my $type = $res->header("Content-Type");
+
+	my $filename;
+
+	if ($disposition && ($disposition =~ m/filename="([^"]*)"/ || $disposition =~ m/filename=([^;]*)/)) {
+	    $filename = $1;
+	} elsif ($url =~ m!^[^?]+/([^?/]*)(?:\?.*)?$!) {
+	    $filename = $1;
+	}
+
+	# Content-Type: text/html; charset=utf-8
+	if ($type && $type =~ m/^([^;]+);/) {
+	    $type = $1;
+	}
+
+	my $ret = {};
+	$ret->{filename} = $filename if $filename;
+	$ret->{size} = $size + 0 if $size;
+	$ret->{mimetype} = $type if $type;
+
+	return $ret;
+    }});
+
+__PACKAGE__->register_method({
     name => 'report',
     path => 'report',
     method => 'GET',
@@ -1526,16 +1700,14 @@ my $get_filtered_vmlist = sub {
 
     my $vmlist = PVE::Cluster::get_vmlist();
 
-    my $vms_allowed = {};
+    my $vms_allowed;
     if (defined($vmfilter)) {
-	foreach my $vmid (PVE::Tools::split_list($vmfilter)) {
-	    $vms_allowed->{$vmid} = 1;
-	}
+	$vms_allowed = { map { $_ => 1 } PVE::Tools::split_list($vmfilter) };
     }
 
     my $res = {};
     foreach my $vmid (keys %{$vmlist->{ids}}) {
-	next if %$vms_allowed && !$vms_allowed->{$vmid};
+	next if defined($vms_allowed) && !$vms_allowed->{$vmid};
 
 	my $d = $vmlist->{ids}->{$vmid};
 	next if $nodename && $d->{node} ne $nodename;
@@ -1547,7 +1719,7 @@ my $get_filtered_vmlist = sub {
 	    } elsif ($d->{type} eq 'qemu') {
 		$class = 'PVE::QemuConfig';
 	    } else {
-		die "unknown VM type '$d->{type}'\n";
+		die "unknown virtual guest type '$d->{type}'\n";
 	    }
 
 	    my $conf = $class->load_config($vmid);
@@ -1571,23 +1743,18 @@ my $get_start_stop_list = sub {
     # do not skip HA vms on force or if a specific VMID set is wanted
     my $include_ha_managed = defined($vmfilter) ? 1 : 0;
 
-    my $vmlist = &$get_filtered_vmlist($nodename, $vmfilter, undef, $include_ha_managed);
+    my $vmlist = $get_filtered_vmlist->($nodename, $vmfilter, undef, $include_ha_managed);
 
     my $resList = {};
     foreach my $vmid (keys %$vmlist) {
 	my $conf = $vmlist->{$vmid}->{conf};
-
 	next if $autostart && !$conf->{onboot};
 
-	my $startup = {};
-	if ($conf->{startup}) {
-	    $startup =  PVE::JSONSchema::pve_parse_startup_order($conf->{startup});
-	}
+	my $startup = $conf->{startup} ? PVE::JSONSchema::pve_parse_startup_order($conf->{startup}) : {};
+	my $order = $startup->{order} = $startup->{order} // LONG_MAX;
 
-	$startup->{order} = LONG_MAX if !defined($startup->{order});
-
-	$resList->{$startup->{order}}->{$vmid} = $startup;
-	$resList->{$startup->{order}}->{$vmid}->{type} = $vmlist->{$vmid}->{type};
+	$resList->{$order}->{$vmid} = $startup;
+	$resList->{$order}->{$vmid}->{type} = $vmlist->{$vmid}->{type};
     }
 
     return $resList;
@@ -1619,7 +1786,9 @@ __PACKAGE__->register_method ({
     method => 'POST',
     protected => 1,
     permissions => {
-	check => ['perm', '/', [ 'VM.PowerMgmt' ]],
+	description => "The 'VM.PowerMgmt' permission is required on '/' or on '/vms/<ID>' for "
+	    ."each ID passed via the 'vms' parameter.",
+	user => 'all',
     },
     proxyto => 'node',
     description => "Start all VMs and containers located on this node (by default only those with onboot=1).",
@@ -1649,13 +1818,21 @@ __PACKAGE__->register_method ({
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $authuser = $rpcenv->get_user();
 
+	if (!$rpcenv->check($authuser, "/", [ 'VM.PowerMgmt' ], 1)) {
+	    my @vms = PVE::Tools::split_list($param->{vms});
+	    if (scalar(@vms) > 0) {
+		$rpcenv->check($authuser, "/vms/$_", [ 'VM.PowerMgmt' ]) for @vms;
+	    } else {
+		raise_perm_exc("/, VM.PowerMgmt");
+	    }
+	}
+
 	my $nodename = $param->{node};
 	$nodename = PVE::INotify::nodename() if $nodename eq 'localhost';
 
 	my $force = $param->{force};
 
 	my $code = sub {
-
 	    $rpcenv->{type} = 'priv'; # to start tasks in background
 
 	    if (!PVE::Cluster::check_cfs_quorum(1)) {
@@ -1668,16 +1845,17 @@ __PACKAGE__->register_method ({
 
 	    eval { # remove backup locks, but avoid running into a scheduled backup job
 		PVE::Tools::lock_file('/var/run/vzdump.lock', 10, $remove_locks_on_startup, $nodename);
-	    }; warn $@ if $@;
+	    };
+	    warn $@ if $@;
 
 	    my $autostart = $force ? undef : 1;
-	    my $startList = &$get_start_stop_list($nodename, $autostart, $param->{vms});
+	    my $startList = $get_start_stop_list->($nodename, $autostart, $param->{vms});
 
 	    # Note: use numeric sorting with <=>
-	    foreach my $order (sort {$a <=> $b} keys %$startList) {
+	    for my $order (sort {$a <=> $b} keys %$startList) {
 		my $vmlist = $startList->{$order};
 
-		foreach my $vmid (sort {$a <=> $b} keys %$vmlist) {
+		for my $vmid (sort {$a <=> $b} keys %$vmlist) {
 		    my $d = $vmlist->{$vmid};
 
 		    PVE::Cluster::check_cfs_quorum(); # abort when we loose quorum
@@ -1685,15 +1863,12 @@ __PACKAGE__->register_method ({
 		    eval {
 			my $default_delay = 0;
 			my $upid;
-			my $typeText = '';
 
 			if ($d->{type} eq 'lxc') {
-			    $typeText = 'CT';
 			    return if PVE::LXC::check_running($vmid);
 			    print STDERR "Starting CT $vmid\n";
 			    $upid = PVE::API2::LXC::Status->vm_start({node => $nodename, vmid => $vmid });
 			} elsif ($d->{type} eq 'qemu') {
-			    $typeText = 'VM';
 			    $default_delay = 3; # to reduce load
 			    return if PVE::QemuServer::check_running($vmid, 1);
 			    print STDERR "Starting VM $vmid\n";
@@ -1702,13 +1877,13 @@ __PACKAGE__->register_method ({
 			    die "unknown VM type '$d->{type}'\n";
 			}
 
-			my $res = PVE::Tools::upid_decode($upid);
-			while (PVE::ProcFSTools::check_process_running($res->{pid})) {
+			my $task = PVE::Tools::upid_decode($upid);
+			while (PVE::ProcFSTools::check_process_running($task->{pid})) {
 			    sleep(1);
 			}
 
 			my $status = PVE::Tools::upid_read_status($upid);
-			if ($status eq 'OK') {
+			if (!PVE::Tools::upid_status_is_error($status)) {
 			    # use default delay to reduce load
 			    my $delay = defined($d->{up}) ? int($d->{up}) : $default_delay;
 			    if ($delay > 0) {
@@ -1718,7 +1893,8 @@ __PACKAGE__->register_method ({
 				}
 			    }
 			} else {
-			    print STDERR "Starting $typeText $vmid failed: $status\n";
+			    my $rendered_type = $d->{type} eq 'lxc' ? 'CT' : 'VM';
+			    print STDERR "Starting $rendered_type $vmid failed: $status\n";
 			}
 		    };
 		    warn $@ if $@;
@@ -1731,26 +1907,23 @@ __PACKAGE__->register_method ({
     }});
 
 my $create_stop_worker = sub {
-    my ($nodename, $type, $vmid, $down_timeout) = @_;
+    my ($nodename, $type, $vmid, $timeout, $force_stop) = @_;
 
-    my $upid;
     if ($type eq 'lxc') {
 	return if !PVE::LXC::check_running($vmid);
-	my $timeout =  defined($down_timeout) ? int($down_timeout) : 60;
 	print STDERR "Stopping CT $vmid (timeout = $timeout seconds)\n";
-	$upid = PVE::API2::LXC::Status->vm_shutdown({node => $nodename, vmid => $vmid,
-					     timeout => $timeout, forceStop => 1 });
+	return PVE::API2::LXC::Status->vm_shutdown(
+	    { node => $nodename, vmid => $vmid, timeout => $timeout, forceStop => $force_stop }
+	);
     } elsif ($type eq 'qemu') {
 	return if !PVE::QemuServer::check_running($vmid, 1);
-	my $timeout =  defined($down_timeout) ? int($down_timeout) : 60*3;
 	print STDERR "Stopping VM $vmid (timeout = $timeout seconds)\n";
-	$upid = PVE::API2::Qemu->vm_shutdown({node => $nodename, vmid => $vmid,
-					      timeout => $timeout, forceStop => 1 });
+	return PVE::API2::Qemu->vm_shutdown(
+	    { node => $nodename, vmid => $vmid, timeout => $timeout, forceStop => $force_stop }
+	);
     } else {
 	die "unknown VM type '$type'\n";
     }
-
-    return $upid;
 };
 
 __PACKAGE__->register_method ({
@@ -1759,10 +1932,149 @@ __PACKAGE__->register_method ({
     method => 'POST',
     protected => 1,
     permissions => {
-	check => ['perm', '/', [ 'VM.PowerMgmt' ]],
+	description => "The 'VM.PowerMgmt' permission is required on '/' or on '/vms/<ID>' for "
+	    ."each ID passed via the 'vms' parameter.",
+	user => 'all',
     },
     proxyto => 'node',
     description => "Stop all VMs and Containers.",
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    vms => {
+		description => "Only consider Guests with these IDs.",
+		type => 'string',  format => 'pve-vmid-list',
+		optional => 1,
+	    },
+	    'force-stop' => {
+		description => 'Force a hard-stop after the timeout.',
+		type => 'boolean',
+		default => 1,
+		optional => 1,
+	    },
+	    'timeout' => {
+		description => 'Timeout for each guest shutdown task. Depending on `force-stop`,'
+		    .' the shutdown gets then simply aborted or a hard-stop is forced.',
+		type => 'integer',
+		optional => 1,
+		default => 180,
+		minimum => 0,
+		maximum => 2 * 3600, # mostly arbitrary, but we do not want to high timeouts
+	    },
+	},
+    },
+    returns => {
+	type => 'string',
+    },
+    code => sub {
+	my ($param) = @_;
+
+	my $rpcenv = PVE::RPCEnvironment::get();
+	my $authuser = $rpcenv->get_user();
+
+	if (!$rpcenv->check($authuser, "/", [ 'VM.PowerMgmt' ], 1)) {
+	    my @vms = PVE::Tools::split_list($param->{vms});
+	    if (scalar(@vms) > 0) {
+		$rpcenv->check($authuser, "/vms/$_", [ 'VM.PowerMgmt' ]) for @vms;
+	    } else {
+		raise_perm_exc("/, VM.PowerMgmt");
+	    }
+	}
+
+	my $nodename = $param->{node};
+	$nodename = PVE::INotify::nodename() if $nodename eq 'localhost';
+
+	my $code = sub {
+
+	    $rpcenv->{type} = 'priv'; # to start tasks in background
+
+	    my $stopList = $get_start_stop_list->($nodename, undef, $param->{vms});
+
+	    my $cpuinfo = PVE::ProcFSTools::read_cpuinfo();
+	    my $datacenterconfig = cfs_read_file('datacenter.cfg');
+	    # if not set by user spawn max cpu count number of workers
+	    my $maxWorkers =  $datacenterconfig->{max_workers} || $cpuinfo->{cpus};
+
+	    for my $order (sort {$b <=> $a} keys %$stopList) {
+		my $vmlist = $stopList->{$order};
+		my $workers = {};
+
+		my $finish_worker = sub {
+		    my $pid = shift;
+		    my $worker = delete $workers->{$pid} || return;
+
+		    syslog('info', "end task $worker->{upid}");
+		};
+
+		for my $vmid (sort {$b <=> $a} keys %$vmlist) {
+		    my $d = $vmlist->{$vmid};
+		    my $timeout = int($d->{down} // $param->{timeout} // 180);
+		    my $upid = eval {
+			$create_stop_worker->(
+			    $nodename, $d->{type}, $vmid, $timeout, $param->{'force-stop'} // 1)
+		    };
+		    warn $@ if $@;
+		    next if !$upid;
+
+		    my $task = PVE::Tools::upid_decode($upid, 1);
+		    next if !$task;
+
+		    my $pid = $task->{pid};
+
+		    $workers->{$pid} = { type => $d->{type}, upid => $upid, vmid => $vmid };
+		    while (scalar(keys %$workers) >= $maxWorkers) {
+			foreach my $p (keys %$workers) {
+			    if (!PVE::ProcFSTools::check_process_running($p)) {
+				$finish_worker->($p);
+			    }
+			}
+			sleep(1);
+		    }
+		}
+		while (scalar(keys %$workers)) {
+		    for my $p (keys %$workers) {
+			if (!PVE::ProcFSTools::check_process_running($p)) {
+			    $finish_worker->($p);
+			}
+		    }
+		    sleep(1);
+		}
+	    }
+
+	    syslog('info', "all VMs and CTs stopped");
+
+	    return;
+	};
+
+	return $rpcenv->fork_worker('stopall', undef, $authuser, $code);
+    }});
+
+my $create_suspend_worker = sub {
+    my ($nodename, $vmid) = @_;
+    if (!PVE::QemuServer::check_running($vmid, 1)) {
+	print "VM $vmid not running, skipping suspension\n";
+	return;
+    }
+    print STDERR "Suspending VM $vmid\n";
+    return PVE::API2::Qemu->vm_suspend(
+	{ node => $nodename, vmid => $vmid, todisk => 1 }
+    );
+};
+
+__PACKAGE__->register_method ({
+    name => 'suspendall',
+    path => 'suspendall',
+    method => 'POST',
+    protected => 1,
+    permissions => {
+	description => "The 'VM.PowerMgmt' permission is required on '/' or on '/vms/<ID>' for each"
+	    ." ID passed via the 'vms' parameter. Additionally, you need 'VM.Config.Disk' on the"
+	    ." '/vms/{vmid}' path and 'Datastore.AllocateSpace' for the configured state-storage(s)",
+	user => 'all',
+    },
+    proxyto => 'node',
+    description => "Suspend all VMs.",
     parameters => {
 	additionalProperties => 0,
 	properties => {
@@ -1783,6 +2095,16 @@ __PACKAGE__->register_method ({
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $authuser = $rpcenv->get_user();
 
+	# we cannot really check access to the state-storage here, that's happening per worker.
+	if (!$rpcenv->check($authuser, "/", [ 'VM.PowerMgmt', 'VM.Config.Disk' ], 1)) {
+	    my @vms = PVE::Tools::split_list($param->{vms});
+	    if (scalar(@vms) > 0) {
+		$rpcenv->check($authuser, "/vms/$_", [ 'VM.PowerMgmt' ]) for @vms;
+	    } else {
+		raise_perm_exc("/, VM.PowerMgmt && VM.Config.Disk");
+	    }
+	}
+
 	my $nodename = $param->{node};
 	$nodename = PVE::INotify::nodename() if $nodename eq 'localhost';
 
@@ -1790,65 +2112,69 @@ __PACKAGE__->register_method ({
 
 	    $rpcenv->{type} = 'priv'; # to start tasks in background
 
-	    my $stopList = &$get_start_stop_list($nodename, undef, $param->{vms});
+	    my $toSuspendList = $get_start_stop_list->($nodename, undef, $param->{vms});
 
 	    my $cpuinfo = PVE::ProcFSTools::read_cpuinfo();
 	    my $datacenterconfig = cfs_read_file('datacenter.cfg');
 	    # if not set by user spawn max cpu count number of workers
 	    my $maxWorkers =  $datacenterconfig->{max_workers} || $cpuinfo->{cpus};
 
-	    foreach my $order (sort {$b <=> $a} keys %$stopList) {
-		my $vmlist = $stopList->{$order};
+	    for my $order (sort {$b <=> $a} keys %$toSuspendList) {
+		my $vmlist = $toSuspendList->{$order};
 		my $workers = {};
 
 		my $finish_worker = sub {
 		    my $pid = shift;
-		    my $d = $workers->{$pid};
-		    return if !$d;
-		    delete $workers->{$pid};
+		    my $worker = delete $workers->{$pid} || return;
 
-		    syslog('info', "end task $d->{upid}");
+		    syslog('info', "end task $worker->{upid}");
 		};
 
-		foreach my $vmid (sort {$b <=> $a} keys %$vmlist) {
+		for my $vmid (sort {$b <=> $a} keys %$vmlist) {
 		    my $d = $vmlist->{$vmid};
-		    my $upid;
-		    eval { $upid = &$create_stop_worker($nodename, $d->{type}, $vmid, $d->{down}); };
+		    if ($d->{type} ne 'qemu') {
+			log_warn("skipping $vmid, only VMs can be suspended");
+			next;
+		    }
+		    my $upid = eval {
+			$create_suspend_worker->($nodename, $vmid)
+		    };
 		    warn $@ if $@;
 		    next if !$upid;
 
-		    my $res = PVE::Tools::upid_decode($upid, 1);
-		    next if !$res;
+		    my $task = PVE::Tools::upid_decode($upid, 1);
+		    next if !$task;
 
-		    my $pid = $res->{pid};
-
+		    my $pid = $task->{pid};
 		    $workers->{$pid} = { type => $d->{type}, upid => $upid, vmid => $vmid };
+
 		    while (scalar(keys %$workers) >= $maxWorkers) {
-			foreach my $p (keys %$workers) {
+			for my $p (keys %$workers) {
 			    if (!PVE::ProcFSTools::check_process_running($p)) {
-				&$finish_worker($p);
+				$finish_worker->($p);
 			    }
 			}
 			sleep(1);
 		    }
 		}
 		while (scalar(keys %$workers)) {
-		    foreach my $p (keys %$workers) {
+		    for my $p (keys %$workers) {
 			if (!PVE::ProcFSTools::check_process_running($p)) {
-			    &$finish_worker($p);
+			    $finish_worker->($p);
 			}
 		    }
 		    sleep(1);
 		}
 	    }
 
-	    syslog('info', "all VMs and CTs stopped");
+	    syslog('info', "all VMs suspended");
 
 	    return;
 	};
 
-	return $rpcenv->fork_worker('stopall', undef, $authuser, $code);
+	return $rpcenv->fork_worker('suspendall', undef, $authuser, $code);
     }});
+
 
 my $create_migrate_worker = sub {
     my ($nodename, $type, $vmid, $target, $with_local_disks) = @_;
@@ -1857,21 +2183,23 @@ my $create_migrate_worker = sub {
     if ($type eq 'lxc') {
 	my $online = PVE::LXC::check_running($vmid) ? 1 : 0;
 	print STDERR "Migrating CT $vmid\n";
-	$upid = PVE::API2::LXC->migrate_vm({node => $nodename, vmid => $vmid, target => $target,
-					    restart => $online });
+	$upid = PVE::API2::LXC->migrate_vm(
+	   { node => $nodename, vmid => $vmid, target => $target, restart => $online });
     } elsif ($type eq 'qemu') {
 	print STDERR "Check VM $vmid: ";
 	*STDERR->flush();
 	my $online = PVE::QemuServer::check_running($vmid, 1) ? 1 : 0;
-	my $preconditions = PVE::API2::Qemu->migrate_vm_precondition({node => $nodename, vmid => $vmid, target => $target});
+	my $preconditions = PVE::API2::Qemu->migrate_vm_precondition(
+	    {node => $nodename, vmid => $vmid, target => $target});
 	my $invalidConditions = '';
 	if ($online && !$with_local_disks && scalar @{$preconditions->{local_disks}}) {
-	    $invalidConditions .= "\n  Has local disks: " .
-	        join(', ', map { $_->{volid} } @{$preconditions->{local_disks}});
+	    $invalidConditions .= "\n  Has local disks: ";
+	    $invalidConditions .= join(', ', map { $_->{volid} } @{$preconditions->{local_disks}});
 	}
 
 	if (@{$preconditions->{local_resources}}) {
-	    $invalidConditions .= "\n  Has local resources: " . join(', ', @{$preconditions->{local_resources}});
+	    $invalidConditions .= "\n  Has local resources: ";
+	    $invalidConditions .= join(', ', @{$preconditions->{local_resources}});
 	}
 
 	if ($invalidConditions && $invalidConditions ne '') {
@@ -1894,9 +2222,9 @@ my $create_migrate_worker = sub {
 	die "unknown VM type '$type'\n";
     }
 
-    my $res = PVE::Tools::upid_decode($upid);
+    my $task = PVE::Tools::upid_decode($upid);
 
-    return $res->{pid};
+    return $task->{pid};
 };
 
 __PACKAGE__->register_method ({
@@ -1906,22 +2234,23 @@ __PACKAGE__->register_method ({
     proxyto => 'node',
     protected => 1,
     permissions => {
-	check => ['perm', '/', [ 'VM.Migrate' ]],
+	description => "The 'VM.Migrate' permission is required on '/' or on '/vms/<ID>' for each "
+	    ."ID passed via the 'vms' parameter.",
+	user => 'all',
     },
     description => "Migrate all VMs and Containers.",
     parameters => {
 	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
-            target => get_standard_option('pve-node', { description => "Target node." }),
-            maxworkers => {
-                description => "Maximal number of parallel migration job." .
-		    " If not set use 'max_workers' from datacenter.cfg," .
-		    " one of both must be set!",
+	    target => get_standard_option('pve-node', { description => "Target node." }),
+	    maxworkers => {
+		description => "Maximal number of parallel migration job. If not set, uses"
+		    ."'max_workers' from datacenter.cfg. One of both must be set!",
 		optional => 1,
-                type => 'integer',
-                minimum => 1
-            },
+		type => 'integer',
+		minimum => 1
+	    },
 	    vms => {
 		description => "Only consider Guests with these IDs.",
 		type => 'string',  format => 'pve-vmid-list',
@@ -1942,6 +2271,15 @@ __PACKAGE__->register_method ({
 
 	my $rpcenv = PVE::RPCEnvironment::get();
 	my $authuser = $rpcenv->get_user();
+
+	if (!$rpcenv->check($authuser, "/", [ 'VM.Migrate' ], 1)) {
+	    my @vms = PVE::Tools::split_list($param->{vms});
+	    if (scalar(@vms) > 0) {
+		$rpcenv->check($authuser, "/vms/$_", [ 'VM.Migrate' ]) for @vms;
+	    } else {
+		raise_perm_exc("/, VM.Migrate");
+	    }
+	}
 
 	my $nodename = $param->{node};
 	$nodename = PVE::INotify::nodename() if $nodename eq 'localhost';
@@ -2068,7 +2406,7 @@ __PACKAGE__->register_method ({
     code => sub {
 	my ($param) = @_;
 
-	PVE::Tools::lock_file('/var/lock/pve-etchosts.lck', undef, sub{
+	PVE::Tools::lock_file('/var/lock/pve-etchosts.lck', undef, sub {
 	    if ($param->{digest}) {
 		my $hosts = PVE::INotify::read_file('etchosts');
 		PVE::Tools::assert_if_modified($hosts->{digest}, $param->{digest});
@@ -2077,7 +2415,7 @@ __PACKAGE__->register_method ({
 	});
 	die $@ if $@;
 
-	return undef;
+	return;
     }});
 
 # bash completion helper

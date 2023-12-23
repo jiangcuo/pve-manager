@@ -2,29 +2,39 @@ package PVE::API2Tools;
 
 use strict;
 use warnings;
-use Net::IP;
 
-use PVE::Exception qw(raise_param_exc);
-use PVE::Tools;
-use PVE::INotify;
-use PVE::Cluster;
-use PVE::DataCenterConfig;
-use PVE::RPCEnvironment;
 use Digest::MD5 qw(md5_hex);
-use URI;
+use File::stat;
+use Net::IP;
 use URI::Escape;
+use URI;
+
+use PVE::Cluster;
+use PVE::DataCenterConfig; # so we can cfs-read datacenter.cfg
+use PVE::Exception qw(raise_param_exc);
+use PVE::INotify;
+use PVE::RPCEnvironment;
 use PVE::SafeSyslog;
 use PVE::Storage::Plugin;
+use PVE::Tools;
 
 my $hwaddress;
+my $hwaddress_st = {};
 
 sub get_hwaddress {
-
-    return $hwaddress if defined ($hwaddress);
-
     my $fn = '/etc/ssh/ssh_host_rsa_key.pub';
+    my $st = stat($fn);
+
+    if (defined($hwaddress)
+	&& $hwaddress_st->{mtime} == $st->mtime
+	&& $hwaddress_st->{ino} == $st->ino
+	&& $hwaddress_st->{dev} == $st->dev) {
+	return $hwaddress;
+    }
+
     my $sshkey = PVE::Tools::file_get_contents($fn);
     $hwaddress = uc(md5_hex($sshkey));
+    $hwaddress_st->@{'mtime', 'ino', 'dev'} = ($st->mtime, $st->ino, $st->dev);
 
     return $hwaddress;
 }

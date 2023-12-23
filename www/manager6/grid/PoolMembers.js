@@ -1,9 +1,15 @@
 Ext.define('PVE.pool.AddVM', {
     extend: 'Proxmox.window.Edit',
-    width: 600,
-    height: 400,
+
+    width: 640,
+    height: 480,
     isAdd: true,
     isCreate: true,
+
+    extraRequestParams: {
+	'allow-move': 1,
+    },
+
     initComponent: function() {
 	var me = this;
 
@@ -11,8 +17,9 @@ Ext.define('PVE.pool.AddVM', {
 	    throw "no pool specified";
 	}
 
-	me.url = "/pools/" + me.pool;
+	me.url = '/pools/';
 	me.method = 'PUT';
+	me.extraRequestParams.poolid = me.pool;
 
 	var vmsField = Ext.create('Ext.form.field.Text', {
 	    name: 'vms',
@@ -25,12 +32,12 @@ Ext.define('PVE.pool.AddVM', {
 	    sorters: [
 		{
 		    property: 'vmid',
-		    order: 'ASC',
+		    direction: 'ASC',
 		},
 	    ],
 	    filters: [
 		function(item) {
-		    return (item.data.type === 'lxc' || item.data.type === 'qemu') && item.data.pool === '';
+		    return (item.data.type === 'lxc' || item.data.type === 'qemu') &&item.data.pool !== me.pool;
 		},
 	    ],
 	});
@@ -38,7 +45,7 @@ Ext.define('PVE.pool.AddVM', {
 	var vmGrid = Ext.create('widget.grid', {
 	    store: vmStore,
 	    border: true,
-	    height: 300,
+	    height: 360,
 	    scrollable: true,
 	    selModel: {
 		selType: 'checkboxmodel',
@@ -64,15 +71,13 @@ Ext.define('PVE.pool.AddVM', {
 		    dataIndex: 'node',
 		},
 		{
+		    header: gettext('Current Pool'),
+		    dataIndex: 'pool',
+		},
+		{
 		    header: gettext('Status'),
 		    dataIndex: 'uptime',
-		    renderer: function(value) {
-			if (value) {
-			    return Proxmox.Utils.runningText;
-			} else {
-			    return Proxmox.Utils.stoppedText;
-			}
-		    },
+		    renderer: v => v ? Proxmox.Utils.runningText : Proxmox.Utils.stoppedText,
 		},
 		{
 		    header: gettext('Name'),
@@ -85,9 +90,18 @@ Ext.define('PVE.pool.AddVM', {
 		},
 	    ],
 	});
+
 	Ext.apply(me, {
 	    subject: gettext('Virtual Machine'),
-	    items: [vmsField, vmGrid],
+	    items: [
+		vmsField,
+		vmGrid,
+		{
+		    xtype: 'displayfield',
+		    userCls: 'pmx-hint',
+		    value: gettext('Selected guests who are already part of a pool will be removed from it first.'),
+		},
+	    ],
 	});
 
 	me.callParent();
@@ -107,8 +121,9 @@ Ext.define('PVE.pool.AddStorage', {
 
 	me.isCreate = true;
 	me.isAdd = true;
-	me.url = "/pools/" + me.pool;
+	me.url = "/pools/";
 	me.method = 'PUT';
+	me.extraRequestParams.poolid = me.pool;
 
 	Ext.apply(me, {
 	    subject: gettext('Storage'),
@@ -155,12 +170,14 @@ Ext.define('PVE.grid.PoolMembers', {
 	    ],
 	    proxy: {
 		type: 'proxmox',
-		root: 'data.members',
-		url: "/api2/json/pools/" + me.pool,
+		root: 'data[0].members',
+		url: "/api2/json/pools/?poolid=" + me.pool,
 	    },
 	});
 
-	var coldef = PVE.data.ResourceStore.defaultColumns();
+	var coldef = PVE.data.ResourceStore.defaultColumns().filter((c) =>
+	    c.dataIndex !== 'tags' && c.dataIndex !== 'lock',
+	);
 
 	var reload = function() {
 	    store.load();
@@ -177,7 +194,7 @@ Ext.define('PVE.grid.PoolMembers', {
 					 "'" + rec.data.id + "'");
 	    },
 	    handler: function(btn, event, rec) {
-		var params = { 'delete': 1 };
+		var params = { 'delete': 1, poolid: me.pool };
 		if (rec.data.type === 'storage') {
 		    params.storage = rec.data.storage;
 		} else if (rec.data.type === 'qemu' || rec.data.type === 'lxc' || rec.data.type === 'openvz') {
@@ -187,7 +204,7 @@ Ext.define('PVE.grid.PoolMembers', {
 		}
 
 		Proxmox.Utils.API2Request({
-		    url: '/pools/' + me.pool,
+		    url: '/pools/',
 		    method: 'PUT',
 		    params: params,
 		    waitMsgTarget: me,

@@ -7,20 +7,21 @@ use IO::File;
 use File::Find;
 use File::stat;
 
+use PVE::APLInfo;
 use PVE::CertHelpers;
 use PVE::Certificate;
-use PVE::NodeConfig;
-use PVE::INotify;
-use PVE::Cluster;
 use PVE::Cluster::Setup;
+use PVE::Cluster;
 use PVE::DataCenterConfig;
-use PVE::APLInfo;
-use PVE::SafeSyslog;
+use PVE::INotify;
+use PVE::NodeConfig;
 use PVE::RPCEnvironment;
+use PVE::SafeSyslog;
 use PVE::Tools;
-use PVE::API2::Subscription;
-use PVE::API2::APT;
+
 use PVE::API2::ACME;
+use PVE::API2::APT;
+use PVE::API2::Subscription;
 
 initlog ('pveupdate', 'daemon');
 
@@ -49,10 +50,20 @@ if (my $err = $@) {
     syslog ('err', "update appliance info failed - see /var/log/pveam.log for details");
 }
 
-my $info = PVE::INotify::read_file('subscription');
-# We assume that users with subscriptions want informations
-# about new packages.
-my $notify = ($info && $info->{status} eq 'Active') ? 1 : 0;
+my $info = eval { PVE::API2::Subscription::read_etc_subscription() };
+
+my $notify_on = $dccfg->{notify}->{'package-updates'} // 'auto';
+my $notify = 0;
+if ($notify_on eq 'auto') {
+    # hosts with subscriptions are likely production system and thus want infos about new packages
+    $notify = ($info && $info->{status} eq 'active') ? 1 : 0;
+} elsif ($notify_on eq 'always') {
+    $notify = 1;
+} elsif ($notify_on eq 'never') {
+    $notify = 0;
+} else {
+    warn "unexpected package-updates  notify configuration value '$notify_on'\n";
+}
 eval { PVE::API2::APT->update_database({ node => $nodename, notify => $notify, quiet => 1 }); };
 if (my $err = $@) {
     syslog ('err', "update apt database failed: $err");

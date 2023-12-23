@@ -1,3 +1,4 @@
+// The view model of the parent shoul contain a 'cgroupMode' variable (or params for v2 are used).
 Ext.define('PVE.qemu.ProcessorInputPanel', {
     extend: 'Proxmox.panel.InputPanel',
     alias: 'widget.pveQemuProcessorPanel',
@@ -10,25 +11,36 @@ Ext.define('PVE.qemu.ProcessorInputPanel', {
 	    socketCount: 1,
 	    coreCount: 1,
 	    showCustomModelPermWarning: false,
+	    userIsRoot: false,
 	},
 	formulas: {
 	    totalCoreCount: get => get('socketCount') * get('coreCount'),
+	    cpuunitsDefault: (get) => get('cgroupMode') === 1 ? 1024 : 100,
+	    cpuunitsMin: (get) => get('cgroupMode') === 1 ? 2 : 1,
+	    cpuunitsMax: (get) => get('cgroupMode') === 1 ? 262144 : 10000,
 	},
     },
 
     controller: {
 	xclass: 'Ext.app.ViewController',
+	init: function() {
+	    let me = this;
+	    let viewModel = me.getViewModel();
+
+	    viewModel.set('userIsRoot', Proxmox.UserName === 'root@pam');
+	},
     },
 
     onGetValues: function(values) {
-	var me = this;
+	let me = this;
+	let cpuunitsDefault = me.getViewModel().get('cpuunitsDefault');
 
 	if (Array.isArray(values.delete)) {
 	    values.delete = values.delete.join(',');
 	}
 
-	PVE.Utils.delete_if_default(values, 'cpulimit', '0', 0);
-	PVE.Utils.delete_if_default(values, 'cpuunits', '1024', 0);
+	PVE.Utils.delete_if_default(values, 'cpulimit', '0', me.insideWizard);
+	PVE.Utils.delete_if_default(values, 'cpuunits', `${cpuunitsDefault}`, me.insideWizard);
 
 	// build the cpu options:
 	me.cpu.cputype = values.cputype;
@@ -180,6 +192,19 @@ Ext.define('PVE.qemu.ProcessorInputPanel', {
 	    allowBlank: true,
 	    emptyText: gettext('unlimited'),
 	},
+	{
+	    xtype: 'proxmoxtextfield',
+	    name: 'affinity',
+	    vtype: 'CpuSet',
+	    value: '',
+	    fieldLabel: gettext('CPU Affinity'),
+	    allowBlank: true,
+	    emptyText: gettext("All Cores"),
+	    deleteEmpty: true,
+	    bind: {
+		disabled: '{!userIsRoot}',
+	    },
+	},
     ],
 
     advancedColumn2: [
@@ -187,9 +212,15 @@ Ext.define('PVE.qemu.ProcessorInputPanel', {
 	    xtype: 'proxmoxintegerfield',
 	    name: 'cpuunits',
 	    fieldLabel: gettext('CPU units'),
-	    minValue: 8,
-	    maxValue: 500000,
-	    value: '1024',
+	    minValue: '1',
+	    maxValue: '10000',
+	    value: '',
+	    emptyText: '100',
+	    bind: {
+		minValue: '{cpuunitsMin}',
+		maxValue: '{cpuunitsMax}',
+		emptyText: '{cpuunitsDefault}',
+	    },
 	    deleteEmpty: true,
 	    allowBlank: true,
 	},
@@ -214,11 +245,19 @@ Ext.define('PVE.qemu.ProcessorInputPanel', {
 
 Ext.define('PVE.qemu.ProcessorEdit', {
     extend: 'Proxmox.window.Edit',
+    alias: 'widget.pveQemuProcessorEdit',
 
     width: 700,
 
+    viewModel: {
+	data: {
+	    cgroupMode: 2,
+	},
+    },
+
     initComponent: function() {
-	var me = this;
+	let me = this;
+	me.getViewModel().set('cgroupMode', me.cgroupMode);
 
 	var ipanel = Ext.create('PVE.qemu.ProcessorInputPanel');
 

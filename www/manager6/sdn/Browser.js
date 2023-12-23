@@ -5,36 +5,34 @@ Ext.define('PVE.sdn.Browser', {
     onlineHelp: 'chapter_pvesdn',
 
     initComponent: function() {
-	var me = this;
+	let me = this;
 
-	var nodename = me.pveSelNode.data.node;
+	let nodename = me.pveSelNode.data.node;
 	if (!nodename) {
 	    throw "no node name specified";
 	}
-
-	var sdnid = me.pveSelNode.data.sdn;
-	if (!sdnid) {
+	let sdnId = me.pveSelNode.data.sdn;
+	if (!sdnId) {
 	    throw "no sdn ID specified";
 	}
 
 	me.items = [];
 
-	var caps = Ext.state.Manager.get('GuiCap');
-
 	Ext.apply(me, {
-	    title: Ext.String.format(gettext("Zone {0} on node {1}"),
-				     "'" + sdnid + "'", "'" + nodename + "'"),
+	    title: Ext.String.format(gettext("Zone {0} on node {1}"), `'${sdnId}'`, `'${nodename}'`),
 	    hstateid: 'sdntab',
 	});
 
-	if (caps.sdn['SDN.Audit']) {
-	    me.items.push({
-		xtype: 'pveSDNZoneContentView',
-		title: gettext('Content'),
-		iconCls: 'fa fa-th',
-		itemId: 'content',
-	    });
-	}
+	const caps = Ext.state.Manager.get('GuiCap');
+
+	me.items.push({
+	    nodename: nodename,
+	    zone: sdnId,
+	    xtype: 'pveSDNZoneContentPanel',
+	    title: gettext('Content'),
+	    iconCls: 'fa fa-th',
+	    itemId: 'content',
+	});
 
 	if (caps.sdn['Permissions.Modify']) {
 	    me.items.push({
@@ -42,7 +40,7 @@ Ext.define('PVE.sdn.Browser', {
 		title: gettext('Permissions'),
 		iconCls: 'fa fa-unlock',
 		itemId: 'permissions',
-		path: '/sdn/zones/' + sdnid,
+		path: `/sdn/zones/${sdnId}`,
 	    });
 	}
 

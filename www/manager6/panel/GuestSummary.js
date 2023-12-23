@@ -1,4 +1,4 @@
-Ext.define('PVE.qemu.Summary', {
+Ext.define('PVE.guest.Summary', {
     extend: 'Ext.panel.Panel',
     xtype: 'pveGuestSummary',
 
@@ -40,7 +40,7 @@ Ext.define('PVE.qemu.Summary', {
 		rstore: rstore,
 	    },
 	    {
-		xtype: 'pveNotesView',
+		xtype: 'pmxNotesView',
 		flex: 1,
 		padding: template ? '5' : '0 0 0 5',
 		itemId: 'notesview',
@@ -75,6 +75,7 @@ Ext.define('PVE.qemu.Summary', {
 		    pveSelNode: me.pveSelNode,
 		    fields: ['cpu'],
 		    fieldTitles: [gettext('CPU usage')],
+		    unit: 'percent',
 		    store: rrdstore,
 		},
 		{

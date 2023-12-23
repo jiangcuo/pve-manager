@@ -17,17 +17,18 @@ Ext.define('PVE.sdn.ZoneContentView', {
     initComponent: function() {
 	var me = this;
 
-	var nodename = me.pveSelNode.data.node;
-	if (!nodename) {
+	if (!me.nodename) {
 	    throw "no node name specified";
 	}
 
-	var zone = me.pveSelNode.data.sdn;
-	if (!zone) {
+	if (!me.zone) {
 	    throw "no zone ID specified";
 	}
 
-	var baseurl = "/nodes/" + nodename + "/sdn/zones/" + zone + "/content";
+	var baseurl = "/nodes/" + me.nodename + "/sdn/zones/" + me.zone + "/content";
+	if (me.zone === 'localnetwork') {
+	    baseurl = "/nodes/" + me.nodename + "/network?type=any_local_bridge";
+	}
 	var store = Ext.create('Ext.data.Store', {
 	    model: 'pve-sdnzone-content',
 	    groupField: 'content',
@@ -37,7 +38,7 @@ Ext.define('PVE.sdn.ZoneContentView', {
 	    },
 	    sorters: {
 		property: 'vnet',
-		order: 'DESC',
+		direction: 'ASC',
 	    },
 	});
 
@@ -48,7 +49,6 @@ Ext.define('PVE.sdn.ZoneContentView', {
 	};
 
 	Proxmox.Utils.monStoreErrors(me, store);
-
 	Ext.apply(me, {
 	    store: store,
 	    selModel: sm,
@@ -79,18 +79,48 @@ Ext.define('PVE.sdn.ZoneContentView', {
 		    dataIndex: 'statusmsg',
 		},
 	    ],
-	    listeners: {
-		activate: reload,
-	    },
+            listeners: {
+                activate: reload,
+                show: reload,
+                select: function(_sm, rec) {
+                    let path = `/sdn/zones/${me.zone}/${rec.data.vnet}`;
+                    me.permissions_panel.setPath(path);
+                },
+                deselect: function() {
+                    me.permissions_panel.setPath(undefined);
+                },
+            },
 	});
-
+	store.load();
 	me.callParent();
     },
 }, function() {
     Ext.define('pve-sdnzone-content', {
 	extend: 'Ext.data.Model',
 	fields: [
-	    'vnet', 'status', 'statusmsg',
+	    {
+		name: 'iface',
+		convert: function(value, record) {
+		    //map local vmbr to vnet
+		    if (record.data.iface) {
+			record.data.vnet = record.data.iface;
+		    }
+		    return value;
+		},
+	    },
+	    {
+		name: 'comments',
+		convert: function(value, record) {
+		    //map local vmbr comments to vnet alias
+		    if (record.data.comments) {
+			record.data.alias = record.data.comments;
+		    }
+		    return value;
+		},
+	    },
+	    'vnet',
+	    'status',
+	    'statusmsg',
 	    {
 		name: 'text',
 		convert: function(value, record) {

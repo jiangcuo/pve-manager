@@ -22,24 +22,12 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    values['serial' + values.vga.substr(6, 1)] = 'socket';
 	}
 
-	var efidrive = {};
-	if (values.hdimage) {
-	    efidrive.file = values.hdimage;
-	} else if (values.hdstorage) {
-	    efidrive.file = values.hdstorage + ":1";
-	}
-
-	if (values.diskformat) {
-	    efidrive.format = values.diskformat;
-	}
-
 	delete values.hdimage;
 	delete values.hdstorage;
 	delete values.diskformat;
 
-	if (efidrive.file) {
-	    values.efidisk0 = PVE.Parser.printQemuDrive(efidrive);
-	}
+	delete values.preEnrolledKeys; // efidisk
+	delete values.version; // tpmstate
 
 	return values;
     },
@@ -68,6 +56,20 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    'pveQemuBiosSelector': {
 		change: 'biosChange',
 	    },
+	    '#': {
+		afterrender: 'setMachine',
+	    },
+	},
+
+	setMachine: function() {
+	    let me = this;
+	    let vm = this.getViewModel();
+	    let ostype = vm.get('current.ostype');
+	    if (ostype === 'win11') {
+		me.lookup('machine').setValue('q35');
+		me.lookup('bios').setValue('ovmf');
+		me.lookup('addtpmbox').setValue(true);
+	    }
 	},
     },
 
@@ -78,34 +80,27 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    deleteEmpty: false,
 	    fieldLabel: gettext('Graphic card'),
 	    name: 'vga',
-	    comboItems: PVE.Utils.kvm_vga_driver_array(),
+	    comboItems: Object.entries(PVE.Utils.kvm_vga_drivers),
 	},
 	{
-	    xtype: 'proxmoxcheckbox',
-	    name: 'agent',
-	    uncheckedValue: 0,
-	    defaultValue: 0,
-	    deleteDefaultValue: true,
-	    fieldLabel: gettext('Qemu Agent'),
-	},
-    ],
-
-    column2: [
-	{
-	    xtype: 'pveScsiHwSelector',
-	    name: 'scsihw',
+	    xtype: 'proxmoxKVComboBox',
+	    name: 'machine',
+	    reference: 'machine',
 	    value: '__default__',
-	    bind: {
-		value: '{current.scsihw}',
-	    },
-	    fieldLabel: gettext('SCSI Controller'),
+	    fieldLabel: gettext('Machine'),
+	    comboItems: [
+		['__default__', PVE.Utils.render_qemu_machine('')],
+		['q35', 'q35'],
+	    ],
 	},
-    ],
-
-    advancedColumn1: [
+	{
+	    xtype: 'displayfield',
+	    value: gettext('Firmware'),
+	},
 	{
 	    xtype: 'pveQemuBiosSelector',
 	    name: 'bios',
+	    reference: 'bios',
 	    value: '__default__',
 	    fieldLabel: 'BIOS',
 	},
@@ -122,7 +117,7 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    fieldLabel: gettext('Add EFI Disk'),
 	},
 	{
-	    xtype: 'pveDiskStorageSelector',
+	    xtype: 'pveEFIDiskInputPanel',
 	    name: 'efidisk0',
 	    storageContent: 'images',
 	    bind: {
@@ -134,19 +129,53 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    disabled: true,
 	    hidden: true,
 	    hideSize: true,
+	    usesEFI: true,
 	},
     ],
 
-    advancedColumn2: [
+    column2: [
 	{
-	    xtype: 'proxmoxKVComboBox',
-	    name: 'machine',
+	    xtype: 'pveScsiHwSelector',
+	    name: 'scsihw',
 	    value: '__default__',
-	    fieldLabel: gettext('Machine'),
-	    comboItems: [
-		['__default__', PVE.Utils.render_qemu_machine('')],
-		['q35', 'q35'],
-	    ],
+	    bind: {
+		value: '{current.scsihw}',
+	    },
+	    fieldLabel: gettext('SCSI Controller'),
+	},
+	{
+	    xtype: 'proxmoxcheckbox',
+	    name: 'agent',
+	    uncheckedValue: 0,
+	    defaultValue: 0,
+	    deleteDefaultValue: true,
+	    fieldLabel: gettext('Qemu Agent'),
+	},
+	{
+	    // fake for spacing
+	    xtype: 'displayfield',
+	    value: ' ',
+	},
+	{
+	    xtype: 'proxmoxcheckbox',
+	    reference: 'addtpmbox',
+	    bind: {
+		value: '{addtpm}',
+	    },
+	    submitValue: false,
+	    fieldLabel: gettext('Add TPM'),
+	},
+	{
+	    xtype: 'pveTPMDiskInputPanel',
+	    name: 'tpmstate0',
+	    storageContent: 'images',
+	    bind: {
+		nodename: '{nodename}',
+		hidden: '{!addtpm}',
+		disabled: '{!addtpm}',
+	    },
+	    disabled: true,
+	    hidden: true,
 	},
     ],
 

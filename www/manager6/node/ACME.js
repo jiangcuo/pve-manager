@@ -45,7 +45,7 @@ Ext.define('PVE.node.ACMEAccountCreate', {
 		},
 		sorters: {
 		    property: 'name',
-		    order: 'ASC',
+		    direction: 'ASC',
 		},
 	    },
 	    listConfig: {
@@ -79,15 +79,19 @@ Ext.define('PVE.node.ACMEAccountCreate', {
 		    checkbox.setHidden(true);
 
 		    Proxmox.Utils.API2Request({
-			url: '/cluster/acme/tos',
+			url: '/cluster/acme/meta',
 			method: 'GET',
 			params: {
 			    directory: value,
 			},
 			success: function(response, opt) {
-			    field.setValue(response.result.data);
-			    disp.setValue(response.result.data);
-			    checkbox.setHidden(false);
+			    if (response.result.data.termsOfService) {
+				field.setValue(response.result.data.termsOfService);
+				disp.setValue(response.result.data.termsOfService);
+				checkbox.setHidden(false);
+			    } else {
+				disp.setValue(undefined);
+			    }
 			},
 			failure: function(response, opt) {
 			    Ext.Msg.alert(gettext('Error'), response.htmlStatus);
@@ -365,6 +369,7 @@ Ext.define('PVE.node.ACME', {
 	formulas: {
 	    canOrder: (get) => !!get('account') && get('domaincount') > 0,
 	    editBtnIcon: (get) => 'fa black fa-' + (get('accountEditable') ? 'check' : 'pencil'),
+	    editBtnText: (get) => get('accountEditable') ? gettext('Apply') : gettext('Edit'),
 	    accountTextHidden: (get) => get('accountEditable') || !get('accountsAvailable'),
 	    accountValueHidden: (get) => !get('accountEditable') || !get('accountsAvailable'),
 	},
@@ -522,6 +527,10 @@ Ext.define('PVE.node.ACME', {
 
 	orderFinished: function(success) {
 	    if (!success) return;
+	    // reload only if the Web UI is open on the same node that the cert was ordered for
+	    if (this.getView().nodename !== Proxmox.NodeName) {
+		return;
+	    }
 	    var txt = gettext('pveproxy will be restarted with new certificates, please reload the GUI!');
 	    Ext.getBody().mask(txt, ['pve-static-mask']);
 	    // reload after 10 seconds automatically
@@ -606,10 +615,9 @@ Ext.define('PVE.node.ACME', {
 	{
 	    xtype: 'button',
 	    iconCls: 'fa black fa-pencil',
-	    baseCls: 'x-plain',
-	    userCls: 'pointer',
 	    bind: {
 		iconCls: '{editBtnIcon}',
+		text: '{editBtnText}',
 		hidden: '{!accountsAvailable}',
 	    },
 	    handler: 'toggleEditAccount',

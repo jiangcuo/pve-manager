@@ -154,6 +154,17 @@ my $pve_storage_module = Test::MockModule->new('PVE::Storage');
 
 my $mocked_storage_content = {};
 
+my $timestamp_counter = 0;
+
+sub generate_snapshot_info {
+    $timestamp_counter++;
+
+    return {
+	id => $timestamp_counter,
+	timestamp => $timestamp_counter,
+    };
+}
+
 sub register_mocked_volid {
     my ($volid, $snapname) = @_;
 
@@ -163,21 +174,8 @@ sub register_mocked_volid {
 
     my $d = $mocked_storage_content->{$storeid}->{$volname} //= {};
 
-    $d->{$snapname} = 1 if $snapname;
+    $d->{$snapname} = generate_snapshot_info() if $snapname;
 }
-
-my $mocked_volume_snapshot_list = sub {
-    my ($cfg, $volid, $prefix) = @_;
-
-    my ($storeid, $volname) = PVE::Storage::parse_volume_id($volid);
-    my $snaps = [];
-
-    if (my $d = $mocked_storage_content->{$storeid}->{$volname}) {
-	$snaps = [keys %$d];
-    }
-
-    return $snaps;
-};
 
 my $mocked_volume_snapshot = sub {
     my ($cfg, $volid, $snap) = @_;
@@ -186,7 +184,9 @@ my $mocked_volume_snapshot = sub {
 
     my $d = $mocked_storage_content->{$storeid}->{$volname};
     die "no such volid '$volid'\n" if !$d;
-    $d->{$snap} = 1;
+    $d->{$snap} = generate_snapshot_info();
+
+    return;
 };
 
 my $mocked_volume_snapshot_delete = sub {
@@ -196,6 +196,14 @@ my $mocked_volume_snapshot_delete = sub {
     my $d = $mocked_storage_content->{$storeid}->{$volname};
     die "no such volid '$volid'\n" if !$d;
     delete $d->{$snap} || die "no such snapshot '$snap' on '$volid'\n";
+};
+
+my $mocked_volume_snapshot_info = sub {
+    my ($cfg, $volid) = @_;
+
+    my ($storeid, $volname) = PVE::Storage::parse_volume_id($volid);
+
+    return $mocked_storage_content->{$storeid}->{$volname} // {};
 };
 
 my $pve_replication_module = Test::MockModule->new('PVE::Replication');
@@ -248,9 +256,9 @@ sub setup {
     $pve_replication_module->mock(get_log_time => $mocked_get_log_time);
 
     $pve_storage_module->mock(config => sub { return $mocked_storage_config; });
-    $pve_storage_module->mock(volume_snapshot_list => $mocked_volume_snapshot_list);
     $pve_storage_module->mock(volume_snapshot => $mocked_volume_snapshot);
     $pve_storage_module->mock(volume_snapshot_delete => $mocked_volume_snapshot_delete);
+    $pve_storage_module->mock(volume_snapshot_info => $mocked_volume_snapshot_info);
 
     $pve_replication_config_module->mock(
 	new => $mocked_replication_config_new,

@@ -10,28 +10,31 @@ Ext.define('PVE.qemu.HDInputPanel', {
 
     vmconfig: {}, // used to select usused disks
 
-    viewModel: {},
+    viewModel: {
+	data: {
+	    isSCSI: false,
+	    isVirtIO: false,
+	    isSCSISingle: false,
+	},
+    },
 
     controller: {
-
 	xclass: 'Ext.app.ViewController',
 
 	onControllerChange: function(field) {
-	    var value = field.getValue();
+	    let me = this;
+	    let vm = this.getViewModel();
 
-	    var allowIOthread = value.match(/^(virtio|scsi)/);
-	    this.lookup('iothread').setDisabled(!allowIOthread);
-	    if (!allowIOthread) {
-		this.lookup('iothread').setValue(false);
-	    }
+	    let value = field.getValue();
+	    vm.set('isSCSI', value.match(/^scsi/));
+	    vm.set('isVirtIO', value.match(/^virtio/));
 
-	    var virtio = value.match(/^virtio/);
-	    this.lookup('ssd').setDisabled(virtio);
-	    if (virtio) {
-		this.lookup('ssd').setValue(false);
-	    }
+	    me.fireIdChange();
+	},
 
-	    this.lookup('scsiController').setVisible(value.match(/^scsi/));
+	fireIdChange: function() {
+	    let view = this.getView();
+	    view.fireEvent('diskidchange', view, view.bussel.getConfId());
 	},
 
 	control: {
@@ -39,13 +42,13 @@ Ext.define('PVE.qemu.HDInputPanel', {
 		change: 'onControllerChange',
 		afterrender: 'onControllerChange',
 	    },
-	    'field[name=iothread]': {
+	    'field[name=deviceid]': {
+		change: 'fireIdChange',
+	    },
+	    'field[name=scsiController]': {
 		change: function(f, value) {
-		    if (!this.getView().insideWizard) {
-			return;
-		    }
-		    var vmScsiType = value ? 'virtio-scsi-single': 'virtio-scsi-pci';
-		    this.lookupReference('scsiController').setValue(vmScsiType);
+		    let vm = this.getViewModel();
+		    vm.set('isSCSISingle', value === 'virtio-scsi-single');
 		},
 	    },
 	},
@@ -54,6 +57,10 @@ Ext.define('PVE.qemu.HDInputPanel', {
 	    var vm = this.getViewModel();
 	    if (view.isCreate) {
 		vm.set('isIncludedInBackup', true);
+	    }
+	    if (view.confid) {
+		vm.set('isSCSI', view.confid.match(/^scsi/));
+		vm.set('isVirtIO', view.confid.match(/^virtio/));
 	    }
 	},
     },
@@ -81,19 +88,25 @@ Ext.define('PVE.qemu.HDInputPanel', {
 	PVE.Utils.propertyStringSet(me.drive, values.discard, 'discard', 'on');
 	PVE.Utils.propertyStringSet(me.drive, values.ssd, 'ssd', 'on');
 	PVE.Utils.propertyStringSet(me.drive, values.iothread, 'iothread', 'on');
+	PVE.Utils.propertyStringSet(me.drive, values.readOnly, 'ro', 'on');
 	PVE.Utils.propertyStringSet(me.drive, values.cache, 'cache');
+	PVE.Utils.propertyStringSet(me.drive, values.aio, 'aio');
 
-        var names = ['mbps_rd', 'mbps_wr', 'iops_rd', 'iops_wr'];
-        Ext.Array.each(names, function(name) {
-            var burst_name = name + '_max';
+	['mbps_rd', 'mbps_wr', 'iops_rd', 'iops_wr'].forEach(name => {
+	    let burst_name = `${name}_max`;
 	    PVE.Utils.propertyStringSet(me.drive, values[name], name);
 	    PVE.Utils.propertyStringSet(me.drive, values[burst_name], burst_name);
-        });
-
+	});
 
 	params[confid] = PVE.Parser.printQemuDrive(me.drive);
 
 	return params;
+    },
+
+    updateVMConfig: function(vmconfig) {
+	var me = this;
+	me.vmconfig = vmconfig;
+	me.bussel?.updateVMConfig(vmconfig);
     },
 
     setVMConfig: function(vmconfig) {
@@ -136,6 +149,8 @@ Ext.define('PVE.qemu.HDInputPanel', {
 	values.discard = drive.discard === 'on';
 	values.ssd = PVE.Parser.parseBoolean(drive.ssd);
 	values.iothread = PVE.Parser.parseBoolean(drive.iothread);
+	values.readOnly = PVE.Parser.parseBoolean(drive.ro);
+	values.aio = drive.aio || '__default__';
 
 	values.mbps_rd = drive.mbps_rd;
 	values.mbps_wr = drive.mbps_wr;
@@ -155,36 +170,41 @@ Ext.define('PVE.qemu.HDInputPanel', {
 	me.down('#hdimage').setStorage(undefined, nodename);
     },
 
+    hasAdvanced: true,
+
     initComponent: function() {
 	var me = this;
 
-	var labelWidth = 140;
-
 	me.drive = {};
 
-	me.column1 = [];
-	me.column2 = [];
+	let column1 = [];
+	let column2 = [];
 
-	me.advancedColumn1 = [];
-	me.advancedColumn2 = [];
+	let advancedColumn1 = [];
+	let advancedColumn2 = [];
 
 	if (!me.confid || me.unused) {
 	    me.bussel = Ext.create('PVE.form.ControllerSelector', {
-		vmconfig: me.insideWizard ? { scsi2: 'cdrom' } : {},
+		vmconfig: me.vmconfig,
+		selectFree: true,
 	    });
-	    me.column1.push(me.bussel);
+	    column1.push(me.bussel);
 
 	    me.scsiController = Ext.create('Ext.form.field.Display', {
 		fieldLabel: gettext('SCSI Controller'),
 		reference: 'scsiController',
+		name: 'scsiController',
 		bind: me.insideWizard ? {
 		    value: '{current.scsihw}',
-		} : undefined,
+		    visible: '{isSCSI}',
+		} : {
+		    visible: '{isSCSI}',
+		},
 		renderer: PVE.Utils.render_scsihw,
 		submitValue: false,
 		hidden: true,
 	    });
-	    me.column1.push(me.scsiController);
+	    column1.push(me.scsiController);
 	}
 
 	if (me.unused) {
@@ -198,9 +218,9 @@ Ext.define('PVE.qemu.HDInputPanel', {
 		data: [],
 		allowBlank: false,
 	    });
-	    me.column1.push(me.unusedDisks);
+	    column1.push(me.unusedDisks);
 	} else if (me.isCreate) {
-	    me.column1.push({
+	    column1.push({
 		xtype: 'pveDiskStorageSelector',
 		storageContent: 'images',
 		name: 'disk',
@@ -208,7 +228,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
 		autoSelect: me.insideWizard,
 	    });
 	} else {
-	    me.column1.push({
+	    column1.push({
 		xtype: 'textfield',
 		disabled: true,
 		submitValue: false,
@@ -217,7 +237,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
 	    });
 	}
 
-	me.column2.push(
+	column2.push(
 	    {
 		xtype: 'CacheTypeSelector',
 		name: 'cache',
@@ -230,25 +250,79 @@ Ext.define('PVE.qemu.HDInputPanel', {
 		reference: 'discard',
 		name: 'discard',
 	    },
+	    {
+		xtype: 'proxmoxcheckbox',
+		name: 'iothread',
+		fieldLabel: 'IO thread',
+		clearOnDisable: true,
+		bind: me.insideWizard || me.isCreate ? {
+		    disabled: '{!isVirtIO && !isSCSI}',
+		    // Checkbox.setValue handles Arrays in a different way, therefore cast to bool
+		    value: '{!!isVirtIO || (isSCSI && isSCSISingle)}',
+		} : {
+		    disabled: '{!isVirtIO && !isSCSI}',
+		},
+	    },
 	);
 
-	me.advancedColumn1.push(
+	advancedColumn1.push(
 	    {
 		xtype: 'proxmoxcheckbox',
-		disabled: me.confid && me.confid.match(/^virtio/),
 		fieldLabel: gettext('SSD emulation'),
-		labelWidth: labelWidth,
 		name: 'ssd',
-		reference: 'ssd',
+		clearOnDisable: true,
+		bind: {
+		    disabled: '{isVirtIO}',
+		},
 	    },
 	    {
 		xtype: 'proxmoxcheckbox',
-		disabled: me.confid && !me.confid.match(/^(virtio|scsi)/),
-		fieldLabel: 'IO thread',
-		labelWidth: labelWidth,
-		reference: 'iothread',
-		name: 'iothread',
+		name: 'readOnly', // `ro` in the config, we map in get/set values
+		defaultValue: 0,
+		fieldLabel: gettext('Read-only'),
+		clearOnDisable: true,
+		bind: {
+		    disabled: '{!isVirtIO && !isSCSI}',
+		},
 	    },
+	);
+
+	advancedColumn2.push(
+	    {
+		xtype: 'proxmoxcheckbox',
+		fieldLabel: gettext('Backup'),
+		autoEl: {
+		    tag: 'div',
+		    'data-qtip': gettext('Include volume in backup job'),
+		},
+		name: 'backup',
+		bind: {
+		    value: '{isIncludedInBackup}',
+		},
+	    },
+	    {
+		xtype: 'proxmoxcheckbox',
+		fieldLabel: gettext('Skip replication'),
+		name: 'noreplicate',
+	    },
+	    {
+		xtype: 'proxmoxKVComboBox',
+		name: 'aio',
+		fieldLabel: gettext('Async IO'),
+		allowBlank: false,
+		value: '__default__',
+		comboItems: [
+		    ['__default__', Proxmox.Utils.defaultText + ' (io_uring)'],
+		    ['io_uring', 'io_uring'],
+		    ['native', 'native'],
+		    ['threads', 'threads'],
+		],
+	    },
+	);
+
+	let labelWidth = 140;
+
+	let bwColumn1 = [
 	    {
 		xtype: 'numberfield',
 		name: 'mbps_rd',
@@ -285,28 +359,9 @@ Ext.define('PVE.qemu.HDInputPanel', {
 		labelWidth: labelWidth,
 		emptyText: gettext('unlimited'),
 	    },
-	);
+	];
 
-	me.advancedColumn2.push(
-	    {
-		xtype: 'proxmoxcheckbox',
-		fieldLabel: gettext('Backup'),
-		autoEl: {
-		    tag: 'div',
-		    'data-qtip': gettext('Include volume in backup job'),
-		},
-		labelWidth: labelWidth,
-		name: 'backup',
-		bind: {
-		    value: '{isIncludedInBackup}',
-		},
-	    },
-	    {
-		xtype: 'proxmoxcheckbox',
-		fieldLabel: gettext('Skip replication'),
-		labelWidth: labelWidth,
-		name: 'noreplicate',
-	    },
+	let bwColumn2 = [
 	    {
 		xtype: 'numberfield',
 		name: 'mbps_rd_max',
@@ -343,9 +398,45 @@ Ext.define('PVE.qemu.HDInputPanel', {
 		labelWidth: labelWidth,
 		emptyText: gettext('default'),
 	    },
-	);
+	];
+
+	me.items = [
+	    {
+		xtype: 'tabpanel',
+		plain: true,
+		bodyPadding: 10,
+		border: 0,
+		items: [
+		    {
+			title: gettext('Disk'),
+			xtype: 'inputpanel',
+			reference: 'diskpanel',
+			column1,
+			column2,
+			advancedColumn1,
+			advancedColumn2,
+			showAdvanced: me.showAdvanced,
+			getValues: () => ({}),
+		    },
+		    {
+			title: gettext('Bandwidth'),
+			xtype: 'inputpanel',
+			reference: 'bwpanel',
+			column1: bwColumn1,
+			column2: bwColumn2,
+			showAdvanced: me.showAdvanced,
+			getValues: () => ({}),
+		    },
+		],
+	    },
+	];
 
 	me.callParent();
+    },
+
+    setAdvancedVisible: function(visible) {
+	this.lookup('diskpanel').setAdvancedVisible(visible);
+	this.lookup('bwpanel').setAdvancedVisible(visible);
     },
 });
 
@@ -355,6 +446,9 @@ Ext.define('PVE.qemu.HDEdit', {
     isAdd: true,
 
     backgroundDelay: 5,
+
+    width: 600,
+    bodyPadding: 0,
 
     initComponent: function() {
 	var me = this;

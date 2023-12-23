@@ -10,6 +10,8 @@ use JSON;
 use Data::Dumper;
 use LWP::UserAgent;
 
+use Proxmox::RS::Subscription;
+
 use PVE::SafeSyslog;
 use PVE::Cluster;
 use PVE::INotify;
@@ -35,7 +37,7 @@ my $nodename = PVE::INotify::nodename();
 my $upid_exit = sub {
     my $upid = shift;
     my $status = PVE::Tools::upid_read_status($upid);
-    exit($status eq 'OK' ? 0 : -1);
+    exit(PVE::Tools::upid_status_is_error($status) ? -1 : 0);
 };
 
 sub setup_environment {
@@ -106,6 +108,15 @@ __PACKAGE__->register_method ({
 	return undef;
     }});
 
+my sub has_valid_subscription {
+    my $info = eval { Proxmox::RS::Subscription::read_subscription('/etc/subscription') } // {};
+    warn "couldn't check subscription info - $@" if $@;
+    return $info->{status} && $info->{status} eq 'active'; # age check?
+}
+
+my $supported_ceph_versions = ['quincy', 'reef'];
+my $default_ceph_version = 'quincy';
+
 __PACKAGE__->register_method ({
     name => 'install',
     path => 'install',
@@ -116,9 +127,16 @@ __PACKAGE__->register_method ({
 	properties => {
 	    version => {
 		type => 'string',
-		enum => ['octopus', 'pacific'],
-		default => 'pacific',
+		enum => $supported_ceph_versions,
+		default => $default_ceph_version,
 		description => "Ceph version to install.",
+		optional => 1,
+	    },
+	    repository => {
+		type => 'string',
+		enum => ['enterprise', 'no-subscription', 'test'],
+		default => 'enterprise',
+		description => "Ceph repository to use.",
 		optional => 1,
 	    },
 	    'allow-experimental' => {
@@ -127,40 +145,53 @@ __PACKAGE__->register_method ({
 		optional => 1,
 		description => "Allow experimental versions. Use with care!",
 	    },
-	    'test-repository' => {
-		type => 'boolean',
-		default => 0,
-		optional => 1,
-		description => "Use the test, not the main repository. Use with care!",
-	    },
 	},
     },
     returns => { type => 'null' },
     code => sub {
 	my ($param) = @_;
 
-	my $cephver = $param->{version} || 'pacific'; # NOTE: always change default here too!
+	my $cephver = $param->{version} || $default_ceph_version;
 
-	my $repo = $param->{'test-repository'} ? 'test' : 'main';
+	my $repo = $param->{'repository'} // 'enterprise';
+	my $enterprise_repo = $repo eq 'enterprise';
+	my $cdn = $enterprise_repo ? 'https://enterprise.proxmox.com' : 'http://download.proxmox.com';
+
+	if (has_valid_subscription()) {
+	    warn "\nNOTE: The node has an active subscription but a non-production Ceph repository selected.\n\n"
+	        if !$enterprise_repo;
+	} elsif ($enterprise_repo) {
+	    warn "\nWARN: Enterprise repository selected, but no active subscription!\n\n";
+	} elsif ($repo eq 'no-subscription') {
+	    warn "\nHINT: The no-subscription repository is not the best choice for production setups.\n"
+	        ."Proxmox recommends using the enterprise repository with a valid subscription.\n";
+	} else {
+	    warn "\nWARN: The test repository should only be used for test setups or after consulting"
+		." the official Proxmox support!\n\n"
+	}
 
 	my $repolist;
-	if ($cephver eq 'octopus') {
-	    $repolist = "deb http://download.proxmox.com/debian/ceph-octopus bullseye $repo\n";
-	    # FIXME: delete below for release!
-	    warn "NOTE: using internal test repository as public may not be available yet\n";
-	    $repolist = "deb http://repo.proxmox.com/staging/ceph-octopus bullseye ceph-15\n"; # TODO: for test only, delete
-	} elsif ($cephver eq 'pacific') {
-	    $repolist = "deb http://download.proxmox.com/debian/ceph-pacific bullseye $repo\n";
-	    # FIXME: delete below for release!
-	    warn "NOTE: using internal test repository as public may not be available yet\n";
-	    $repolist = "deb http://repo.proxmox.com/staging/ceph-pacific bullseye ceph-16\n"; # TODO: for test only, delete
+	if ($cephver eq 'reef') {
+	    $repolist = "deb ${cdn}/debian/ceph-reef bookworm $repo\n";
+	} elsif ($cephver eq 'quincy') {
+	    $repolist = "deb ${cdn}/debian/ceph-quincy bookworm $repo\n";
 	} else {
 	    die "unsupported ceph version: $cephver";
 	}
+
+	if (-t STDOUT && !$param->{version}) {
+	    print "This will install Ceph " . ucfirst($cephver) . " - continue (y/N)? ";
+
+	    my $answer = <STDIN>;
+	    my $continue = defined($answer) && $answer =~ m/^\s*y(?:es)?\s*$/i;
+
+	    die "Aborting installation as requested\n" if !$continue;
+	}
+
 	PVE::Tools::file_set_contents("/etc/apt/sources.list.d/ceph.list", $repolist);
 
-	warn "WARNING: installing non-default ceph release '$cephver'!\n"
-	    if $cephver !~ qr/^(?:octopus|pacific)$/;
+	my $supported_re = join('|', $supported_ceph_versions->@*);
+	warn "WARNING: installing non-default ceph release '$cephver'!\n" if $cephver !~ qr/^(?:$supported_re)$/;
 
 	local $ENV{DEBIAN_FRONTEND} = 'noninteractive';
 	print "update available package list\n";
@@ -176,17 +207,28 @@ __PACKAGE__->register_method ({
 	my @ceph_packages = qw(
 	    ceph
 	    ceph-common
-	    ceph-mds
 	    ceph-fuse
+	    ceph-mds
+	    ceph-volume
 	    gdisk
+	    nvme-cli
 	);
 
 	print "start installation\n";
+
+	# this flag helps to determine when apt is actually done installing (vs. partial extracing)
+	my $install_flag_fn = PVE::Ceph::Tools::ceph_install_flag_file();
+	open(my $install_flag, '>', $install_flag_fn) or die "could not create install flag - $!\n";
+	close $install_flag;
+
 	if (system(@apt_install, @ceph_packages) != 0) {
+	    unlink $install_flag_fn or warn "could not remove Ceph installation flag - $!";
 	    die "apt failed during ceph installation ($?)\n";
 	}
 
 	print "\ninstalled ceph $cephver successfully!\n";
+	# done: drop flag file so that the PVE::Ceph::Tools check returns Ok now.
+	unlink $install_flag_fn or warn "could not remove Ceph installation flag - $!";
 
 	print "\nreloading API to load new Ceph RADOS library...\n";
 	run_command([
@@ -217,10 +259,195 @@ __PACKAGE__->register_method ({
 	return undef;
     }});
 
+my $get_storages = sub {
+    my ($fs, $is_default) = @_;
+
+    my $cfg = PVE::Storage::config();
+
+    my $storages = $cfg->{ids};
+    my $res = {};
+    foreach my $storeid (keys %$storages) {
+	my $curr = $storages->{$storeid};
+	next if $curr->{type} ne 'cephfs';
+	my $cur_fs = $curr->{'fs-name'};
+	$res->{$storeid} = $storages->{$storeid}
+	    if (!defined($cur_fs) && $is_default) || (defined($cur_fs) && $fs eq $cur_fs);
+    }
+
+    return $res;
+};
+
+__PACKAGE__->register_method ({
+    name => 'destroyfs',
+    path => 'destroyfs',
+    method => 'DELETE',
+    description => "Destroy a Ceph filesystem",
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    name => {
+		description => "The ceph filesystem name.",
+		type => 'string',
+	    },
+	    'remove-storages' => {
+		description => "Remove all pveceph-managed storages configured for this fs.",
+		type => 'boolean',
+		optional => 1,
+		default => 0,
+	    },
+	    'remove-pools' => {
+		description => "Remove data and metadata pools configured for this fs.",
+		type => 'boolean',
+		optional => 1,
+		default => 0,
+	    },
+	},
+    },
+    returns => { type => 'string' },
+    code => sub {
+	my ($param) = @_;
+
+	PVE::Ceph::Tools::check_ceph_inited();
+
+	my $rpcenv = PVE::RPCEnvironment::get();
+	my $user = $rpcenv->get_user();
+
+	my $fs_name = $param->{name};
+
+	my $fs;
+	my $fs_list = PVE::Ceph::Tools::ls_fs();
+	for my $entry (@$fs_list) {
+	    next if $entry->{name} ne $fs_name;
+	    $fs = $entry;
+	    last;
+	}
+	die "no such cephfs '$fs_name'\n" if !$fs;
+
+	my $worker = sub {
+	    my $rados = PVE::RADOS->new();
+
+	    if ($param->{'remove-storages'}) {
+		my $defaultfs;
+		my $fs_dump = $rados->mon_command({ prefix => "fs dump" });
+		for my $fs ($fs_dump->{filesystems}->@*) {
+		    next if $fs->{id} != $fs_dump->{default_fscid};
+		    $defaultfs = $fs->{mdsmap}->{fs_name};
+		}
+		warn "no default fs found, maybe not all relevant storages are removed\n"
+		    if !defined($defaultfs);
+
+		my $storages = $get_storages->($fs_name, $fs_name eq ($defaultfs // ''));
+		for my $storeid (keys %$storages) {
+		    my $store = $storages->{$storeid};
+		    if (!$store->{disable}) {
+			die "storage '$storeid' is not disabled, make sure to disable ".
+			    "and unmount the storage first\n";
+		    }
+		}
+
+		my $err;
+		for my $storeid (keys %$storages) {
+		    # skip external clusters, not managed by pveceph
+		    next if $storages->{$storeid}->{monhost};
+		    eval { PVE::API2::Storage::Config->delete({storage => $storeid}) };
+		    if ($@) {
+			warn "failed to remove storage '$storeid': $@\n";
+			$err = 1;
+		    }
+		}
+		die "failed to remove (some) storages - check log and remove manually!\n"
+		    if $err;
+	    }
+
+	    PVE::Ceph::Tools::destroy_fs($fs_name, $rados);
+
+	    if ($param->{'remove-pools'}) {
+		warn "removing metadata pool '$fs->{metadata_pool}'\n";
+		eval { PVE::Ceph::Tools::destroy_pool($fs->{metadata_pool}, $rados) };
+		warn "$@\n" if $@;
+
+		foreach my $pool ($fs->{data_pools}->@*) {
+		    warn "removing data pool '$pool'\n";
+		    eval { PVE::Ceph::Tools::destroy_pool($pool, $rados) };
+		    warn "$@\n" if $@;
+		}
+	    }
+
+	};
+	return $rpcenv->fork_worker('cephdestroyfs', $fs_name,  $user, $worker);
+    }});
+
+__PACKAGE__->register_method ({
+    name => 'osd-details',
+    path => 'osd-details',
+    method => 'GET',
+    description => "Get OSD details.",
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    osdid => {
+		description => "ID of the OSD",
+		type => 'string',
+	    },
+	    verbose => {
+		description => "Print verbose information, same as json-pretty output format.",
+		type => 'boolean',
+		default => 0,
+		optional => 1,
+	    },
+	},
+    },
+    returns => { type => 'object' },
+    code => sub {
+	my ($param) = @_;
+
+	PVE::Ceph::Tools::check_ceph_inited();
+
+	my $res = PVE::API2::Ceph::OSD->osddetails({
+	    osdid => $param->{osdid},
+	    node => $param->{node},
+	});
+
+	for my $dev ($res->{devices}->@*) {
+	    $dev->{"lv-info"} = PVE::API2::Ceph::OSD->osdvolume({
+		osdid => $param->{osdid},
+		node => $param->{node},
+		type => $dev->{device},
+	    });
+	}
+	$res->{verbose} = 1 if $param->{verbose};
+	return $res;
+    }});
+
+my $format_osddetails = sub {
+    my ($data, $schema, $options) = @_;
+
+    $options->{"output-format"} //= "text";
+
+    if ($data->{verbose}) {
+	$options->{"output-format"} = "json-pretty";
+	delete $data->{verbose};
+    }
+
+    if ($options->{"output-format"} eq "text") {
+	for my $dev ($data->{devices}->@*) {
+	    my ($disk, $type, $device) = $dev->@{'physical_device', 'type', 'device'};
+	    my ($lv_size, $lv_ctime) = $dev->{'lv-info'}->@{'lv_size', 'creation_time'};
+
+	    $data->{osd}->{$device} = "Disk: $disk, Type: $type, LV Size: $lv_size, LV Creation Time: $lv_ctime";
+	}
+	PVE::CLIFormatter::print_api_result($data->{osd}, $schema, undef, $options);
+    } else {
+	PVE::CLIFormatter::print_api_result($data, $schema, undef, $options);
+    }
+};
+
 our $cmddef = {
     init => [ 'PVE::API2::Ceph', 'init', [], { node => $nodename } ],
     pool => {
-	ls => [ 'PVE::API2::Ceph::Pools', 'lspools', [], { node => $nodename }, sub {
+	ls => [ 'PVE::API2::Ceph::Pool', 'lspools', [], { node => $nodename }, sub {
 	    my ($data, $schema, $options) = @_;
 	    PVE::CLIFormatter::print_api_result($data, $schema,
 		[
@@ -239,10 +466,10 @@ our $cmddef = {
 		],
 		$options);
 	}, $PVE::RESTHandler::standard_output_options],
-	create => [ 'PVE::API2::Ceph::Pools', 'createpool', ['name'], { node => $nodename }],
-	destroy => [ 'PVE::API2::Ceph::Pools', 'destroypool', ['name'], { node => $nodename } ],
-	set => [ 'PVE::API2::Ceph::Pools', 'setpool', ['name'], { node => $nodename } ],
-	get => [ 'PVE::API2::Ceph::Pools', 'getpool', ['name'], { node => $nodename }, sub {
+	create => [ 'PVE::API2::Ceph::Pool', 'createpool', ['name'], { node => $nodename }],
+	destroy => [ 'PVE::API2::Ceph::Pool', 'destroypool', ['name'], { node => $nodename } ],
+	set => [ 'PVE::API2::Ceph::Pool', 'setpool', ['name'], { node => $nodename } ],
+	get => [ 'PVE::API2::Ceph::Pool', 'getpool', ['name'], { node => $nodename }, sub {
 	    my ($data, $schema, $options) = @_;
 	    PVE::CLIFormatter::print_api_result($data, $schema, undef, $options);
 	}, $PVE::RESTHandler::standard_output_options],
@@ -252,10 +479,15 @@ our $cmddef = {
     destroypool => { alias => 'pool destroy' },
     fs => {
 	create => [ 'PVE::API2::Ceph::FS', 'createfs', [], { node => $nodename }],
+	destroy => [ __PACKAGE__, 'destroyfs', ['name'], { node => $nodename }],
     },
     osd => {
 	create => [ 'PVE::API2::Ceph::OSD', 'createosd', ['dev'], { node => $nodename }, $upid_exit],
 	destroy => [ 'PVE::API2::Ceph::OSD', 'destroyosd', ['osdid'], { node => $nodename }, $upid_exit],
+	details => [
+	    __PACKAGE__, 'osd-details', ['osdid'], { node => $nodename }, $format_osddetails,
+	    $PVE::RESTHandler::standard_output_options,
+	],
     },
     createosd => { alias => 'osd create' },
     destroyosd => { alias => 'osd destroy' },

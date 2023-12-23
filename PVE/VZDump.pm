@@ -3,7 +3,9 @@ package PVE::VZDump;
 use strict;
 use warnings;
 
+use Clone;
 use Fcntl ':flock';
+use File::Basename;
 use File::Path;
 use IO::File;
 use IO::Select;
@@ -17,6 +19,7 @@ use PVE::Exception qw(raise_param_exc);
 use PVE::HA::Config;
 use PVE::HA::Env::PVE2;
 use PVE::JSONSchema qw(get_standard_option);
+use PVE::Notify;
 use PVE::RPCEnvironment;
 use PVE::Storage;
 use PVE::VZDump::Common;
@@ -34,6 +37,9 @@ my @plugins = qw();
 
 my $confdesc = PVE::VZDump::Common::get_confdesc();
 
+my $confdesc_for_defaults = Clone::clone($confdesc);
+delete $confdesc_for_defaults->{$_}->{requires} for qw(notes-template protected);
+
 # Load available plugins
 my @pve_vzdump_classes = qw(PVE::VZDump::QemuServer PVE::VZDump::LXC);
 foreach my $plug (@pve_vzdump_classes) {
@@ -48,6 +54,13 @@ foreach my $plug (@pve_vzdump_classes) {
 	    die $@;
 	}
     }
+}
+
+sub get_storage_param {
+    my ($param) = @_;
+
+    return if $param->{dumpdir};
+    return $param->{storage} || 'local';
 }
 
 # helper functions
@@ -67,6 +80,63 @@ sub run_command {
     };
 
     PVE::Tools::run_command($cmdstr, %param, logfunc => $logfunc);
+}
+
+my $verify_notes_template = sub {
+    my ($template) = @_;
+
+    die "contains a line feed\n" if $template =~ /\n/;
+
+    my @problematic = ();
+    while ($template =~ /\\(.)/g) {
+	my $char = $1;
+	push @problematic, "escape sequence '\\$char' at char " . (pos($template) - 2)
+	    if $char !~ /^[n\\]$/;
+    }
+
+    while ($template =~ /\{\{([^\s{}]+)\}\}/g) {
+	my $var = $1;
+	push @problematic, "variable '$var' at char " . (pos($template) - length($var))
+	    if $var !~ /^(cluster|guestname|node|vmid)$/;
+    }
+
+    die "found unknown: " . join(', ', @problematic) . "\n" if scalar(@problematic);
+};
+
+my $generate_notes = sub {
+    my ($notes_template, $task) = @_;
+
+    $verify_notes_template->($notes_template);
+
+    my $info = {
+	cluster => PVE::Cluster::get_clinfo()->{cluster}->{name} // 'standalone node',
+	guestname => $task->{hostname} // "VM $task->{vmid}", # is always set for CTs
+	node => PVE::INotify::nodename(),
+	vmid => $task->{vmid},
+    };
+
+    my $unescape = sub {
+	my ($char) = @_;
+	return '\\' if $char eq '\\';
+	return "\n" if $char eq 'n';
+	die "unexpected escape character '$char'\n";
+    };
+
+    $notes_template =~ s/\\(.)/$unescape->($1)/eg;
+
+    my $vars = join('|', keys $info->%*);
+    $notes_template =~ s/\{\{($vars)\}\}/$info->{$1}/g;
+
+    return $notes_template;
+};
+
+my sub parse_performance {
+    my ($param) = @_;
+
+    if (defined(my $perf = $param->{performance})) {
+	return if ref($perf) eq 'HASH'; # already parsed
+	$param->{performance} = PVE::JSONSchema::parse_property_string('backup-performance', $perf);
+    }
 }
 
 my $parse_prune_backups_maxfiles = sub {
@@ -100,9 +170,6 @@ sub storage_info {
     my $scfg = PVE::Storage::storage_config($cfg, $storage);
     my $type = $scfg->{type};
 
-    die "can't use storage type '$type' for backup\n"
-	if (!($type eq 'dir' || $type eq 'nfs' || $type eq 'glusterfs'
-	      || $type eq 'cifs' || $type eq 'cephfs' || $type eq 'pbs'));
     die "can't use storage '$storage' for backups - wrong content type\n"
 	if (!$scfg->{content}->{backup});
 
@@ -208,24 +275,36 @@ sub read_vzdump_defaults {
 	map {
 	    my $default = $confdesc->{$_}->{default};
 	     defined($default) ? ($_ => $default) : ()
-	} keys %$confdesc
+	} keys %$confdesc_for_defaults
     };
     $parse_prune_backups_maxfiles->($defaults, "defaults in VZDump schema");
+    parse_performance($defaults);
 
     my $raw;
     eval { $raw = PVE::Tools::file_get_contents($fn); };
     return $defaults if $@;
 
-    my $conf_schema = { type => 'object', properties => $confdesc, };
+    my $conf_schema = { type => 'object', properties => $confdesc_for_defaults };
     my $res = PVE::JSONSchema::parse_config($conf_schema, $fn, $raw);
     if (my $excludes = $res->{'exclude-path'}) {
-	$res->{'exclude-path'} = PVE::Tools::split_args($excludes);
+	if (ref($excludes) eq 'ARRAY') {
+	    my $list = [];
+	    for my $path ($excludes->@*) {
+		# We still use `split_args` here to be compatible with old configs where one line
+		# still has multiple space separated entries.
+		push $list->@*, PVE::Tools::split_args($path)->@*;
+	    }
+	    $res->{'exclude-path'} = $list;
+	} else {
+	    $res->{'exclude-path'} = PVE::Tools::split_args($excludes);
+	}
     }
     if (defined($res->{mailto})) {
 	my @mailto = split_list($res->{mailto});
 	$res->{mailto} = [ @mailto ];
     }
     $parse_prune_backups_maxfiles->($res, "options in '$fn'");
+    parse_performance($res);
 
     foreach my $key (keys %$defaults) {
 	$res->{$key} = $defaults->{$key} if !defined($res->{$key});
@@ -239,21 +318,90 @@ sub read_vzdump_defaults {
     return $res;
 }
 
-use constant MAX_MAIL_SIZE => 1024*1024;
-sub sendmail {
-    my ($self, $tasklist, $totaltime, $err, $detail_pre, $detail_post) = @_;
+sub read_backup_task_logs {
+    my ($task_list) = @_;
 
-    my $opts = $self->{opts};
+    my $task_logs = "";
 
-    my $mailto = $opts->{mailto};
+    for my $task (@$task_list) {
+	my $vmid = $task->{vmid};
+	my $log_file = $task->{tmplog};
+	if (!$task->{tmplog}) {
+	    $task_logs .= "$vmid: no log available\n\n";
+	    next;
+	}
+	if (open (my $TMP, '<', "$log_file")) {
+	    while (my $line = <$TMP>) {
+		next if $line =~ /^status: \d+/; # not useful in mails
+		$task_logs .= encode8bit ("$vmid: $line");
+	    }
+	    close ($TMP);
+	} else {
+	    $task_logs .= "$vmid: Could not open log file\n\n";
+	}
+	$task_logs .= "\n";
+    }
 
-    return if !($mailto && scalar(@$mailto));
+    return $task_logs;
+}
 
-    my $cmdline = $self->{cmdline};
+sub build_guest_table {
+    my ($task_list) = @_;
 
-    my $ecount = 0;
-    foreach my $task (@$tasklist) {
-	$ecount++ if $task->{state} ne 'ok';
+    my $table = {
+	schema => {
+	    columns => [
+		{
+		    label => "VMID",
+		    id  => "vmid"
+		},
+		{
+		    label => "Name",
+		    id  => "name"
+		},
+		{
+		    label => "Status",
+		    id  => "status"
+		},
+		{
+		    label => "Time",
+		    id  => "time",
+		    renderer => "duration"
+		},
+		{
+		    label => "Size",
+		    id  => "size",
+		    renderer => "human-bytes"
+		},
+		{
+		    label => "Filename",
+		    id  => "filename"
+		},
+	    ]
+	},
+	data => []
+    };
+
+    for my $task (@$task_list) {
+	my $successful = $task->{state} eq 'ok';
+	my $size = $successful ? $task->{size} : 0;
+	my $filename = $successful ? $task->{target} : undef;
+	push @{$table->{data}}, {
+	    "vmid" => int($task->{vmid}),
+	    "name" => $task->{hostname},
+	    "status" => $task->{state},
+	    "time" => int($task->{backuptime}),
+	    "size" => int($size),
+	    "filename" => $filename,
+	};
+    }
+
+    return $table;
+}
+
+sub sanitize_task_list {
+    my ($task_list) = @_;
+    for my $task (@$task_list) {
 	chomp $task->{msg} if $task->{msg};
 	$task->{backuptime} = 0 if !$task->{backuptime};
 	$task->{size} = 0 if !$task->{size};
@@ -264,164 +412,152 @@ sub sendmail {
 	    $task->{msg} = 'aborted';
 	}
     }
+}
 
-    my $notify = $opts->{mailnotification} || 'always';
-    return if (!$ecount && !$err && ($notify eq 'failure'));
+sub count_failed_tasks {
+    my ($tasklist) = @_;
 
-    my $stat = ($ecount || $err) ? 'backup failed' : 'backup successful';
+    my $error_count = 0;
+    for my $task (@$tasklist) {
+	$error_count++ if $task->{state} ne 'ok';
+    }
+
+    return $error_count;
+}
+
+sub get_hostname {
+    my $hostname = `hostname -f` || PVE::INotify::nodename();
+    chomp $hostname;
+    return $hostname;
+}
+
+my $subject_template = "vzdump backup status ({{hostname}}): {{status-text}}";
+
+my $body_template = <<EOT;
+{{error-message}}
+{{heading-1 "Details"}}
+{{table guest-table}}
+
+Total running time: {{duration total-time}}
+
+{{heading-1 "Logs"}}
+{{verbatim-monospaced logs}}
+EOT
+
+use constant MAX_LOG_SIZE => 1024*1024;
+
+sub send_notification {
+    my ($self, $tasklist, $total_time, $err, $detail_pre, $detail_post) = @_;
+
+    my $opts = $self->{opts};
+    my $mailto = $opts->{mailto};
+    my $cmdline = $self->{cmdline};
+    my $policy = $opts->{mailnotification} // 'always';
+    my $mode = $opts->{"notification-mode"} // 'auto';
+
+    sanitize_task_list($tasklist);
+    my $error_count = count_failed_tasks($tasklist);
+
+    my $failed = ($error_count || $err);
+
+    my $status_text = $failed ? 'backup failed' : 'backup successful';
+
     if ($err) {
 	if ($err =~ /\n/) {
-	    $stat .= ": multiple problems";
+	    $status_text .= ": multiple problems";
 	} else {
-	    $stat .= ": $err";
+	    $status_text .= ": $err";
 	    $err = undef;
 	}
     }
 
-    my $hostname = `hostname -f` || PVE::INotify::nodename();
-    chomp $hostname;
-
-    # text part
-    my $text = $err ? "$err\n\n" : '';
-    my $namelength = 20;
-    $text .= sprintf (
-	"%-10s %-${namelength}s %-6s %10s %10s  %s\n",
-	qw(VMID NAME STATUS TIME SIZE FILENAME)
-    );
-    foreach my $task (@$tasklist) {
-	my $name = substr($task->{hostname}, 0, $namelength);
-	my $successful = $task->{state} eq 'ok';
-	my $size = $successful ? format_size ($task->{size}) : 0;
-	my $filename = $successful ? $task->{target} : '-';
-	my $size_fmt = $successful ? "%10s": "%8.2fMB";
-	$text .= sprintf(
-	    "%-10s %-${namelength}s %-6s %10s $size_fmt  %s\n",
-	    $task->{vmid},
-	    $name,
-	    $task->{state},
-	    format_time($task->{backuptime}),
-	    $size,
-	    $filename,
-	);
-    }
-
-    my $text_log_part;
-    $text_log_part .= "\nDetailed backup logs:\n\n";
-    $text_log_part .= "$cmdline\n\n";
-
+    my $text_log_part = "$cmdline\n\n";
     $text_log_part .= $detail_pre . "\n" if defined($detail_pre);
-    foreach my $task (@$tasklist) {
-	my $vmid = $task->{vmid};
-	my $log = $task->{tmplog};
-	if (!$log) {
-	    $text_log_part .= "$vmid: no log available\n\n";
-	    next;
-	}
-	if (open (my $TMP, '<', "$log")) {
-	    while (my $line = <$TMP>) {
-		next if $line =~ /^status: \d+/; # not useful in mails
-		$text_log_part .= encode8bit ("$vmid: $line");
-	    }
-	    close ($TMP);
-	} else {
-	    $text_log_part .= "$vmid: Could not open log file\n\n";
-	}
-	$text_log_part .= "\n";
-    }
+    $text_log_part .= read_backup_task_logs($tasklist);
     $text_log_part .= $detail_post if defined($detail_post);
 
-    # html part
-    my $html = "<html><body>\n";
-    $html .= "<p>" . (escape_html($err) =~ s/\n/<br>/gr) . "</p>\n" if $err;
-    $html .= "<table border=1 cellpadding=3>\n";
-    $html .= "<tr><td>VMID<td>NAME<td>STATUS<td>TIME<td>SIZE<td>FILENAME</tr>\n";
-
-    my $ssize = 0;
-    foreach my $task (@$tasklist) {
-	my $vmid = $task->{vmid};
-	my $name = $task->{hostname};
-
-	if  ($task->{state} eq 'ok') {
-	    $ssize += $task->{size};
-
-	    $html .= sprintf (
-	        "<tr><td>%s<td>%s<td>OK<td>%s<td align=right>%s<td>%s</tr>\n",
-	        $vmid,
-	        $name,
-	        format_time($task->{backuptime}),
-	        format_size ($task->{size}),
-	        escape_html ($task->{target}),
-	    );
-	} else {
-	    $html .= sprintf (
-	        "<tr><td>%s<td>%s<td><font color=red>FAILED<td>%s<td colspan=2>%s</tr>\n",
-	        $vmid,
-	        $name,
-	        format_time($task->{backuptime}),
-	        escape_html ($task->{msg}),
-	    );
-	}
-    }
-
-    $html .= sprintf ("<tr><td align=left colspan=3>TOTAL<td>%s<td>%s<td></tr>",
- format_time ($totaltime), format_size ($ssize));
-
-    $html .= "\n</table><br><br>\n";
-    my $html_log_part;
-    $html_log_part .= "Detailed backup logs:<br /><br />\n";
-    $html_log_part .= "<pre>\n";
-    $html_log_part .= escape_html($cmdline) . "\n\n";
-
-    $html_log_part .= escape_html($detail_pre) . "\n" if defined($detail_pre);
-    foreach my $task (@$tasklist) {
-	my $vmid = $task->{vmid};
-	my $log = $task->{tmplog};
-	if (!$log) {
-	    $html_log_part .= "$vmid: no log available\n\n";
-	    next;
-	}
-	if (open (my $TMP, '<', "$log")) {
-	    while (my $line = <$TMP>) {
-		next if $line =~ /^status: \d+/; # not useful in mails
-		if ($line =~ m/^\S+\s\d+\s+\d+:\d+:\d+\s+(ERROR|WARN):/) {
-		    $html_log_part .= encode8bit ("$vmid: <font color=red>".
-			escape_html ($line) . "</font>");
-		} else {
-		    $html_log_part .= encode8bit ("$vmid: " . escape_html ($line));
-		}
-	    }
-	    close ($TMP);
-	} else {
-	    $html_log_part .= "$vmid: Could not open log file\n\n";
-	}
-	$html_log_part .= "\n";
-    }
-    $html_log_part .= escape_html($detail_post) if defined($detail_post);
-    $html_log_part .= "</pre>";
-    my $html_end = "\n</body></html>\n";
-    # end html part
-
-    if (length($text) + length($text_log_part) +
-	length($html) + length($html_log_part) +
-	length($html_end) < MAX_MAIL_SIZE)
+    if (length($text_log_part)  > MAX_LOG_SIZE)
     {
-	$html .= $html_log_part;
-	$html .= $html_end;
-	$text .= $text_log_part;
-    } else {
-	my $msg = "Log output was too long to be sent by mail. ".
+	# Let's limit the maximum length of included logs
+	$text_log_part = "Log output was too long to be sent. ".
 	    "See Task History for details!\n";
-	$text .= $msg;
-	$html .= "<p>$msg</p>";
-	$html .= $html_end;
+    };
+
+    my $hostname = get_hostname();
+
+    my $notification_props = {
+	"hostname"      => $hostname,
+	"error-message" => $err,
+	"guest-table"   => build_guest_table($tasklist),
+	"logs"          => $text_log_part,
+	"status-text"   => $status_text,
+	"total-time"    => $total_time,
+    };
+
+    my $fields = {
+	# TODO: There is no straight-forward way yet to get the
+	# backup job id here... (I think pvescheduler would need
+	# to pass that to the vzdump call?)
+	type => "vzdump",
+	hostname => $hostname,
+    };
+
+    my $severity = $failed ? "error" : "info";
+    my $email_configured = $mailto && scalar(@$mailto);
+
+    if (($mode eq 'auto' && $email_configured) || $mode eq 'legacy-sendmail') {
+	if ($email_configured && ($policy eq "always" || ($policy eq "failure" && $failed))) {
+	    # Start out with an empty config. Might still contain
+	    # built-ins, so we need to disable/remove them.
+	    my $notification_config = Proxmox::RS::Notify->parse_config('', '');
+
+	    # Remove built-in matchers, since we only want to send an
+	    # email to the specified recipients and nobody else.
+	    for my $matcher (@{$notification_config->get_matchers()}) {
+		$notification_config->delete_matcher($matcher->{name});
+	    }
+
+	    # <, >, @ are not allowed in endpoint names, but that is only
+	    # verified once the config is serialized. That means that
+	    # we can rely on that fact that no other endpoint with this name exists.
+	    my $endpoint_name = "<" . join(",", @$mailto) . ">";
+	    $notification_config->add_sendmail_endpoint(
+		$endpoint_name,
+		$mailto,
+		undef,
+		undef,
+		"vzdump backup tool"
+	    );
+
+	    my $endpoints = [$endpoint_name];
+
+	    # Add a matcher that matches all notifications, set our
+	    # newly created target as a target.
+	    $notification_config->add_matcher(
+		"<matcher-$endpoint_name>",
+		$endpoints,
+	    );
+
+	    PVE::Notify::notify(
+		$severity,
+		$subject_template,
+		$body_template,
+		$notification_props,
+		$fields,
+		$notification_config
+	    );
+	}
+    } else {
+	# We use the 'new' system, or we are set to 'auto' and
+	# no email addresses were configured.
+	PVE::Notify::notify(
+	    $severity,
+	    $subject_template,
+	    $body_template,
+	    $notification_props,
+	    $fields,
+	);
     }
-
-    my $subject = "vzdump backup status ($hostname) : $stat";
-
-    my $dcconf = PVE::Cluster::cfs_read_file('datacenter.cfg');
-    my $mailfrom = $dcconf->{email_from} || "root";
-
-    PVE::Tools::sendmail($mailto, $subject, $text, $html, $mailfrom, "vzdump backup tool");
 };
 
 sub new {
@@ -496,24 +632,41 @@ sub new {
 	die "cannot use options 'storage' and 'dumpdir' at the same time\n";
     }
 
-    if (!$opts->{dumpdir} && !$opts->{storage}) {
-	$opts->{storage} = 'local';
+    if (my $storage = get_storage_param($opts)) {
+	$opts->{storage} = $storage;
+    }
+
+    # Enforced by the API too, but these options might come in via defaults. Drop them if necessary.
+    if (!$opts->{storage}) {
+	delete $opts->{$_} for qw(notes-template protected);
     }
 
     my $errors = '';
+    my $add_error = sub {
+	my ($error) = @_;
+	$errors .= "\n" if $errors;
+	chomp($error);
+	$errors .= $error;
+    };
+
+    eval {
+	$self->{job_init_log} = '';
+	open my $job_init_fd, '>', \$self->{job_init_log};
+	$self->run_hook_script('job-init', undef, $job_init_fd);
+	close $job_init_fd;
+
+	PVE::Cluster::cfs_update(); # Pick up possible changes made by the hook script.
+    };
+    $add_error->($@) if $@;
 
     if ($opts->{storage}) {
 	my $storage_cfg = PVE::Storage::config();
 	eval { PVE::Storage::activate_storage($storage_cfg, $opts->{storage}) };
-	if (my $err = $@) {
-	    chomp($err);
-	    $errors .= "could not activate storage '$opts->{storage}': $err";
-	}
+	$add_error->("could not activate storage '$opts->{storage}': $@") if $@;
 
 	my $info = eval { storage_info ($opts->{storage}) };
 	if (my $err = $@) {
-	    chomp($err);
-	    $errors .= "could not get storage information for '$opts->{storage}': $err";
+	    $add_error->("could not get storage information for '$opts->{storage}': $err");
 	} else {
 	    $opts->{dumpdir} = $info->{dumpdir};
 	    $opts->{scfg} = $info->{scfg};
@@ -521,7 +674,7 @@ sub new {
 	    $opts->{'prune-backups'} //= $info->{'prune-backups'};
 	}
     } elsif ($opts->{dumpdir}) {
-	$errors .= "dumpdir '$opts->{dumpdir}' does not exist"
+	$add_error->("dumpdir '$opts->{dumpdir}' does not exist")
 	    if ! -d $opts->{dumpdir};
     } else {
 	die "internal error";
@@ -533,12 +686,11 @@ sub new {
     $opts->{remove} = 0 if $opts->{'prune-backups'}->{'keep-all'};
 
     if ($opts->{tmpdir} && ! -d $opts->{tmpdir}) {
-	$errors .= "\n" if $errors;
-	$errors .= "tmpdir '$opts->{tmpdir}' does not exist";
+	$add_error->("tmpdir '$opts->{tmpdir}' does not exist");
     }
 
     if ($errors) {
-	eval { $self->sendmail([], 0, $errors); };
+	eval { $self->send_notification([], 0, $errors); };
 	debugmsg ('err', $@) if $@;
 	die "$errors\n";
     }
@@ -633,9 +785,8 @@ sub run_hook_script {
     my $script = $opts->{script};
     return if !$script;
 
-    if (!-x $script) {
-	die "The hook script '$script' is not executable.\n";
-    }
+    die "Error: The hook script '$script' does not exist.\n" if ! -f $script;
+    die "Error: The hook script '$script' is not executable.\n" if ! -x $script;
 
     my $cmd = [$script, $phase];
 
@@ -681,26 +832,26 @@ sub compressor_info {
 	    my $cpuinfo = PVE::ProcFSTools::read_cpuinfo();
 	    $zstd_threads = int(($cpuinfo->{cpus} + 1)/2);
 	}
-	return ("zstd --rsyncable --threads=${zstd_threads}", 'zst');
+	return ("zstd --threads=${zstd_threads}", 'zst');
     } else {
 	die "internal error - unknown compression option '$opt_compress'";
     }
 }
 
 sub get_backup_file_list {
-    my ($dir, $bkname, $exclude_fn) = @_;
+    my ($dir, $bkname) = @_;
 
     my $bklist = [];
     foreach my $fn (<$dir/${bkname}-*>) {
-	next if $exclude_fn && $fn eq $exclude_fn;
-
 	my $archive_info = eval { PVE::Storage::archive_info($fn) } // {};
 	if ($archive_info->{is_std_name}) {
-	    my $filename = $archive_info->{filename};
+	    my $path = "$dir/$archive_info->{filename}";
 	    my $backup = {
-		'path' => "$dir/$filename",
+		'path' => $path,
 		'ctime' => $archive_info->{ctime},
 	    };
+	    $backup->{mark} = "protected"
+		if -e PVE::Storage::protection_file_path($path);
 	    push @{$bklist}, $backup;
 	}
     }
@@ -776,19 +927,33 @@ sub exec_backup_task {
 	    }
 	}
 
-	if ($backup_limit && !$opts->{remove}) {
+	if (($backup_limit && !$opts->{remove}) || $opts->{protected}) {
 	    my $count;
-	    if ($self->{opts}->{pbs}) {
-		my $res = PVE::Storage::PBSPlugin::run_client_cmd($opts->{scfg}, $opts->{storage}, 'snapshots', $pbs_group_name);
-		$count = scalar(@$res);
+	    my $protected_count;
+	    if (my $storeid = $opts->{storage}) {
+		my @backups = grep {
+		    !$_->{subtype} || $_->{subtype} eq $vmtype
+		} PVE::Storage::volume_list($cfg, $storeid, $vmid, 'backup')->@*;
+
+		$count = grep { !$_->{protected} } @backups;
+		$protected_count = scalar(@backups) - $count;
 	    } else {
-		my $bklist = get_backup_file_list($opts->{dumpdir}, $bkname);
-		$count = scalar(@$bklist);
+		$count = grep { !$_->{mark} || $_->{mark} ne "protected" } get_backup_file_list($opts->{dumpdir}, $bkname)->@*;
 	    }
-	    die "There is a max backup limit of $backup_limit enforced by the".
-		" target storage or the vzdump parameters.".
-		" Either increase the limit or delete old backup(s).\n"
-		if $count >= $backup_limit;
+
+	    if ($opts->{protected}) {
+		my $max_protected = PVE::Storage::get_max_protected_backups(
+		    $opts->{scfg},
+		    $opts->{storage},
+		);
+		if ($max_protected > -1 && $protected_count >= $max_protected) {
+		    die "The number of protected backups per guest is limited to $max_protected ".
+			"on storage '$opts->{storage}'\n";
+		}
+	    } elsif ($count >= $backup_limit) {
+		die "There is a max backup limit of $backup_limit enforced by the target storage ".
+		    "or the vzdump parameters. Either increase the limit or delete old backups.\n";
+	    }
 	}
 
 	if (!$self->{opts}->{pbs}) {
@@ -989,12 +1154,36 @@ sub exec_backup_task {
 	    debugmsg ('info', "archive file size: $cs", $logfd);
 	}
 
+	# Mark as protected before pruning.
+	if (my $storeid = $opts->{storage}) {
+	    my $volname = $opts->{pbs} ? $task->{target} : basename($task->{target});
+	    my $volid = "${storeid}:backup/${volname}";
+
+	    if ($opts->{'notes-template'} && $opts->{'notes-template'} ne '') {
+		debugmsg('info', "adding notes to backup", $logfd);
+		my $notes = eval { $generate_notes->($opts->{'notes-template'}, $task); };
+		if (my $err = $@) {
+		    debugmsg('warn', "unable to add notes - $err", $logfd);
+		} else {
+		    eval { PVE::Storage::update_volume_attribute($cfg, $volid, 'notes', $notes) };
+		    debugmsg('warn', "unable to add notes - $@", $logfd) if $@;
+		}
+	    }
+
+	    if ($opts->{protected}) {
+		debugmsg('info', "marking backup as protected", $logfd);
+		eval { PVE::Storage::update_volume_attribute($cfg, $volid, 'protected', 1) };
+		die "unable to set protected flag - $@\n" if $@;
+	    }
+	}
+
 	if ($opts->{remove}) {
 	    my $keepstr = join(', ', map { "$_=$prune_options->{$_}" } sort keys %$prune_options);
 	    debugmsg ('info', "prune older backups with retention: $keepstr", $logfd);
 	    my $pruned = 0;
 	    if (!defined($opts->{storage})) {
-		my $bklist = get_backup_file_list($opts->{dumpdir}, $bkname, $task->{target});
+		my $bklist = get_backup_file_list($opts->{dumpdir}, $bkname);
+
 		PVE::Storage::prune_mark_backup_group($bklist, $prune_options);
 
 		foreach my $prune_entry (@{$bklist}) {
@@ -1173,9 +1362,9 @@ sub exec_backup {
     };
     my $err = $@;
 
-    $self->run_hook_script ('job-abort', undef, $job_end_fd) if $err;
-
     if ($err) {
+	eval { $self->run_hook_script ('job-abort', undef, $job_end_fd); };
+	$err .= $@ if $@;
 	debugmsg ('err', "Backup job failed - $err", undef, 1);
     } else {
 	if ($errcount) {
@@ -1190,7 +1379,19 @@ sub exec_backup {
 
     my $totaltime = time() - $starttime;
 
-    eval { $self->sendmail ($tasklist, $totaltime, undef, $job_start_log, $job_end_log); };
+    eval {
+	# otherwise $self->send_notification() will interpret it as multiple problems
+	my $chomped_err = $err;
+	chomp($chomped_err) if $chomped_err;
+
+	$self->send_notification(
+	    $tasklist,
+	    $totaltime,
+	    $chomped_err,
+	    $self->{job_init_log} . $job_start_log,
+	    $job_end_log,
+	);
+    };
     debugmsg ('err', $@) if $@;
 
     die $err if $err;
@@ -1213,10 +1414,15 @@ sub option_exists {
 sub parse_mailto_exclude_path {
     my ($param) = @_;
 
-    # exclude-path list need to be 0 separated
+    # exclude-path list need to be 0 separated or be an array
     if (defined($param->{'exclude-path'})) {
-	my @expaths = split(/\0/, $param->{'exclude-path'} || '');
-	$param->{'exclude-path'} = [ @expaths ];
+	my $expaths;
+	if (ref($param->{'exclude-path'}) eq 'ARRAY') {
+	    $expaths = $param->{'exclude-path'};
+	} else {
+	    $expaths = [split(/\0/, $param->{'exclude-path'} || '')];
+	}
+	$param->{'exclude-path'} = $expaths;
     }
 
     if (defined($param->{mailto})) {
@@ -1243,6 +1449,12 @@ sub verify_vzdump_parameters {
 	if defined($param->{'prune-backups'}) && defined($param->{maxfiles});
 
     $parse_prune_backups_maxfiles->($param, 'CLI parameters');
+    parse_performance($param);
+
+    if (my $template = $param->{'notes-template'}) {
+	eval { $verify_notes_template->($template); };
+	raise_param_exc({'notes-template' => $@}) if $@;
+    }
 
     $param->{all} = 1 if (defined($param->{exclude}) && !$param->{pool});
 

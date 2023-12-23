@@ -54,10 +54,16 @@ Ext.define('PVE.grid.BackupView', {
 
 	me.store = Ext.create('Ext.data.Store', {
 	    model: 'pve-storage-content',
-	    sorters: {
-		property: 'volid',
-		order: 'DESC',
-	    },
+	    sorters: [
+		{
+		    property: 'vmid',
+		    direction: 'ASC',
+		},
+		{
+		    property: 'vdate',
+		    direction: 'DESC',
+		},
+	    ],
 	    filters: [
 	        vmtypeFilter,
 		searchFilter,
@@ -73,9 +79,9 @@ Ext.define('PVE.grid.BackupView', {
 	    ]);
 	};
 
-	var reload = Ext.Function.createBuffered(function() {
+	const reload = Ext.Function.createBuffered((options) => {
 	    if (me.store) {
-		me.store.load();
+		me.store.load(options);
 	    }
 	}, 100);
 
@@ -88,6 +94,8 @@ Ext.define('PVE.grid.BackupView', {
 		type: 'proxmox',
 		url: url,
 	    });
+
+	    Proxmox.Utils.monStoreErrors(me.view, me.store, true);
 
 	    reload();
 	};
@@ -191,45 +199,35 @@ Ext.define('PVE.grid.BackupView', {
 	    },
 	});
 
-	var delete_btn = Ext.create('Proxmox.button.StdRemoveButton', {
+	let delete_btn = Ext.create('Proxmox.button.StdRemoveButton', {
 	    selModel: sm,
 	    dangerous: true,
 	    delay: 5,
-	    confirmMsg: function(rec) {
-		var msg = Ext.String.format(gettext('Are you sure you want to remove entry {0}'),
-					    "'" + rec.data.volid + "'");
-		msg += " " + gettext('This will permanently erase all data.');
-
-		return msg;
+	    enableFn: rec => !rec?.data?.protected,
+	    confirmMsg: ({ data }) => {
+		let msg = Ext.String.format(
+		    gettext('Are you sure you want to remove entry {0}'), `'${data.volid}'`);
+		return msg + " " + gettext('This will permanently erase all data.');
 	    },
-	    getUrl: function(rec) {
-		var storage = storagesel.getValue();
-		return '/nodes/' + nodename + '/storage/' + storage + '/content/' + rec.data.volid;
-	    },
-	    callback: function() {
-		reload();
-	    },
+	    getUrl: ({ data }) => `/nodes/${nodename}/storage/${storagesel.getValue()}/content/${data.volid}`,
+	    callback: () => reload(),
 	});
 
-	var config_btn = Ext.create('Proxmox.button.Button', {
+	let config_btn = Ext.create('Proxmox.button.Button', {
 	    text: gettext('Show Configuration'),
 	    disabled: true,
 	    selModel: sm,
-	    enableFn: function(rec) {
-		return !!rec;
-	    },
+	    enableFn: rec => !!rec,
 	    handler: function(b, e, rec) {
-		var storage = storagesel.getValue();
+		let storage = storagesel.getValue();
 		if (!storage) {
 		    return;
 		}
-
-		var win = Ext.create('PVE.window.BackupConfig', {
+		Ext.create('PVE.window.BackupConfig', {
 		    volume: rec.data.volid,
 		    pveSelNode: me.pveSelNode,
+		    autoShow: true,
 		});
-
-		win.show();
 	    },
 	});
 
@@ -238,12 +236,10 @@ Ext.define('PVE.grid.BackupView', {
 	    text: gettext('File Restore'),
 	    disabled: true,
 	    selModel: sm,
-	    enableFn: function(rec) {
-		return !!rec && isPBS;
-	    },
+	    enableFn: rec => !!rec && isPBS,
 	    hidden: !isPBS,
 	    handler: function(b, e, rec) {
-		var storage = storagesel.getValue();
+		let storage = storagesel.getValue();
 		let isVMArchive = PVE.Utils.volume_is_qemu_backup(rec.data.volid, rec.data.format);
 		Ext.create('Proxmox.window.FileBrowser', {
 		    title: gettext('File Restore') + " - " + rec.data.text,
@@ -297,6 +293,29 @@ Ext.define('PVE.grid.BackupView', {
 			    }).show();
 			},
 		    },
+		    {
+			xtype: 'proxmoxButton',
+			text: gettext('Change Protection'),
+			disabled: true,
+			handler: function(button, event, record) {
+			    let volid = record.data.volid, storage = storagesel.getValue();
+			    let url = `/api2/extjs/nodes/${nodename}/storage/${storage}/content/${volid}`;
+			    Proxmox.Utils.API2Request({
+				url: url,
+				method: 'PUT',
+				waitMsgTarget: me,
+				params: {
+				    'protected': record.data.protected ? 0 : 1,
+				},
+				failure: (response) => Ext.Msg.alert('Error', response.htmlStatus),
+				success: () => {
+				    reload({
+					callback: () => sm.fireEvent('selectionchange', sm, [record]),
+				    });
+				},
+			    });
+			},
+		    },
 		    '-',
 		    delete_btn,
 		    '->',
@@ -321,6 +340,14 @@ Ext.define('PVE.grid.BackupView', {
 		    renderer: Ext.htmlEncode,
 		},
 		{
+		    header: `<i class="fa fa-shield"></i>`,
+		    tooltip: gettext('Protected'),
+		    width: 30,
+		    renderer: v => v ? `<i data-qtip="${gettext('Protected')}" class="fa fa-shield"></i>` : '',
+		    sorter: (a, b) => (b.data.protected || 0) - (a.data.protected || 0),
+		    dataIndex: 'protected',
+		},
+		{
 		    header: gettext('Date'),
 		    width: 150,
 		    dataIndex: 'vdate',
@@ -337,7 +364,7 @@ Ext.define('PVE.grid.BackupView', {
 		    dataIndex: 'size',
 		},
 		{
-		    header: gettext('VMID'),
+		    header: 'VMID',
 		    dataIndex: 'vmid',
 		    hidden: true,
 		},

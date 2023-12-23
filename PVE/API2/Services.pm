@@ -17,21 +17,24 @@ use IO::File;
 use base qw(PVE::RESTHandler);
 
 my $service_name_list = [
-    'pveproxy',
-    'pvedaemon',
-    'spiceproxy',
-    'pvestatd',
-    'pve-cluster',
+    'chrony',
     'corosync',
+    'cron',
+    'ksmtuned',
+    'postfix',
+    'pve-cluster',
     'pve-firewall',
-    'pvefw-logger',
     'pve-ha-crm',
     'pve-ha-lrm',
+    'pvedaemon',
+    'pvefw-logger',
+    'pveproxy',
+    'pvescheduler',
+    'pvestatd',
+    'spiceproxy',
     'sshd',
     'syslog',
-    'cron',
-    'postfix',
-    'ksmtuned',
+    'systemd-journald',
     'systemd-timesyncd',
 ];
 my $essential_services = {
@@ -72,8 +75,7 @@ sub get_service_list {
 
     my $list = {};
     foreach my $name (@$service_name_list) {
-	my $ss;
-	eval { $ss = &$get_full_service_state($name); };
+	my $ss = eval { $get_full_service_state->($name) };
 	warn $@ if $@;
 	next if !$ss;
 	next if !defined($ss->{Description});
@@ -109,20 +111,32 @@ my $service_cmd = sub {
 my $service_state = sub {
     my ($service) = @_;
 
-    my $ss;
-    eval { $ss = &$get_full_service_state($service); };
+    my $res = { state => 'unknown' };
+
+    my $ss = eval { $get_full_service_state->($service) };
     if (my $err = $@) {
-	return 'unknown';
+	return $res;
+    }
+    my $state = $ss->{SubState} || 'unknown';
+    if ($state eq 'dead' && $ss->{Type} && $ss->{Type} eq 'oneshot' && $ss->{Result}) {
+	$res->{state} = $ss->{Result};
+    } else {
+	$res->{state} = $ss->{SubState} || 'unknown';
     }
 
-    return $ss->{SubState} if $ss->{SubState};
+    if ($ss->{LoadState} eq 'not-found') {
+	$res->{'unit-state'} = 'not-found'; # not installed
+    } else {
+	$res->{'unit-state'} = $ss->{UnitFileState} || 'unknown';
+    }
+    $res->{'active-state'} = $ss->{ActiveState} || 'unknown';
 
-    return 'unknown';
+    return $res;
 };
 
 __PACKAGE__->register_method ({
-    name => 'index', 
-    path => '', 
+    name => 'index',
+    path => '',
     method => 'GET',
     permissions => {
 	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ]],
@@ -131,7 +145,7 @@ __PACKAGE__->register_method ({
     proxyto => 'node',
     protected => 1,
     parameters => {
-    	additionalProperties => 0,
+	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
 	},
@@ -146,17 +160,17 @@ __PACKAGE__->register_method ({
     },
     code => sub {
 	my ($param) = @_;
-  
-	my $res = [];
 
 	my $service_list = get_service_list();
-	
-	foreach my $id (keys %{$service_list}) {
-	    push @$res, { 
+
+	my $res = [];
+	for my $id (sort keys %{$service_list}) {
+	    my $state = $service_state->($id);
+	    push @$res, {
 		service => $id,
 		name => $service_list->{$id}->{name},
 		desc => $service_list->{$id}->{desc},
-		state => &$service_state($id),
+		%$state,
 	    };
 	}
 
@@ -165,14 +179,14 @@ __PACKAGE__->register_method ({
 
 __PACKAGE__->register_method({
     name => 'srvcmdidx',
-    path => '{service}', 
+    path => '{service}',
     method => 'GET',
     description => "Directory index",
     permissions => {
 	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ]],
     },
     parameters => {
-    	additionalProperties => 0,
+	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
 	    service => $service_prop_desc,
@@ -198,13 +212,13 @@ __PACKAGE__->register_method({
 	    { subdir => 'restart' },
 	    { subdir => 'reload' },
 	    ];
-	
+
 	return $res;
     }});
 
 __PACKAGE__->register_method ({
-    name => 'service_state', 
-    path => '{service}/state', 
+    name => 'service_state',
+    path => '{service}/state',
     method => 'GET',
     permissions => {
 	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ]],
@@ -213,7 +227,7 @@ __PACKAGE__->register_method ({
     proxyto => 'node',
     protected => 1,
     parameters => {
-    	additionalProperties => 0,
+	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
 	    service => $service_prop_desc,
@@ -225,21 +239,26 @@ __PACKAGE__->register_method ({
     },
     code => sub {
 	my ($param) = @_;
-  
+
+	my $id = $param->{service};
+
 	my $service_list = get_service_list();
-	
-	my $si = $service_list->{$param->{service}};
+
+	my $si = $service_list->{$id};
+
+	my $state = $service_state->($id);
+
 	return {
 	    service => $param->{service},
 	    name => $si->{name},
 	    desc => $si->{desc},
-	    state => &$service_state($param->{service}),
+	    %$state,
 	};
     }});
 
 __PACKAGE__->register_method ({
-    name => 'service_start', 
-    path => '{service}/start', 
+    name => 'service_start',
+    path => '{service}/start',
     method => 'POST',
     description => "Start service.",
     permissions => {
@@ -248,18 +267,18 @@ __PACKAGE__->register_method ({
     proxyto => 'node',
     protected => 1,
     parameters => {
-    	additionalProperties => 0,
+	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
 	    service => $service_prop_desc,
 	},
     },
-    returns => { 
+    returns => {
 	type => 'string',
     },
     code => sub {
 	my ($param) = @_;
-  
+
 	my $rpcenv = PVE::RPCEnvironment::get();
 
 	my $user = $rpcenv->get_user();
@@ -277,8 +296,8 @@ __PACKAGE__->register_method ({
     }});
 
 __PACKAGE__->register_method ({
-    name => 'service_stop', 
-    path => '{service}/stop', 
+    name => 'service_stop',
+    path => '{service}/stop',
     method => 'POST',
     description => "Stop service.",
     permissions => {
@@ -287,18 +306,18 @@ __PACKAGE__->register_method ({
     proxyto => 'node',
     protected => 1,
     parameters => {
-    	additionalProperties => 0,
+	additionalProperties => 0,
 	properties => {
 	    node => get_standard_option('pve-node'),
 	    service => $service_prop_desc,
 	},
     },
-    returns => { 
+    returns => {
 	type => 'string',
     },
     code => sub {
 	my ($param) = @_;
-  
+
 	my $rpcenv = PVE::RPCEnvironment::get();
 
 	my $user = $rpcenv->get_user();
@@ -332,7 +351,7 @@ __PACKAGE__->register_method ({
 	    service => $service_prop_desc,
 	},
     },
-    returns => { 
+    returns => {
 	type => 'string',
     },
     code => sub {
@@ -368,7 +387,7 @@ __PACKAGE__->register_method ({
 	    service => $service_prop_desc,
 	},
     },
-    returns => { 
+    returns => {
 	type => 'string',
     },
     code => sub {

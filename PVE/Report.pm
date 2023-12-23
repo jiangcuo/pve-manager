@@ -10,9 +10,10 @@ my sub dir2text {
     my ($target_dir, $regexp) = @_;
 
     print STDERR "dir2text '${target_dir}${regexp}'...";
-    my $text = '';
+    my $text = "# output '${target_dir}${regexp}' file(s)\n";
     PVE::Tools::dir_glob_foreach($target_dir, $regexp, sub {
 	my ($file) = @_;
+	return if $file eq '.' || $file eq '..';
 	$text .=  "\n# cat $target_dir$file\n";
 	$text .= PVE::Tools::file_get_contents($target_dir.$file)."\n";
     });
@@ -29,6 +30,7 @@ my $init_report_cmds = sub {
 	    order => 10,
 	    cmds => [
 		'hostname',
+		'date -R',
 		'pveversion --verbose',
 		'cat /etc/hosts',
 		'pvesubscription get',
@@ -54,7 +56,8 @@ my $init_report_cmds = sub {
 		'pvesm status',
 		'cat /etc/fstab',
 		'findmnt --ascii',
-		'df --human',
+		'df --human -T',
+		'proxmox-boot-tool status',
 	    ],
 	},
 	'virtual guests' => {
@@ -67,12 +70,14 @@ my $init_report_cmds = sub {
 	    ],
 	},
 	network => {
-	    order => 40,
+	    order => 45,
 	    cmds => [
 		'ip -details -statistics address',
 		'ip -details -4 route show',
 		'ip -details -6 route show',
 		'cat /etc/network/interfaces',
+		sub { dir2text('/etc/network/interfaces.d/', '.*') },
+		sub { dir2text('/etc/pve/sdn/', '.*') },
 	    ],
 	},
 	firewall => {
@@ -90,6 +95,7 @@ my $init_report_cmds = sub {
 		'pvecm status',
 		'cat /etc/pve/corosync.conf 2>/dev/null',
 		'ha-manager status',
+		'cat /etc/pve/datacenter.cfg',
 	    ],
 	},
 	hardware => {
@@ -102,7 +108,7 @@ my $init_report_cmds = sub {
 	'block devices' => {
 	    order => 80,
 	    cmds => [
-		'lsblk --ascii',
+		'lsblk --ascii -M -o +HOTPLUG,ROTA,PHY-SEC,FSTYPE,MODEL,TRAN',
 		'ls -l /dev/disk/by-*/',
 		'iscsiadm -m node',
 		'iscsiadm -m session',
@@ -123,6 +129,7 @@ my $init_report_cmds = sub {
 	    'zpool status',
 	    'zpool list -v',
 	    'zfs list',
+	    'arcstat',
 	    ;
     }
 
@@ -132,10 +139,12 @@ my $init_report_cmds = sub {
 	    'ceph osd status',
 	    'ceph df',
 	    'ceph osd df tree',
+	    'ceph device ls',
 	    'cat /etc/ceph/ceph.conf',
 	    'ceph config dump',
 	    'pveceph pool ls',
 	    'ceph versions',
+	    'ceph health detail',
 	    ;
     }
 

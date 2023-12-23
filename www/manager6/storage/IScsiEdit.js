@@ -1,52 +1,64 @@
 Ext.define('PVE.storage.IScsiScan', {
-    extend: 'Ext.form.field.ComboBox',
+    extend: 'PVE.form.ComboBoxSetStoreNode',
     alias: 'widget.pveIScsiScan',
 
     queryParam: 'portal',
     valueField: 'target',
     displayField: 'target',
     matchFieldWidth: false,
+    allowBlank: false,
+
     listConfig: {
-	loadingText: gettext('Scanning...'),
 	width: 350,
-    },
-    doRawQuery: function() {
-	// do nothing
+	columns: [
+	    {
+		dataIndex: 'target',
+		flex: 1,
+	    },
+	],
+	emptyText: PVE.Utils.renderNotFound(gettext('iSCSI Target')),
     },
 
-    onTriggerClick: function() {
-	var me = this;
+    config: {
+	apiSuffix: '/scan/iscsi',
+    },
 
-	if (!me.queryCaching || me.lastQuery !== me.portal) {
-	    me.store.removeAll();
+    showNodeSelector: true,
+
+    reload: function() {
+	let me = this;
+	if (!me.isDisabled()) {
+	    me.getStore().load();
 	}
-
-	me.allQuery = me.portal;
-
-	me.callParent();
     },
 
     setPortal: function(portal) {
-	var me = this;
-
+	let me = this;
 	me.portal = portal;
+	me.getStore().getProxy().setExtraParams({ portal });
+	me.reload();
+    },
+
+    setNodeName: function(value) {
+	let me = this;
+	me.callParent([value]);
+	me.reload();
     },
 
     initComponent: function() {
-	var me = this;
+	let me = this;
 
 	if (!me.nodename) {
 	    me.nodename = 'localhost';
 	}
 
-	var store = Ext.create('Ext.data.Store', {
+	let store = Ext.create('Ext.data.Store', {
 	    fields: ['target', 'portal'],
 	    proxy: {
 		type: 'proxmox',
-		url: '/api2/json/nodes/' + me.nodename + '/scan/iscsi',
+		url: `${me.apiBaseUrl}${me.nodename}${me.apiSuffix}`,
 	    },
 	});
-
 	store.sort('target', 'ASC');
 
 	Ext.apply(me, {
@@ -59,11 +71,12 @@ Ext.define('PVE.storage.IScsiScan', {
 
 Ext.define('PVE.storage.IScsiInputPanel', {
     extend: 'PVE.panel.StorageBase',
+    mixins: ['Proxmox.Mixin.CBind'],
 
     onlineHelp: 'storage_open_iscsi',
 
     onGetValues: function(values) {
-	var me = this;
+	let me = this;
 
 	values.content = values.luns ? 'images' : 'none';
 	delete values.luns;
@@ -76,45 +89,61 @@ Ext.define('PVE.storage.IScsiInputPanel', {
 	this.callParent([values]);
     },
 
-    initComponent: function() {
-	var me = this;
+    column1: [
+	{
+	    xtype: 'pmxDisplayEditField',
+	    cbind: {
+		editable: '{isCreate}',
+	    },
 
-	me.column1 = [
-	    {
-		xtype: me.isCreate ? 'textfield' : 'displayfield',
-		name: 'portal',
-		value: '',
-		fieldLabel: 'Portal',
-		allowBlank: false,
+	    name: 'portal',
+	    value: '',
+	    fieldLabel: 'Portal',
+	    allowBlank: false,
+
+	    editConfig: {
 		listeners: {
-		    change: function(f, value) {
-			if (me.isCreate) {
-			    var exportField = me.down('field[name=target]');
-			    exportField.setPortal(value);
-			    exportField.setValue('');
-			}
+		    change: {
+			fn: function(f, value) {
+			    let panel = this.up('inputpanel');
+			    let exportField = panel.lookup('iScsiTargetScan');
+			    if (exportField) {
+				exportField.setDisabled(!value);
+				exportField.setPortal(value);
+				exportField.setValue('');
+			    }
+			},
+			buffer: 500,
 		    },
 		},
 	    },
-	    {
-		readOnly: !me.isCreate,
-		xtype: me.isCreate ? 'pveIScsiScan' : 'displayfield',
-		name: 'target',
-		value: '',
-		fieldLabel: 'Target',
-		allowBlank: false,
+	},
+	{
+	    cbind: {
+		xtype: (get) => get('isCreate') ? 'pveIScsiScan' : 'displayfield',
+		readOnly: '{!isCreate}',
+		disabled: '{isCreate}',
 	    },
-	];
 
-	me.column2 = [
-	    {
-		xtype: 'checkbox',
-		name: 'luns',
-		checked: true,
-		fieldLabel: gettext('Use LUNs directly'),
+	    name: 'target',
+	    value: '',
+	    fieldLabel: gettext('Target'),
+	    allowBlank: false,
+	    reference: 'iScsiTargetScan',
+	    listeners: {
+		nodechanged: function(value) {
+		    this.up('inputpanel').lookup('storageNodeRestriction').setValue(value);
+		},
 	    },
-	];
+	},
+    ],
 
-	me.callParent();
-    },
+    column2: [
+	{
+	    xtype: 'checkbox',
+	    name: 'luns',
+	    checked: true,
+	    fieldLabel: gettext('Use LUNs directly'),
+	},
+    ],
 });

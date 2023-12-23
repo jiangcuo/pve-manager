@@ -1,23 +1,46 @@
 Ext.define('PVE.storage.VgSelector', {
-    extend: 'Ext.form.field.ComboBox',
+    extend: 'PVE.form.ComboBoxSetStoreNode',
     alias: 'widget.pveVgSelector',
     valueField: 'vg',
     displayField: 'vg',
     queryMode: 'local',
     editable: false,
+
+    listConfig: {
+	columns: [
+	    {
+		dataIndex: 'vg',
+		flex: 1,
+	    },
+	],
+	emptyText: PVE.Utils.renderNotFound('VGs'),
+    },
+
+    config: {
+	apiSuffix: '/scan/lvm',
+    },
+
+    showNodeSelector: true,
+
+    setNodeName: function(value) {
+	let me = this;
+	me.callParent([value]);
+	me.getStore().load();
+    },
+
     initComponent: function() {
-	var me = this;
+	let me = this;
 
 	if (!me.nodename) {
 	    me.nodename = 'localhost';
 	}
 
-	var store = Ext.create('Ext.data.Store', {
+	let store = Ext.create('Ext.data.Store', {
 	    autoLoad: {}, // true,
 	    fields: ['vg', 'size', 'free'],
 	    proxy: {
 		type: 'proxmox',
-		url: '/api2/json/nodes/' + me.nodename + '/scan/lvm',
+		url: `${me.apiBaseUrl}${me.nodename}${me.apiSuffix}`,
 	    },
 	});
 
@@ -25,9 +48,6 @@ Ext.define('PVE.storage.VgSelector', {
 
 	Ext.apply(me, {
 	    store: store,
-	    listConfig: {
-		loadingText: gettext('Scanning...'),
-	    },
 	});
 
 	me.callParent();
@@ -45,9 +65,9 @@ Ext.define('PVE.storage.BaseStorageSelector', {
     valueField: 'storage',
     displayField: 'text',
     initComponent: function() {
-	var me = this;
+	let me = this;
 
-	var store = Ext.create('Ext.data.Store', {
+	let store = Ext.create('Ext.data.Store', {
 	    autoLoad: {
 		addRecords: true,
 		params: {
@@ -83,79 +103,114 @@ Ext.define('PVE.storage.BaseStorageSelector', {
     },
 });
 
+Ext.define('PVE.storage.LunSelector', {
+    extend: 'PVE.form.FileSelector',
+    alias: 'widget.pveStorageLunSelector',
+
+    nodename: 'localhost',
+    storageContent: 'images',
+    allowBlank: false,
+
+    initComponent: function() {
+	let me = this;
+
+	if (!PVE.Utils.isStandaloneNode()) {
+	    me.errorHeight = 140;
+	    Ext.apply(me.listConfig ?? {}, {
+		tbar: {
+		    xtype: 'toolbar',
+		    items: [
+			{
+			    xtype: "pveStorageScanNodeSelector",
+			    autoSelect: false,
+			    fieldLabel: gettext('Node to scan'),
+			    listeners: {
+				change: (_field, value) => me.setNodename(value),
+			    },
+			},
+		    ],
+		},
+		emptyText: me.listConfig?.emptyText ?? PVE.Utils.renderNotFound(gettext('Volume')),
+	    });
+	}
+
+	me.callParent();
+    },
+
+});
+
 Ext.define('PVE.storage.LVMInputPanel', {
     extend: 'PVE.panel.StorageBase',
+    mixins: ['Proxmox.Mixin.CBind'],
 
     onlineHelp: 'storage_lvm',
 
-    initComponent: function() {
-	var me = this;
+    column1: [
+	{
+	    xtype: 'pveBaseStorageSelector',
+	    name: 'basesel',
+	    fieldLabel: gettext('Base storage'),
+	    cbind: {
+		disabled: '{!isCreate}',
+		hidden: '{!isCreate}',
+	    },
+	    submitValue: false,
+	    listeners: {
+		change: function(f, value) {
+		    let me = this;
+		    let vgField = me.up('inputpanel').lookup('volumeGroupSelector');
+		    let vgNameField = me.up('inputpanel').lookup('vgName');
+		    let baseField = me.up('inputpanel').lookup('lunSelector');
 
-	me.column1 = [];
+		    vgField.setVisible(!value);
+		    vgField.setDisabled(!!value);
 
-	var vgnameField = Ext.createWidget(me.isCreate ? 'textfield' : 'displayfield', {
-	    name: 'vgname',
-	    hidden: !!me.isCreate,
-	    disabled: !!me.isCreate,
-	    value: '',
-	    fieldLabel: gettext('Volume group'),
-	    allowBlank: false,
-	});
+		    baseField.setVisible(!!value);
+		    baseField.setDisabled(!value);
+		    baseField.setStorage(value);
 
-	if (me.isCreate) {
-	    var vgField = Ext.create('PVE.storage.VgSelector', {
-		name: 'vgname',
-		fieldLabel: gettext('Volume group'),
-		allowBlank: false,
-	    });
-
-	    var baseField = Ext.createWidget('pveFileSelector', {
-		name: 'base',
-		hidden: true,
-		disabled: true,
-		nodename: 'localhost',
-		storageContent: 'images',
-		fieldLabel: gettext('Base volume'),
-		allowBlank: false,
-	    });
-
-	    me.column1.push({
-		xtype: 'pveBaseStorageSelector',
-		name: 'basesel',
-		fieldLabel: gettext('Base storage'),
-		submitValue: false,
-		listeners: {
-		    change: function(f, value) {
-			if (value) {
-			    vgnameField.setVisible(true);
-			    vgnameField.setDisabled(false);
-			    vgField.setVisible(false);
-			    vgField.setDisabled(true);
-			    baseField.setVisible(true);
-			    baseField.setDisabled(false);
-			} else {
-			    vgnameField.setVisible(false);
-			    vgnameField.setDisabled(true);
-			    vgField.setVisible(true);
-			    vgField.setDisabled(false);
-			    baseField.setVisible(false);
-			    baseField.setDisabled(true);
-			}
-			baseField.setStorage(value);
-		    },
+		    vgNameField.setVisible(!!value);
+		    vgNameField.setDisabled(!value);
 		},
-	    });
-
-	    me.column1.push(baseField);
-
-	    me.column1.push(vgField);
-	}
-
-	me.column1.push(vgnameField);
-
-	// here value is an array,
-	// while before it was a string
-	me.column1.push({
+	    },
+	},
+	{
+	    xtype: 'pveStorageLunSelector',
+	    name: 'base',
+	    fieldLabel: gettext('Base volume'),
+	    reference: 'lunSelector',
+	    hidden: true,
+	    disabled: true,
+	},
+	{
+	    xtype: 'pveVgSelector',
+	    name: 'vgname',
+	    fieldLabel: gettext('Volume group'),
+	    reference: 'volumeGroupSelector',
+	    cbind: {
+		disabled: '{!isCreate}',
+		hidden: '{!isCreate}',
+	    },
+	    allowBlank: false,
+	    listeners: {
+		nodechanged: function(value) {
+		    this.up('inputpanel').lookup('storageNodeRestriction').setValue(value);
+		},
+	    },
+	},
+	{
+	    name: 'vgname',
+	    fieldLabel: gettext('Volume group'),
+	    reference: 'vgName',
+	    cbind: {
+		xtype: (get) => get('isCreate') ? 'textfield' : 'displayfield',
+		hidden: '{isCreate}',
+		disabled: '{isCreate}',
+	    },
+	    value: '',
+	    allowBlank: false,
+	},
+	{
 	    xtype: 'pveContentTypeSelector',
 	    cts: ['images', 'rootdir'],
 	    fieldLabel: gettext('Content'),
@@ -163,17 +218,15 @@ Ext.define('PVE.storage.LVMInputPanel', {
 	    value: ['images', 'rootdir'],
 	    multiSelect: true,
 	    allowBlank: false,
-	});
+	},
+    ],
 
-	me.column2 = [
-	    {
-		xtype: 'proxmoxcheckbox',
-		name: 'shared',
-		uncheckedValue: 0,
-		fieldLabel: gettext('Shared'),
-	    },
-	];
-
-	me.callParent();
-    },
+    column2: [
+	{
+	    xtype: 'proxmoxcheckbox',
+	    name: 'shared',
+	    uncheckedValue: 0,
+	    fieldLabel: gettext('Shared'),
+	},
+    ],
 });

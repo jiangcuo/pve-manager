@@ -28,6 +28,7 @@ use PVE::AutoBalloon;
 use PVE::AccessControl;
 use PVE::Ceph::Services;
 use PVE::Ceph::Tools;
+use PVE::pvecfg;
 
 use PVE::ExtMetric;
 use PVE::Status::Plugin;
@@ -122,6 +123,29 @@ my $generate_rrd_string = sub {
     return join(':', map { $_ // 'U' } @$data);
 };
 
+my sub broadcast_static_node_info {
+    my ($cpus, $memory) = @_;
+
+    my $cgroup_mode = eval { PVE::CGroup::cgroup_mode(); };
+    syslog('err', "cgroup mode error: $@") if $@;
+
+    my $old = PVE::Cluster::get_node_kv('static-info', $nodename);
+    $old = eval { decode_json($old->{$nodename}) } if defined($old->{$nodename});
+
+    if (
+	!defined($old->{cpus}) || $old->{cpus} != $cpus
+	|| !defined($old->{memory}) || $old->{memory} != $memory
+	|| ($old->{'cgroup-mode'} // -1) != ($cgroup_mode // -1)
+    ) {
+	my $info = {
+	    cpus => $cpus,
+	    memory => $memory,
+	};
+	$info->{'cgroup-mode'} = $cgroup_mode if defined($cgroup_mode);
+	PVE::Cluster::broadcast_node_kv('static-info', encode_json($info));
+    }
+}
+
 sub update_node_status {
     my ($status_cfg) = @_;
 
@@ -134,7 +158,7 @@ sub update_node_status {
 
     update_supported_cpuflags();
 
-    my $subinfo = PVE::INotify::read_file('subscription');
+    my $subinfo = PVE::API2::Subscription::read_etc_subscription();
     my $sublevel = $subinfo->{level} || '';
 
     my $netdev = PVE::ProcFSTools::read_proc_net_dev();
@@ -174,6 +198,8 @@ sub update_node_status {
     my $transactions = PVE::ExtMetric::transactions_start($status_cfg);
     PVE::ExtMetric::update_all($transactions, 'node', $nodename, $node_metric, $ctime);
     PVE::ExtMetric::transactions_finish($transactions);
+
+    broadcast_static_node_info($maxcpu, $meminfo->{memtotal});
 }
 
 sub auto_balloning {
@@ -284,8 +310,7 @@ sub rebalance_lxc_containers {
 	my ($vmid, $cpuset, $newset) = @_;
 
 	if (!$rebalance_error_count->{$vmid}) {
-	    syslog('info', "modified cpu set for lxc/$vmid: " .
-		   $newset->short_string());
+	    syslog('info', "modified cpu set for lxc/$vmid: " . $newset->short_string());
 	}
 
 	eval {
@@ -321,21 +346,16 @@ sub rebalance_lxc_containers {
 
     foreach my $vmid (sort keys %$ctlist) {
 	my $cgpath = "$cpuset_base/lxc/$vmid";
-
 	if (-d "$cgpath/ns") {
 	    $ctinfo->{$vmid} = $cgpath;
 	} else {
-	    # old style container
-	    next;
+	    next; # old style container
 	}
 
-	my ($conf, $cpuset);
-	eval {
-
-	    $conf = PVE::LXC::Config->load_config($vmid);
-
-	    $cpuset = PVE::CpuSet->new_from_path($cgpath);
-	};
+	my ($conf, $cpuset) = eval {(
+	    PVE::LXC::Config->load_config($vmid),
+	    PVE::CpuSet->new_from_path($cgpath),
+	)};
 	if (my $err = $@) {
 	    warn $err;
 	    next;
@@ -343,13 +363,13 @@ sub rebalance_lxc_containers {
 
 	my @cpuset_members = $cpuset->members();
 
-	if (!PVE::LXC::Config->has_lxc_entry($conf, 'lxc.cgroup.cpuset.cpus')) {
-
+	if (!PVE::LXC::Config->has_lxc_entry($conf, 'lxc.cgroup.cpuset.cpus')
+	    && !PVE::LXC::Config->has_lxc_entry($conf, 'lxc.cgroup2.cpuset.cpus')
+	) {
 	    my $cores = $conf->{cores} || $cpucount;
 	    $cores = $cpucount if $cores > $cpucount;
 
-	    # see if the number of cores was hot-reduced or
-	    # hasn't been enacted at all yet
+	    # see if the number of cores was hot-reduced or hasn't been enacted at all yet
 	    my $newset = PVE::CpuSet->new();
 	    if ($cores <  scalar(@cpuset_members)) {
 		for (my $i = 0; $i < $cores; $i++) {
@@ -389,7 +409,7 @@ sub rebalance_lxc_containers {
 
 	foreach my $candidate (@$cpulist) {
 	    my $cost = $cpu_ctcount[$candidate];
-	    if ($cost < ($cur_cost -1)) {
+	    if ($cost < ($cur_cost - 1)) {
 		$cur_cost = $cost;
 		$cur_cpu = $candidate;
 	    }
@@ -401,17 +421,11 @@ sub rebalance_lxc_containers {
     foreach my $bct (@balanced_cts) {
 	my ($vmid, $cores, $cpuset) = @$bct;
 
+	my $rest = [ grep { !$cpuset->has($_) } @allowed_cpus ];
+
 	my $newset = PVE::CpuSet->new();
-
-	my $rest = [];
-	foreach my $cpu (@allowed_cpus) {
-	    next if $cpuset->has($cpu);
-	    push @$rest, $cpu;
-	}
-
-	my @members = $cpuset->members();
-	foreach my $cpu (@members) {
-	    my $best =  &$find_best_cpu($rest, $cpu);
+	for my $cpu ($cpuset->members()) {
+	    my $best = $find_best_cpu->($rest, $cpu);
 	    if ($best != $cpu) {
 		$cpu_ctcount[$best]++;
 		$cpu_ctcount[$cpu]--;
@@ -502,11 +516,20 @@ sub update_sdn_status {
     }
 }
 
-sub update_status {
+my $broadcast_version_info_done = 0;
+my sub broadcast_version_info : prototype() {
+    if (!$broadcast_version_info_done) {
+	PVE::Cluster::broadcast_node_kv(
+	    'version-info',
+	    encode_json(PVE::pvecfg::version_info()),
+	);
+	$broadcast_version_info_done = 1;
+    }
+}
 
-    # update worker list. This is not really required and
-    # we just call this to make sure that we have a correct
-    # list in case of an unexpected crash.
+sub update_status {
+    # update worker list. This is not really required, but we want to make sure that we also have a
+    # correct list in case of an unexpected crash.
     my $rpcenv = PVE::RPCEnvironment::get();
 
     eval {
@@ -572,6 +595,11 @@ sub update_status {
     $err = $@;
     syslog('err', "sdn status update error: $err") if $err;
 
+    eval {
+	broadcast_version_info();
+    };
+    $err = $@;
+    syslog('err', "version info update error: $err") if $err;
 }
 
 my $next_update = 0;

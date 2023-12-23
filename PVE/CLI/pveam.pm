@@ -20,12 +20,6 @@ use base qw(PVE::CLIHandler);
 
 my $nodename = PVE::INotify::nodename();
 
-my $upid_exit = sub {
-    my $upid = shift;
-    my $status = PVE::Tools::upid_read_status($upid);
-    exit($status eq 'OK' ? 0 : -1);
-};
-
 sub setup_environment {
     PVE::RPCEnvironment->setup_default_cli_env();
 }
@@ -128,6 +122,8 @@ __PACKAGE__->register_method ({
 
 	my $cfg = PVE::Storage::config();
 
+	PVE::Storage::storage_check_enabled($cfg, $storeid);
+
 	die "Storage does not support templates!\n" if !$cfg->{ids}->{$storeid}->{content}->{vztmpl};
 
 	my $vollist = PVE::Storage::volume_list($cfg, $storeid, undef, 'vztmpl');
@@ -176,7 +172,7 @@ __PACKAGE__->register_method ({
 
 	my $cfg = PVE::Storage::config();
 
-	PVE::Storage::check_volume_access($rpcenv, $authuser, $cfg, undef, $template);
+	PVE::Storage::check_volume_access($rpcenv, $authuser, $cfg, undef, $template, 'vztmpl');
 
 	my $abs_path = PVE::Storage::abs_filesystem_path($cfg, $template);
 

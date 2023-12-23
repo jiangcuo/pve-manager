@@ -5,18 +5,17 @@ Ext.define('PVE.storage.Browser', {
     onlineHelp: 'chapter_storage',
 
     initComponent: function() {
-        var me = this;
+        let me = this;
 
-	var nodename = me.pveSelNode.data.node;
+	let nodename = me.pveSelNode.data.node;
 	if (!nodename) {
 	    throw "no node name specified";
 	}
 
-	var storeid = me.pveSelNode.data.storage;
+	let storeid = me.pveSelNode.data.storage;
 	if (!storeid) {
 	    throw "no storage ID specified";
 	}
-
 
 	me.items = [
 	    {
@@ -27,20 +26,18 @@ Ext.define('PVE.storage.Browser', {
 	    },
 	];
 
-	var caps = Ext.state.Manager.get('GuiCap');
+	let caps = Ext.state.Manager.get('GuiCap');
 
 	Ext.apply(me, {
-	    title: Ext.String.format(
-	        gettext("Storage {0} on node {1}"),
-	        `'${storeid}'`,
-	        `'${nodename}'`,
-	    ),
+	    title: Ext.String.format(gettext("Storage {0} on node {1}"), `'${storeid}'`, `'${nodename}'`),
 	    hstateid: 'storagetab',
 	});
 
-	if (caps.storage['Datastore.Allocate'] ||
+	if (
+	    caps.storage['Datastore.Allocate'] ||
 	    caps.storage['Datastore.AllocateSpace'] ||
-	    caps.storage['Datastore.Audit']) {
+	    caps.storage['Datastore.Audit']
+	) {
 	    let storageInfo = PVE.data.ResourceStore.findRecord(
 		'id',
 		`storage/${nodename}/${storeid}`,
@@ -53,6 +50,9 @@ Ext.define('PVE.storage.Browser', {
 	    let plugin = res.plugintype;
 	    let contents = res.content.split(',');
 
+	    let enableUpload = !!caps.storage['Datastore.AllocateTemplate'];
+	    let enableDownloadUrl = enableUpload && !!(caps.nodes['Sys.Audit'] && caps.nodes['Sys.Modify']);
+
 	    if (contents.includes('backup')) {
 		me.items.push({
 		    xtype: 'pveStorageBackupView',
@@ -60,7 +60,6 @@ Ext.define('PVE.storage.Browser', {
 		    iconCls: 'fa fa-floppy-o',
 		    itemId: 'contentBackup',
 		    pluginType: plugin,
-		    hasNotesColumn: true,
 		});
 	    }
 	    if (contents.includes('images')) {
@@ -91,6 +90,8 @@ Ext.define('PVE.storage.Browser', {
 		    itemId: 'contentIso',
 		    content: 'iso',
 		    pluginType: plugin,
+		    enableUploadButton: enableUpload,
+		    enableDownloadUrlButton: enableDownloadUrl,
 		    useUploadButton: true,
 		});
 	    }
@@ -101,6 +102,9 @@ Ext.define('PVE.storage.Browser', {
 		    iconCls: 'fa fa-file-o lxc',
 		    itemId: 'contentVztmpl',
 		    pluginType: plugin,
+		    enableUploadButton: enableUpload,
+		    enableDownloadUrlButton: enableDownloadUrl,
+		    useUploadButton: true,
 		});
 	    }
 	    if (contents.includes('snippets')) {
@@ -121,7 +125,7 @@ Ext.define('PVE.storage.Browser', {
 		title: gettext('Permissions'),
 		iconCls: 'fa fa-unlock',
 		itemId: 'permissions',
-		path: '/storage/' + storeid,
+		path: `/storage/${storeid}`,
 	    });
 	}
 

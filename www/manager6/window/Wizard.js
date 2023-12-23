@@ -3,8 +3,8 @@ Ext.define('PVE.window.Wizard', {
 
     activeTitle: '', // used for automated testing
 
-    width: 700,
-    height: 510,
+    width: 720,
+    height: 540,
 
     modal: true,
     border: false,
@@ -16,19 +16,17 @@ Ext.define('PVE.window.Wizard', {
     layout: 'border',
 
     getValues: function(dirtyOnly) {
-	var me = this;
+	let me = this;
 
-        var values = {};
+	let values = {};
 
-	var form = me.down('form').getForm();
+	me.down('form').getForm().getFields().each(field => {
+	    if (!field.up('inputpanel') && (!dirtyOnly || field.isDirty())) {
+		Proxmox.Utils.assemble_field_data(values, field.getSubmitData());
+	    }
+	});
 
-        form.getFields().each(function(field) {
-            if (!field.up('inputpanel') && (!dirtyOnly || field.isDirty())) {
-                Proxmox.Utils.assemble_field_data(values, field.getSubmitData());
-            }
-        });
-
-	Ext.Array.each(me.query('inputpanel'), function(panel) {
+	me.query('inputpanel').forEach(panel => {
 	    Proxmox.Utils.assemble_field_data(values, panel.getValues(dirtyOnly));
 	});
 
@@ -131,7 +129,7 @@ Ext.define('PVE.window.Wizard', {
 			itemId: 'wizcontent',
 			xtype: 'tabpanel',
 			activeItem: 0,
-			bodyPadding: 10,
+			bodyPadding: 0,
 			listeners: {
 			    afterrender: function(tp) {
 				tabchange(tp, this.getActiveTab());
@@ -139,6 +137,9 @@ Ext.define('PVE.window.Wizard', {
 			    tabchange: function(tp, newcard, oldcard) {
 				tabchange(tp, newcard, oldcard);
 			    },
+			},
+			defaults: {
+			    padding: 10,
 			},
 			items: tabs,
 		    }],

@@ -56,8 +56,6 @@ my $find_mon_ips = sub {
 
     if (!scalar(@{$overwrite_ips})) { # auto-select one address for each public network
 	for my $net (@{$public_nets}) {
-	    $net = PVE::JSONSchema::pve_verify_cidr($net);
-
 	    my $allowed_ips = PVE::Network::get_local_ip_from_cidr($net);
 	    $allowed_ips = PVE::Network::unique_ips($allowed_ips);
 
@@ -75,8 +73,6 @@ my $find_mon_ips = sub {
 	my $allowed_list = [];
 
 	for my $net (@{$public_nets}) {
-	    $net = PVE::JSONSchema::pve_verify_cidr($net);
-
 	    push @{$allowed_list}, @{PVE::Network::get_local_ip_from_cidr($net)};
 	}
 
@@ -132,8 +128,10 @@ my $assert_mon_prerequisites = sub {
     for my $mon (values %{$monhash}) {
 	next if !defined($mon->{addr});
 
-	my $ip = PVE::Network::canonical_ip($mon->{addr});
-	$used_ips->{$ip} = 1;
+	for my $ip ($ips_from_mon_host->($mon->{addr})->@*) {
+	    $ip = PVE::Network::canonical_ip($ip);
+	    $used_ips->{$ip} = 1;
+	}
     }
 
     for my $monip (@{$monips}) {
@@ -210,9 +208,16 @@ __PACKAGE__->register_method ({
 	items => {
 	    type => "object",
 	    properties => {
-		name => { type => 'string' },
 		addr => { type => 'string', optional => 1 },
-		host => { type => 'string', optional => 1 },
+		ceph_version => { type => 'string', optional => 1 },
+		ceph_version_short => { type => 'string', optional => 1 },
+		direxists => { type => 'string', optional => 1 },
+		host => { type => 'boolean', optional => 1 },
+		name => { type => 'string' },
+		quorum => { type => 'boolean', optional => 1 },
+		rank => { type => 'integer', optional => 1 },
+		service => { type => 'integer', optional => 1 },
+		state => { type => 'string', optional => 1 },
 	    },
 	},
 	links => [ { rel => 'child', href => "{name}" } ],

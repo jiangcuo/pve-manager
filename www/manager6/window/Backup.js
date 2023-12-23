@@ -18,7 +18,7 @@ Ext.define('PVE.window.Backup', {
 	    throw "no VM type specified";
 	}
 
-	let compressionSelector = Ext.create('PVE.form.CompressionSelector', {
+	let compressionSelector = Ext.create('PVE.form.BackupCompressionSelector', {
 	    name: 'compress',
 	    value: 'zstd',
 	    fieldLabel: gettext('Compression'),
@@ -34,6 +34,23 @@ Ext.define('PVE.window.Backup', {
 	    fieldLabel: gettext('Send email to'),
 	    name: 'mailto',
 	    emptyText: Proxmox.Utils.noneText,
+	});
+
+	let notificationModeSelector = Ext.create({
+	    xtype: 'proxmoxKVComboBox',
+	    comboItems: [
+		['auto', gettext('Auto')],
+		['legacy-sendmail', gettext('Email (legacy)')],
+		['notification-system', gettext('Notification system')],
+	    ],
+	    fieldLabel: gettext('Notification mode'),
+	    name: 'notification-mode',
+	    value: 'auto',
+	    listeners: {
+		change: function(field, value) {
+		    mailtoField.setDisabled(value === 'notification-system');
+		},
+	    },
 	});
 
 	const keepNames = [
@@ -110,8 +127,16 @@ Ext.define('PVE.window.Backup', {
 			    if (!initialDefaults && data.mailto !== undefined) {
 				mailtoField.setValue(data.mailto);
 			    }
+			    if (!initialDefaults && data['notification-mode'] !== undefined) {
+				notificationModeSelector.setValue(data['notification-mode']);
+			    }
 			    if (!initialDefaults && data.mode !== undefined) {
 				modeSelector.setValue(data.mode);
+			    }
+			    if (!initialDefaults && (data['notes-template'] ?? false)) {
+				me.down('field[name=notes-template]').setValue(
+				    PVE.Utils.unEscapeNotesTemplate(data['notes-template']),
+				);
 			    }
 
 			    initialDefaults = true;
@@ -154,19 +179,46 @@ Ext.define('PVE.window.Backup', {
 	    },
 	});
 
+	let protectedCheckbox = Ext.create('Proxmox.form.Checkbox', {
+	    name: 'protected',
+	    checked: false,
+	    uncheckedValue: 0,
+	    fieldLabel: gettext('Protected'),
+	});
+
 	me.formPanel = Ext.create('Proxmox.panel.InputPanel', {
 	    bodyPadding: 10,
 	    border: false,
 	    column1: [
 		storagesel,
 		modeSelector,
-		removeCheckbox,
+		protectedCheckbox,
 	    ],
 	    column2: [
 		compressionSelector,
+		notificationModeSelector,
 		mailtoField,
+		removeCheckbox,
 	    ],
 	    columnB: [
+		{
+		    xtype: 'textareafield',
+		    name: 'notes-template',
+		    fieldLabel: gettext('Notes'),
+		    anchor: '100%',
+		    value: '{{guestname}}',
+		},
+		{
+		    xtype: 'box',
+		    style: {
+			margin: '8px 0px',
+			'line-height': '1.5em',
+		    },
+		    html: Ext.String.format(
+			gettext('Possible template variables are: {0}'),
+			PVE.Utils.notesTemplateVars.map(v => `<code>{{${v}}}</code>`).join(', '),
+		    ),
+		},
 		{
 		    xtype: 'label',
 		    name: 'pruneLabel',
@@ -225,8 +277,21 @@ Ext.define('PVE.window.Backup', {
 		    params.mailto = values.mailto;
 		}
 
+		if (values['notification-mode']) {
+		    params['notification-mode'] = values['notification-mode'];
+		}
+
 		if (values.compress) {
 		    params.compress = values.compress;
+		}
+
+		if (values.protected) {
+		    params.protected = values.protected;
+		}
+
+		if (values['notes-template']) {
+		    params['notes-template'] = PVE.Utils.escapeNotesTemplate(
+			values['notes-template']);
 		}
 
 		Proxmox.Utils.API2Request({
@@ -272,6 +337,7 @@ Ext.define('PVE.window.Backup', {
 	    modal: true,
 	    layout: 'auto',
 	    border: false,
+	    width: 600,
 	    items: [me.formPanel],
 	    buttons: [helpBtn, '->', submitBtn],
 	    listeners: {

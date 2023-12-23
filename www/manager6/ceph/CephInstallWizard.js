@@ -49,8 +49,8 @@ Ext.define('PVE.ceph.CephVersionSelector', {
 	    },
 	},
 	data: [
-	    { release: "octopus", version: "15.2" },
-	    { release: "pacific", version: "16.2" },
+	    { release: "quincy", version: "17.2" },
+	    { release: "reef", version: "18.2" },
 	],
     },
 });
@@ -107,6 +107,9 @@ Ext.define('PVE.ceph.CephHighestVersionDisplay', {
 		    14: 'nautilus',
 		    15: 'octopus',
 		    16: 'pacific',
+		    17: 'quincy',
+		    18: 'reef',
+		    19: 'squid',
 		};
 		let release = major2release[maxversion[0]] || 'unknown';
 		let newestVersionTxt = `${Ext.String.capitalize(release)} (${maxversiontext})`;
@@ -138,12 +141,40 @@ Ext.define('PVE.ceph.CephInstallWizard', {
     resizable: false,
     nodename: undefined,
 
+    width: 760, // 4:3
+    height: 570,
+
     viewModel: {
 	data: {
 	    nodename: '',
-	    cephRelease: 'pacific',
+	    cephRelease: 'reef',
+	    cephRepo: 'enterprise',
 	    configuration: true,
 	    isInstalled: false,
+	    nodeHasSubscription: true, // avoid warning hint until fully loaded
+	    allHaveSubscription: true, // avoid warning hint until fully loaded
+	},
+	formulas: {
+	    repoHintHidden: get => get('allHaveSubscription') && get('cephRepo') === 'enterprise',
+	    repoHint: function(get) {
+		let repo = get('cephRepo');
+		let nodeSub = get('nodeHasSubscription'), allSub = get('allHaveSubscription');
+
+		if (repo === 'enterprise') {
+                    if (!nodeSub) {
+			return gettext('The enterprise repository is enabled, but there is no active subscription!');
+		    } else if (!allSub) {
+			return gettext('Not all nodes have an active subscription, which is required for cluster-wide enterprise repo access');
+		    }
+		    return ''; // should be hidden
+		} else if (repo === 'no-subscription') {
+		    return allSub
+		        ? gettext("Cluster has active subscriptions and would be elligible for using the enterprise repository.")
+		        : gettext("The no-subscription repository is not the best choice for production setups.");
+		} else {
+		    return gettext('The test repository should only be used for test setups or after consulting the official Proxmox support!');
+		}
+	    },
 	},
     },
     cbindData: {
@@ -169,12 +200,20 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 	tp.setActiveTab(initialTab);
     },
     onShow: function() {
-	    this.callParent(arguments);
-	    var isInstalled = this.getViewModel().get('isInstalled');
-	    if (isInstalled) {
-		this.getViewModel().set('configuration', false);
-		this.setInitialTab(2);
-	    }
+	this.callParent(arguments);
+	let viewModel = this.getViewModel();
+	var isInstalled = this.getViewModel().get('isInstalled');
+	if (isInstalled) {
+	    viewModel.set('configuration', false);
+	    this.setInitialTab(2);
+	}
+
+	PVE.Utils.getClusterSubscriptionLevel().then(subcriptionMap => {
+	    viewModel.set('nodeHasSubscription', !!subcriptionMap[this.nodename]);
+
+	    let allHaveSubscription = Object.values(subcriptionMap).every(level => !!level);
+	    viewModel.set('allHaveSubscription', allHaveSubscription);
+	});
     },
     items: [
 	{
@@ -200,8 +239,19 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 		    flex: 1,
 		},
 		{
+		    xtype: 'displayfield',
+		    fieldLabel: gettext('Hint'),
+		    labelClsExtra: 'pmx-hint',
+		    submitValue: false,
+		    labelWidth: 50,
+		    bind: {
+			value: '{repoHint}',
+			hidden: '{repoHintHidden}',
+		    },
+		},
+		{
 		    xtype: 'pveCephHighestVersionDisplay',
-		    labelWidth: 180,
+		    labelWidth: 150,
 		    cbind: {
 			nodename: '{nodename}',
 		    },
@@ -214,20 +264,46 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 		    },
 		},
 		{
-		    xtype: 'pveCephVersionSelector',
-		    labelWidth: 180,
-		    submitValue: false,
-		    bind: {
-			value: '{cephRelease}',
+		    xtype: 'container',
+		    layout: 'hbox',
+		    defaults: {
+			border: false,
+			layout: 'anchor',
+			flex: 1,
 		    },
-		    listeners: {
-			change: function(field, release) {
-			    let wizard = this.up('pveCephInstallWizard');
-			    wizard.down('#next').setText(
-				Ext.String.format(gettext('Start {0} installation'), release),
-			    );
+		    items: [{
+			xtype: 'pveCephVersionSelector',
+			labelWidth: 150,
+			padding: '0 10 0 0',
+			submitValue: false,
+			bind: {
+			    value: '{cephRelease}',
+			},
+			listeners: {
+			    change: function(field, release) {
+				let wizard = this.up('pveCephInstallWizard');
+				wizard.down('#next').setText(
+				    Ext.String.format(gettext('Start {0} installation'), release),
+				);
+			    },
 			},
 		    },
+		    {
+			xtype: 'proxmoxKVComboBox',
+			fieldLabel: gettext('Repository'),
+			padding: '0 0 0 10',
+			comboItems: [
+			    ['enterprise', gettext('Enterprise (recommended)')],
+			    ['no-subscription', gettext('No-Subscription')],
+			    ['test', gettext('Test')],
+			],
+			labelWidth: 150,
+			submitValue: false,
+			value: 'enterprise',
+			bind: {
+			    value: '{cephRepo}',
+			},
+		    }],
 		},
 	    ],
 	    listeners: {
@@ -319,7 +395,8 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 			let me = this;
 			let wizard = me.up('pveCephInstallWizard');
 			let release = wizard.getViewModel().get('cephRelease');
-			me.cmdOpts = `--version\0${release}`;
+			let repo = wizard.getViewModel().get('cephRepo');
+			me.cmdOpts = `--version\0${release}\0--repository\0${repo}`;
 		    },
 		    cmd: 'ceph_install',
 		},
@@ -337,6 +414,7 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 	    xtype: 'inputpanel',
 	    title: gettext('Configuration'),
 	    onlineHelp: 'chapter_pveceph',
+	    height: 300,
 	    cbind: {
 		nodename: '{nodename}',
 	    },
@@ -350,7 +428,7 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 		activate: function() {
 		    this.up('pveCephInstallWizard').down('#submit').setText(gettext('Next'));
 		},
-		beforeshow: function() {
+		afterrender: function() {
 		    if (this.up('pveCephInstallWizard').getViewModel().get('configuration')) {
 			this.mask("Configuration already initialized", ['pve-static-mask']);
 		    } else {
@@ -371,6 +449,7 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 		    name: 'network',
 		    value: '',
 		    fieldLabel: 'Public Network IP/CIDR',
+		    autoSelect: false,
 		    bind: {
 			allowBlank: '{configuration}',
 		    },
@@ -397,11 +476,11 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 		    value: gettext('First Ceph monitor') + ':',
 		},
 		{
-		    xtype: 'pveNodeSelector',
+		    xtype: 'displayfield',
 		    fieldLabel: gettext('Monitor node'),
-		    name: 'mon-node',
-		    selectCurNode: true,
-		    allowBlank: false,
+		    cbind: {
+			value: '{nodename}',
+		    },
 		},
 		{
 		    xtype: 'displayfield',
@@ -457,8 +536,6 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 		    var wizard = me.up('window');
 		    var kv = wizard.getValues();
 		    delete kv.delete;
-		    var monNode = kv['mon-node'];
-		    delete kv['mon-node'];
 		    var nodename = me.nodename;
 		    delete kv.nodename;
 		    Proxmox.Utils.API2Request({
@@ -468,7 +545,7 @@ Ext.define('PVE.ceph.CephInstallWizard', {
 			params: kv,
 			success: function() {
 			    Proxmox.Utils.API2Request({
-				url: `/nodes/${monNode}/ceph/mon/${monNode}`,
+				url: `/nodes/${nodename}/ceph/mon/${nodename}`,
 				waitMsgTarget: wizard,
 				method: 'POST',
 				success: function() {

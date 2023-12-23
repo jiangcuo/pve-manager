@@ -35,7 +35,7 @@ Ext.define('PVE.sdn.ZoneView', {
 	    },
 	    sorters: {
 		property: 'zone',
-		order: 'DESC',
+		direction: 'ASC',
 	    },
 	});
 
@@ -137,7 +137,7 @@ Ext.define('PVE.sdn.ZoneView', {
 		    },
 		},
 		{
-		    header: 'Ipam',
+		    header: 'IPAM',
 		    flex: 3,
 		    dataIndex: 'ipam',
 		    renderer: function(value, metaData, rec) {
@@ -153,7 +153,7 @@ Ext.define('PVE.sdn.ZoneView', {
 		    },
 		},
 		{
-		    header: gettext('Dns'),
+		    header: gettext('DNS'),
 		    flex: 3,
 		    dataIndex: 'dns',
 		    renderer: function(value, metaData, rec) {
@@ -161,7 +161,7 @@ Ext.define('PVE.sdn.ZoneView', {
 		    },
 		},
 		{
-		    header: gettext('Reverse dns'),
+		    header: gettext('Reverse DNS'),
 		    flex: 3,
 		    dataIndex: 'reversedns',
 		    renderer: function(value, metaData, rec) {

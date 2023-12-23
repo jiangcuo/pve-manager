@@ -5,6 +5,7 @@ Ext.define('PVE.node.CertificateView', {
     onlineHelp: 'sysadmin_certificate_management',
 
     mixins: ['Proxmox.Mixin.CBind'],
+    scrollable: 'y',
 
     items: [
 	{
@@ -34,66 +35,85 @@ Ext.define('PVE.node.CertificateViewer', {
 	labelWidth: 120,
     },
     width: 800,
-    resizable: true,
 
-    items: [
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Name'),
-	    name: 'filename',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Fingerprint'),
-	    name: 'fingerprint',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Issuer'),
-	    name: 'issuer',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Subject'),
-	    name: 'subject',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Public Key Type'),
-	    name: 'public-key-type',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Public Key Size'),
-	    name: 'public-key-bits',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Valid Since'),
-	    renderer: Proxmox.Utils.render_timestamp,
-	    name: 'notbefore',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Expires'),
-	    renderer: Proxmox.Utils.render_timestamp,
-	    name: 'notafter',
-	},
-	{
-	    xtype: 'displayfield',
-	    fieldLabel: gettext('Subject Alternative Names'),
-	    name: 'san',
-	    renderer: PVE.Utils.render_san,
-	},
-	{
-	    xtype: 'textarea',
-	    editable: false,
-	    grow: true,
-	    growMax: 200,
-	    fieldLabel: gettext('Certificate'),
-	    name: 'pem',
-	},
-    ],
+    items: {
+	xtype: 'inputpanel',
+	maxHeight: 900,
+	scrollable: 'y',
+	columnT: [
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Name'),
+		name: 'filename',
+	    },
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Fingerprint'),
+		name: 'fingerprint',
+	    },
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Issuer'),
+		name: 'issuer',
+	    },
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Subject'),
+		name: 'subject',
+	    },
+	],
+	column1: [
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Public Key Type'),
+		name: 'public-key-type',
+	    },
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Public Key Size'),
+		name: 'public-key-bits',
+	    },
+	],
+	column2: [
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Valid Since'),
+		renderer: Proxmox.Utils.render_timestamp,
+		name: 'notbefore',
+	    },
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Expires'),
+		renderer: Proxmox.Utils.render_timestamp,
+		name: 'notafter',
+	    },
+	],
+	columnB: [
+	    {
+		xtype: 'displayfield',
+		fieldLabel: gettext('Subject Alternative Names'),
+		name: 'san',
+		renderer: PVE.Utils.render_san,
+	    },
+	    {
+		xtype: 'fieldset',
+		title: gettext('Raw Certificate'),
+		collapsible: true,
+		collapsed: true,
+		items: [{
+		    xtype: 'textarea',
+		    name: 'pem',
+		    editable: false,
+		    grow: true,
+		    growMax: 350,
+		    fieldStyle: {
+			'white-space': 'pre-wrap',
+			'font-family': 'monospace',
+		    },
+		}],
+	    },
+	],
+    },
 
     initComponent: function() {
 	let me = this;
@@ -146,62 +166,59 @@ Ext.define('PVE.node.CertUpload', {
 	Ext.defer(() => window.location.reload(true), 10000); // reload after 10 seconds automatically
     },
 
-    items: [
-	{
-	    fieldLabel: gettext('Private Key (Optional)'),
-	    labelAlign: 'top',
-	    emptyText: gettext('No change'),
-	    name: 'key',
-	    xtype: 'textarea',
+    items: {
+	xtype: 'inputpanel',
+	onGetValues: function(values) {
+	    values.restart = 1;
+	    values.force = 1;
+	    if (!values.key) {
+		delete values.key;
+	    }
+	    return values;
 	},
-	{
-	    xtype: 'filebutton',
-	    text: gettext('From File'),
-	    listeners: {
-		change: function(btn, e, value) {
-		    let form = this.up('form');
-		    for (const file of e.event.target.files) {
-			PVE.Utils.loadFile(file, res => form.down('field[name=key]').setValue(res));
-		    }
-		    btn.reset();
+	items: [
+	    {
+		fieldLabel: gettext('Private Key (Optional)'),
+		labelAlign: 'top',
+		emptyText: gettext('No change'),
+		name: 'key',
+		xtype: 'textarea',
+	    },
+	    {
+		xtype: 'filebutton',
+		text: gettext('From File'),
+		listeners: {
+		    change: function(btn, e, value) {
+			let form = this.up('form');
+			for (const file of e.event.target.files) {
+			    PVE.Utils.loadFile(file, res => form.down('field[name=key]').setValue(res));
+			}
+			btn.reset();
+		    },
 		},
 	    },
-	},
-	{
-	    xtype: 'box',
-	    autoEl: 'hr',
-	},
-	{
-	    fieldLabel: gettext('Certificate Chain'),
-	    labelAlign: 'top',
-	    allowBlank: false,
-	    name: 'certificates',
-	    xtype: 'textarea',
-	},
-	{
-	    xtype: 'filebutton',
-	    text: gettext('From File'),
-	    listeners: {
-		change: function(btn, e, value) {
-		    let form = this.up('form');
-		    for (const file of e.event.target.files) {
-			PVE.Utils.loadFile(file, res => form.down('field[name=certificates]').setValue(res));
-		    }
-		    btn.reset();
+	    {
+		fieldLabel: gettext('Certificate Chain'),
+		labelAlign: 'top',
+		allowBlank: false,
+		name: 'certificates',
+		xtype: 'textarea',
+	    },
+	    {
+		xtype: 'filebutton',
+		text: gettext('From File'),
+		listeners: {
+		    change: function(btn, e, value) {
+			let form = this.up('form');
+			for (const file of e.event.target.files) {
+			    PVE.Utils.loadFile(file, res => form.down('field[name=certificates]').setValue(res));
+			}
+			btn.reset();
+		    },
 		},
 	    },
-	},
-	{
-	    xtype: 'hidden',
-	    name: 'restart',
-	    value: '1',
-	},
-	{
-	    xtype: 'hidden',
-	    name: 'force',
-	    value: '1',
-	},
-    ],
+	],
+    },
 
     initComponent: function() {
 	let me = this;

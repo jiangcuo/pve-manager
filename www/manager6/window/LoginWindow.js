@@ -2,11 +2,26 @@
 Ext.define('PVE.window.LoginWindow', {
     extend: 'Ext.window.Window',
 
+    viewModel: {
+	data: {
+	    openid: false,
+	},
+	formulas: {
+	    button_text: function(get) {
+		if (get("openid") === true) {
+		    return gettext("Login (OpenID redirect)");
+		} else {
+		    return gettext("Login");
+		}
+	    },
+	},
+    },
+
     controller: {
 
 	xclass: 'Ext.app.ViewController',
 
-	onLogon: function() {
+	onLogon: async function() {
 	    var me = this;
 
 	    var form = this.lookupReference('loginForm');
@@ -15,6 +30,32 @@ Ext.define('PVE.window.LoginWindow', {
 	    var view = this.getView();
 
 	    if (!form.isValid()) {
+		return;
+	    }
+
+	    let creds = form.getValues();
+
+	    if (this.getViewModel().data.openid === true) {
+		const redirectURL = location.origin;
+		Proxmox.Utils.API2Request({
+		    url: '/api2/extjs/access/openid/auth-url',
+		    params: {
+			realm: creds.realm,
+			"redirect-url": redirectURL,
+		    },
+		    method: 'POST',
+		    success: function(resp, opts) {
+			window.location = resp.result.data;
+		    },
+		    failure: function(resp, opts) {
+			Proxmox.Utils.authClear();
+			form.unmask();
+			Ext.MessageBox.alert(
+			    gettext('Error'),
+			    gettext('OpenID redirect failed.') + `<br>${resp.htmlStatus}`,
+			);
+		    },
+		});
 		return;
 	    }
 
@@ -29,30 +70,70 @@ Ext.define('PVE.window.LoginWindow', {
 	    }
 	    sp.set(saveunField.getStateId(), saveunField.getValue());
 
-	    form.submit({
-		failure: function(f, resp) {
-		    me.failure(resp);
-		},
-		success: function(f, resp) {
-		    view.el.unmask();
+	    try {
+		// Request updated authentication mechanism:
+		creds['new-format'] = 1;
 
-		    var data = resp.result.data;
-		    if (Ext.isDefined(data.NeedTFA)) {
-			// Store first factor login information first:
-			data.LoggedOut = true;
-			Proxmox.Utils.setAuthData(data);
+		let resp = await Proxmox.Async.api2({
+		    url: '/api2/extjs/access/ticket',
+		    params: creds,
+		    method: 'POST',
+		});
 
-			if (Ext.isDefined(data.U2FChallenge)) {
-			    me.perform_u2f(data);
-			} else {
-			    me.perform_otp();
-			}
+		let data = resp.result.data;
+		if (data.ticket.startsWith("PVE:!tfa!")) {
+		    // Store first factor login information first:
+		    data.LoggedOut = true;
+		    Proxmox.Utils.setAuthData(data);
+
+		    data = await me.performTFAChallenge(data);
+
+		    // Fill in what we copy over from the 1st factor:
+		    data.CSRFPreventionToken = Proxmox.CSRFPreventionToken;
+		    data.username = Proxmox.UserName;
+		    me.success(data);
+		} else if (Ext.isDefined(data.NeedTFA)) {
+		    // Store first factor login information first:
+		    data.LoggedOut = true;
+		    Proxmox.Utils.setAuthData(data);
+
+		    if (Ext.isDefined(data.U2FChallenge)) {
+			me.perform_u2f(data);
 		    } else {
-			me.success(data);
+			me.perform_otp();
 		    }
-		},
-	    });
+		} else {
+		    me.success(data);
+		}
+	    } catch (error) {
+		me.failure(error);
+	    }
 	},
+
+	/* START NEW TFA CODE (pbs copy) */
+	performTFAChallenge: async function(data) {
+	    let me = this;
+
+	    let userid = data.username;
+	    let ticket = data.ticket;
+	    let challenge = JSON.parse(decodeURIComponent(
+	        ticket.split(':')[1].slice("!tfa!".length),
+	    ));
+
+	    let resp = await new Promise((resolve, reject) => {
+		Ext.create('Proxmox.window.TfaLoginWindow', {
+		    userid,
+		    ticket,
+		    challenge,
+		    onResolve: value => resolve(value),
+		    onReject: reject,
+		}).show();
+	    });
+
+	    return resp.result.data;
+	},
+	/* END NEW TFA CODE (pbs copy) */
+
 	failure: function(resp) {
 	    var me = this;
 	    var view = me.getView();
@@ -121,10 +202,11 @@ Ext.define('PVE.window.LoginWindow', {
 	    var me = this;
 	    var view = me.getView();
 	    view.el.mask(gettext('Please wait...'), 'x-mask-loading');
-	    var params = { response: res };
 	    Proxmox.Utils.API2Request({
 		url: '/api2/extjs/access/tfa',
-		params: params,
+		params: {
+		    response: res,
+		},
 		method: 'POST',
 		timeout: 5000, // it'll delay both success & failure
 		success: function(resp, opts) {
@@ -162,11 +244,21 @@ Ext.define('PVE.window.LoginWindow', {
 		    window.location.reload();
 		},
 	    },
-            'button[reference=loginButton]': {
+	    'field[name=realm]': {
+		change: function(f, value) {
+		    let record = f.store.getById(value);
+		    if (record === undefined) return;
+		    let data = record.data;
+		    this.getViewModel().set("openid", data.type === "openid");
+		},
+	    },
+	   'button[reference=loginButton]': {
 		click: 'onLogon',
-            },
+	    },
 	    '#': {
 		show: function() {
+		    var me = this;
+
 		    var sp = Ext.state.Manager.getProvider();
 		    var checkboxField = this.lookupReference('saveunField');
 		    var unField = this.lookupReference('usernameField');
@@ -179,6 +271,41 @@ Ext.define('PVE.window.LoginWindow', {
 			unField.setValue(username);
 			var pwField = this.lookupReference('passwordField');
 			pwField.focus();
+		    }
+
+		    let auth = Proxmox.Utils.getOpenIDRedirectionAuthorization();
+		    if (auth !== undefined) {
+			Proxmox.Utils.authClear();
+
+			let loginForm = this.lookupReference('loginForm');
+			loginForm.mask(gettext('OpenID login - please wait...'), 'x-mask-loading');
+
+			const redirectURL = location.origin;
+
+			Proxmox.Utils.API2Request({
+			    url: '/api2/extjs/access/openid/login',
+			    params: {
+				state: auth.state,
+				code: auth.code,
+				"redirect-url": redirectURL,
+			    },
+			    method: 'POST',
+			    failure: function(response) {
+				loginForm.unmask();
+				let error = response.htmlStatus;
+				Ext.MessageBox.alert(
+				    gettext('Error'),
+				    gettext('OpenID login failed, please try again') + `<br>${error}`,
+				    () => { window.location = redirectURL; },
+				);
+			    },
+			    success: function(response, options) {
+				loginForm.unmask();
+				let data = response.result.data;
+				history.replaceState(null, '', redirectURL);
+				me.success(data);
+			    },
+			});
 		    }
 		},
 	    },
@@ -217,6 +344,10 @@ Ext.define('PVE.window.LoginWindow', {
 		itemId: 'usernameField',
 		reference: 'usernameField',
 		stateId: 'login-username',
+		bind: {
+		    visible: "{!openid}",
+		    disabled: "{openid}",
+		},
 	    },
 	    {
 		xtype: 'textfield',
@@ -224,6 +355,10 @@ Ext.define('PVE.window.LoginWindow', {
 		fieldLabel: gettext('Password'),
 		name: 'password',
 		reference: 'passwordField',
+		bind: {
+		    visible: "{!openid}",
+		    disabled: "{openid}",
+		},
 	    },
 	    {
 		xtype: 'pmxRealmComboBox',
@@ -248,60 +383,16 @@ Ext.define('PVE.window.LoginWindow', {
 		labelWidth: 250,
 		labelAlign: 'right',
 		submitValue: false,
+		bind: {
+		    visible: "{!openid}",
+		},
 	    },
 	    {
-		text: gettext('Login'),
+		bind: {
+		    text: "{button_text}",
+		},
 		reference: 'loginButton',
 	    },
 	],
     }],
  });
-Ext.define('PVE.window.TFALoginWindow', {
-    extend: 'Ext.window.Window',
-
-    modal: true,
-    resizable: false,
-    title: 'Two-Factor Authentication',
-    layout: 'form',
-    defaultButton: 'loginButton',
-    defaultFocus: 'otpField',
-
-    controller: {
-	xclass: 'Ext.app.ViewController',
-	login: function() {
-	    var me = this;
-	    var view = me.getView();
-	    view.onLogin(me.lookup('otpField').getValue());
-	    view.close();
-	},
-	cancel: function() {
-	    var me = this;
-	    var view = me.getView();
-	    view.onCancel();
-	    view.close();
-	},
-    },
-
-    items: [
-	{
-	    xtype: 'textfield',
-	    fieldLabel: gettext('Please enter your OTP verification code:'),
-	    name: 'otp',
-	    itemId: 'otpField',
-	    reference: 'otpField',
-	    allowBlank: false,
-	},
-    ],
-
-    buttons: [
-	{
-	    text: gettext('Login'),
-	    reference: 'loginButton',
-	    handler: 'login',
-	},
-	{
-	    text: gettext('Cancel'),
-	    handler: 'cancel',
-	},
-    ],
-});

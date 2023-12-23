@@ -49,18 +49,26 @@ Ext.define('PVE.panel.LDAPInputPanel', {
 		submitEmptyText: false,
 	    },
 	    {
-		xtype: 'proxmoxcheckbox',
-		fieldLabel: 'SSL',
-		name: 'secure',
-		uncheckedValue: 0,
+		xtype: 'proxmoxKVComboBox',
+		name: 'mode',
+		fieldLabel: gettext('Mode'),
+		editable: false,
+		comboItems: [
+		    ['__default__', Proxmox.Utils.defaultText + ' (LDAP)'],
+		    ['ldap', 'LDAP'],
+		    ['ldap+starttls', 'STARTTLS'],
+		    ['ldaps', 'LDAPS'],
+		],
+		value: '__default__',
+		deleteEmpty: !me.isCreate,
 		listeners: {
 		    change: function(field, newValue) {
 			let verifyCheckbox = field.nextSibling('proxmoxcheckbox[name=verify]');
-			if (newValue === true) {
-			    verifyCheckbox.enable();
-			} else {
+			if (newValue === 'ldap' || newValue === '__default__') {
 			    verifyCheckbox.disable();
 			    verifyCheckbox.setValue(0);
+			} else {
+			    verifyCheckbox.enable();
 			}
 		    },
 		},
@@ -69,12 +77,27 @@ Ext.define('PVE.panel.LDAPInputPanel', {
 		xtype: 'proxmoxcheckbox',
 		fieldLabel: gettext('Verify Certificate'),
 		name: 'verify',
-		unceckedValue: 0,
+		uncheckedValue: 0,
 		disabled: true,
 		checked: false,
 		autoEl: {
 		    tag: 'div',
-		    'data-qtip': gettext('Verify SSL certificate of the server'),
+		    'data-qtip': gettext('Verify TLS certificate of the server'),
+		},
+	    },
+	];
+
+	me.advancedItems = [
+	    {
+		xtype: 'proxmoxcheckbox',
+		fieldLabel: gettext('Check connection'),
+		name: 'check-connection',
+		uncheckedValue: 0,
+		checked: true,
+		autoEl: {
+		    tag: 'div',
+		    'data-qtip':
+			gettext('Verify connection parameters and bind credentials on save'),
 		},
 	    },
 	];
@@ -91,6 +114,26 @@ Ext.define('PVE.panel.LDAPInputPanel', {
 	    delete values.verify;
 	}
 
+	if (!me.isCreate) {
+	    // Delete old `secure` parameter. It has been deprecated in favor to the
+	    // `mode` parameter. Migration happens automatically in `onSetValues`.
+	    Proxmox.Utils.assemble_field_data(values, { 'delete': 'secure' });
+	}
+
+	return me.callParent([values]);
+    },
+
+    onSetValues(values) {
+	let me = this;
+
+	if (values.secure !== undefined && !values.mode) {
+	    // If `secure` is set, use it to determine the correct setting for `mode`
+	    // `secure` is later deleted by `onSetValues` .
+	    // In case *both* are set, we simply ignore `secure` and use
+	    // whatever `mode` is set to.
+	    values.mode = values.secure ? 'ldaps' : 'ldap';
+	}
+
 	return me.callParent([values]);
     },
 });
@@ -100,7 +143,7 @@ Ext.define('PVE.panel.LDAPSyncInputPanel', {
     xtype: 'pveAuthLDAPSyncPanel',
 
     editableAttributes: ['email'],
-    editableDefaults: ['scope', 'full', 'enable-new', 'purge'],
+    editableDefaults: ['scope', 'enable-new'],
     default_opts: {},
     sync_attributes: {},
 
@@ -116,6 +159,15 @@ Ext.define('PVE.panel.LDAPSyncInputPanel', {
 		delete me.default_opts[attr];
 	    }
 	});
+	let vanished_opts = [];
+	['acl', 'entry', 'properties'].forEach((prop) => {
+	    if (values[`remove-vanished-${prop}`]) {
+		vanished_opts.push(prop);
+	    }
+	    delete values[`remove-vanished-${prop}`];
+	});
+	me.default_opts['remove-vanished'] = vanished_opts.join(';');
+
 	values['sync-defaults-options'] = PVE.Parser.printPropertyString(me.default_opts);
 	me.editableAttributes.forEach((attr) => {
 	    if (values[attr]) {
@@ -129,6 +181,11 @@ Ext.define('PVE.panel.LDAPSyncInputPanel', {
 
 	PVE.Utils.delete_if_default(values, 'sync-defaults-options');
 	PVE.Utils.delete_if_default(values, 'sync_attributes');
+
+	// Force values.delete to be an array
+	if (typeof values.delete === 'string') {
+	   values.delete = values.delete.split(',');
+	}
 
 	if (me.isCreate) {
 	    delete values.delete; // on create we cannot delete values
@@ -156,6 +213,13 @@ Ext.define('PVE.panel.LDAPSyncInputPanel', {
 		    values[attr] = me.default_opts[attr];
 		}
 	    });
+
+	    if (me.default_opts['remove-vanished']) {
+		let opts = me.default_opts['remove-vanished'].split(';');
+		for (const opt of opts) {
+		    values[`remove-vanished-${opt}`] = 1;
+		}
+	    }
 	}
 	return me.callParent([values]);
     },
@@ -203,18 +267,6 @@ Ext.define('PVE.panel.LDAPSyncInputPanel', {
 		['groups', gettext('Groups')],
 		['both', gettext('Users and Groups')],
 	    ],
-	},
-	{
-	    xtype: 'proxmoxKVComboBox',
-	    value: '__default__',
-	    deleteEmpty: false,
-	    comboItems: [
-		['__default__', Proxmox.Utils.NoneText],
-		['1', Proxmox.Utils.yesText],
-		['0', Proxmox.Utils.noText],
-	    ],
-	    name: 'full',
-	    fieldLabel: gettext('Full'),
 	},
     ],
 
@@ -269,17 +321,32 @@ Ext.define('PVE.panel.LDAPSyncInputPanel', {
 	    name: 'enable-new',
 	    fieldLabel: gettext('Enable new users'),
 	},
+    ],
+
+    columnB: [
 	{
-	    xtype: 'proxmoxKVComboBox',
-	    value: '__default__',
-	    deleteEmpty: false,
-	    comboItems: [
-		['__default__', Proxmox.Utils.NoneText],
-		['1', Proxmox.Utils.yesText],
-		['0', Proxmox.Utils.noText],
+	    xtype: 'fieldset',
+	    title: gettext('Remove Vanished Options'),
+	    items: [
+		{
+		    xtype: 'proxmoxcheckbox',
+		    fieldLabel: gettext('ACL'),
+		    name: 'remove-vanished-acl',
+		    boxLabel: gettext('Remove ACLs of vanished users and groups.'),
+		},
+		{
+		    xtype: 'proxmoxcheckbox',
+		    fieldLabel: gettext('Entry'),
+		    name: 'remove-vanished-entry',
+		    boxLabel: gettext('Remove vanished user and group entries.'),
+		},
+		{
+		    xtype: 'proxmoxcheckbox',
+		    fieldLabel: gettext('Properties'),
+		    name: 'remove-vanished-properties',
+		    boxLabel: gettext('Remove vanished properties from synced users.'),
+		},
 	    ],
-	    name: 'purge',
-	    fieldLabel: gettext('Purge'),
 	},
     ],
 });

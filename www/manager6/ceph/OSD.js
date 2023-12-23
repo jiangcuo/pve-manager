@@ -17,6 +17,25 @@ Ext.define('PVE.CephCreateOsd', {
 
 	me.isCreate = true;
 
+	Proxmox.Utils.API2Request({
+	    url: `/nodes/${me.nodename}/ceph/crush`,
+	    method: 'GET',
+	    failure: response => Ext.Msg.alert(gettext('Error'), response.htmlStatus),
+	    success: function({ result: { data } }) {
+		let classes = [...new Set(
+		    Array.from(
+			data.matchAll(/^device\s[0-9]*\sosd\.[0-9]*\sclass\s(.*)$/gim),
+			m => m[1],
+		    ).filter(v => !['hdd', 'ssd', 'nvme'].includes(v)),
+		)].map(v => [v, v]);
+
+		if (classes.length) {
+		    let kvField = me.down('field[name=crush-device-class]');
+		    kvField.setComboItems([...kvField.comboItems, ...classes]);
+		}
+	    },
+	});
+
         Ext.applyIf(me, {
 	    url: "/nodes/" + me.nodename + "/ceph/osd",
 	    method: 'POST',
@@ -38,6 +57,7 @@ Ext.define('PVE.CephCreateOsd', {
 			    name: 'dev',
 			    nodename: me.nodename,
 			    diskType: 'unused',
+			    includePartitions: true,
 			    fieldLabel: gettext('Disk'),
 			    allowBlank: false,
 			},
@@ -48,11 +68,12 @@ Ext.define('PVE.CephCreateOsd', {
 			    name: 'db_dev',
 			    nodename: me.nodename,
 			    diskType: 'journal_disks',
+			    includePartitions: true,
 			    fieldLabel: gettext('DB Disk'),
 			    value: '',
 			    autoSelect: false,
 			    allowBlank: true,
-			    emptyText: 'use OSD disk',
+			    emptyText: gettext('use OSD disk'),
 			    listeners: {
 				change: function(field, val) {
 				    me.down('field[name=db_dev_size]').setDisabled(!val);
@@ -62,7 +83,7 @@ Ext.define('PVE.CephCreateOsd', {
 			{
 			    xtype: 'numberfield',
 			    name: 'db_dev_size',
-			    fieldLabel: gettext('DB size') + ' (GiB)',
+			    fieldLabel: `${gettext('DB size')} (${gettext('GiB')})`,
 			    minValue: 1,
 			    maxValue: 128*1024,
 			    decimalPrecision: 2,
@@ -91,7 +112,7 @@ Ext.define('PVE.CephCreateOsd', {
 			    autoSelect: false,
 			    allowBlank: true,
 			    editable: true,
-			    emptyText: 'auto detect',
+			    emptyText: gettext('auto detect'),
 			    deleteEmpty: !me.isCreate,
 			},
 		    ],
@@ -101,11 +122,12 @@ Ext.define('PVE.CephCreateOsd', {
 			    name: 'wal_dev',
 			    nodename: me.nodename,
 			    diskType: 'journal_disks',
+			    includePartitions: true,
 			    fieldLabel: gettext('WAL Disk'),
 			    value: '',
 			    autoSelect: false,
 			    allowBlank: true,
-			    emptyText: 'use OSD/DB disk',
+			    emptyText: gettext('use OSD/DB disk'),
 			    listeners: {
 				change: function(field, val) {
 				    me.down('field[name=wal_dev_size]').setDisabled(!val);
@@ -115,7 +137,7 @@ Ext.define('PVE.CephCreateOsd', {
 			{
 			    xtype: 'numberfield',
 			    name: 'wal_dev_size',
-			    fieldLabel: gettext('WAL size') + ' (GiB)',
+			    fieldLabel: `${gettext('WAL size')} (${gettext('GiB')})`,
 			    minValue: 0.5,
 			    maxValue: 128*1024,
 			    decimalPrecision: 2,
@@ -156,6 +178,20 @@ Ext.define('PVE.CephRemoveOsd', {
 	    labelWidth: 130,
 	    fieldLabel: gettext('Cleanup Disks'),
 	},
+	{
+	    xtype: 'displayfield',
+	    name: 'osd-flag-hint',
+	    userCls: 'pmx-hint',
+	    value: gettext('Global flags limiting the self healing of Ceph are enabled.'),
+	    hidden: true,
+	},
+	{
+	    xtype: 'displayfield',
+	    name: 'degraded-objects-hint',
+	    userCls: 'pmx-hint',
+	    value: gettext('Objects are degraded. Consider waiting until the cluster is healthy.'),
+	    hidden: true,
+	},
     ],
     initComponent: function() {
         let me = this;
@@ -176,6 +212,13 @@ Ext.define('PVE.CephRemoveOsd', {
         });
 
         me.callParent();
+
+	if (me.warnings.flags) {
+	    me.down('field[name=osd-flag-hint]').setHidden(false);
+	}
+	if (me.warnings.degraded) {
+	    me.down('field[name=degraded-objects-hint]').setHidden(false);
+	}
     },
 });
 
@@ -303,7 +346,7 @@ Ext.define('PVE.node.CephOsdTree', {
 		failure: function(response, opts) {
 		    let msg = response.htmlStatus;
 		    PVE.Utils.showCephInstallOrMask(view, msg, nodename, win =>
-			view.mon(win, 'cephInstallWindowClosed', me.reload),
+			view.mon(win, 'cephInstallWindowClosed', () => { me.reload(); }),
 		    );
 		},
 		success: function(response, opts) {
@@ -313,6 +356,7 @@ Ext.define('PVE.node.CephOsdTree', {
 		    if (selected.length) {
 			name = selected[0].data.name;
 		    }
+		    data.versions = data.versions || {};
 		    vm.set('versions', data.versions);
 		    // extract max version
 		    let maxversion = "0";
@@ -334,7 +378,7 @@ Ext.define('PVE.node.CephOsdTree', {
 			    return;
 			}
 
-			if (node.version !== maxversion && maxversion !== "0") {
+			if (PVE.Utils.compare_ceph_versions(node.version, maxversion) !== 0 && maxversion !== "0") {
 			    mixedversions = true;
 			}
 
@@ -368,8 +412,13 @@ Ext.define('PVE.node.CephOsdTree', {
 	    let osdid = vm.get('osdid');
 
 	    let doRequest = function() {
+		let targetnode = vm.get('osdhost');
+		// cmds not node specific and need to work if the OSD node is down
+		if (['in', 'out'].includes(cmd)) {
+		    targetnode = vm.get('nodename');
+		}
 		Proxmox.Utils.API2Request({
-		    url: "/nodes/" + vm.get('osdhost') + "/ceph/osd/" + osdid + '/' + cmd,
+		    url: `/nodes/${targetnode}/ceph/osd/${osdid}/${cmd}`,
 		    waitMsgTarget: me.getView(),
 		    method: 'POST',
 		    params: params,
@@ -411,14 +460,58 @@ Ext.define('PVE.node.CephOsdTree', {
 	    }).show();
 	},
 
-	destroy_osd: function() {
+	destroy_osd: async function() {
 	    let me = this;
 	    let vm = this.getViewModel();
+
+	    let warnings = {
+		flags: false,
+		degraded: false,
+	    };
+
+	    let flagsPromise = Proxmox.Async.api2({
+		url: `/cluster/ceph/flags`,
+		method: 'GET',
+	    });
+
+	    let statusPromise = Proxmox.Async.api2({
+		url: `/cluster/ceph/status`,
+		method: 'GET',
+	    });
+
+	    me.getView().mask(gettext('Loading...'));
+
+	    try {
+		let result = await Promise.all([flagsPromise, statusPromise]);
+
+		let flagsData = result[0].result.data;
+		let statusData = result[1].result.data;
+
+		let flags = Array.from(
+		    flagsData.filter(v => v.value),
+		    v => v.name,
+		).filter(v => ['norebalance', 'norecover', 'noout'].includes(v));
+
+		if (flags.length) {
+		    warnings.flags = true;
+		}
+		if (Object.keys(statusData.pgmap).includes('degraded_objects')) {
+		    warnings.degraded = true;
+		}
+	    } catch (error) {
+		Ext.Msg.alert(gettext('Error'), error.htmlStatus);
+		me.getView().unmask();
+		return;
+	    }
+
+	    me.getView().unmask();
 	    Ext.create('PVE.CephRemoveOsd', {
 		nodename: vm.get('osdhost'),
 		osdid: vm.get('osdid'),
+		warnings: warnings,
 		taskDone: () => { me.reload(); },
-	    }).show();
+		autoShow: true,
+	    });
 	},
 
 	set_flags: function() {
@@ -434,23 +527,74 @@ Ext.define('PVE.node.CephOsdTree', {
 	    let me = this;
 	    let vm = this.getViewModel();
 	    let cmd = comp.cmd || comp;
-	    Proxmox.Utils.API2Request({
-                url: "/nodes/" + vm.get('osdhost') + "/ceph/" + cmd,
-		params: { service: "osd." + vm.get('osdid') },
-		waitMsgTarget: me.getView(),
-		method: 'POST',
-		success: function(response, options) {
-		    let upid = response.result.data;
-		    let win = Ext.create('Proxmox.window.TaskProgress', {
-			upid: upid,
-			taskDone: () => { me.reload(); },
-		    });
-		    win.show();
-		},
-		failure: function(response, opts) {
-		    Ext.Msg.alert(gettext('Error'), response.htmlStatus);
-		},
-	    });
+
+	    let doRequest = function() {
+		Proxmox.Utils.API2Request({
+		    url: `/nodes/${vm.get('osdhost')}/ceph/${cmd}`,
+		    params: { service: "osd." + vm.get('osdid') },
+		    waitMsgTarget: me.getView(),
+		    method: 'POST',
+		    success: function(response, options) {
+			let upid = response.result.data;
+			let win = Ext.create('Proxmox.window.TaskProgress', {
+			    upid: upid,
+			    taskDone: () => { me.reload(); },
+			});
+			win.show();
+		    },
+		    failure: function(response, opts) {
+			Ext.Msg.alert(gettext('Error'), response.htmlStatus);
+		    },
+		});
+	    };
+
+	    if (cmd === "stop") {
+		Proxmox.Utils.API2Request({
+		    url: `/nodes/${vm.get('osdhost')}/ceph/cmd-safety`,
+		    params: {
+			service: 'osd',
+			id: vm.get('osdid'),
+			action: 'stop',
+		    },
+		    waitMsgTarget: me.getView(),
+		    method: 'GET',
+		    success: function({ result: { data } }) {
+			if (!data.safe) {
+			    Ext.Msg.show({
+				title: gettext('Warning'),
+				message: data.status,
+				icon: Ext.Msg.WARNING,
+				buttons: Ext.Msg.OKCANCEL,
+				buttonText: { ok: gettext('Stop OSD') },
+				fn: function(selection) {
+				    if (selection === 'ok') {
+					doRequest();
+				    }
+				},
+			    });
+			} else {
+			    doRequest();
+			}
+		    },
+		    failure: response => Ext.Msg.alert(gettext('Error'), response.htmlStatus),
+		});
+	    } else {
+		doRequest();
+	    }
+	},
+
+	run_details: function(view, rec) {
+	    if (rec.data.host && rec.data.type === 'osd' && rec.data.id >= 0) {
+		this.details();
+	    }
+	},
+
+	details: function() {
+	    let vm = this.getViewModel();
+	    Ext.create('PVE.CephOsdDetails', {
+		nodename: vm.get('osdhost'),
+		osdid: vm.get('osdid'),
+	    }).show();
 	},
 
 	set_selection_status: function(tp, selection) {
@@ -503,8 +647,9 @@ Ext.define('PVE.node.CephOsdTree', {
 	    let icon = "";
 	    let version = value || "";
 	    let maxversion = vm.get('maxversion');
-	    if (value && value !== maxversion) {
-		if (rec.data.type === 'host' || versions[rec.data.host] !== maxversion) {
+	    if (value && PVE.Utils.compare_ceph_versions(value, maxversion) !== 0) {
+		let host_version = rec.parentNode?.data?.version || versions[rec.data.host] || "";
+		if (rec.data.type === 'host' || PVE.Utils.compare_ceph_versions(host_version, maxversion) !== 0) {
 		    icon = PVE.Utils.get_ceph_icon_html('HEALTH_UPGRADE');
 		} else {
 		    icon = PVE.Utils.get_ceph_icon_html('HEALTH_OLD');
@@ -564,6 +709,9 @@ Ext.define('PVE.node.CephOsdTree', {
     stateId: 'grid-ceph-osd',
     rootVisible: false,
     useArrows: true,
+    listeners: {
+	itemdblclick: 'run_details',
+    },
 
     columns: [
 	{
@@ -666,6 +814,13 @@ Ext.define('PVE.node.CephOsdTree', {
 	    renderer: 'render_osd_latency',
 	    width: 120,
 	},
+	{
+	    text: 'PGs',
+	    dataIndex: 'pgs',
+	    align: 'right',
+	    renderer: 'render_osd_val',
+	    width: 90,
+	},
     ],
 
 
@@ -703,6 +858,15 @@ Ext.define('PVE.node.CephOsdTree', {
 		    gettext('No OSD selected'),
 		    '</tpl>',
 		],
+	    },
+	    {
+		text: gettext('Details'),
+		iconCls: 'fa fa-info-circle',
+		disabled: true,
+		bind: {
+		    disabled: '{!isOsd}',
+		},
+		handler: 'details',
 	    },
 	    {
 		text: gettext('Start'),
@@ -818,7 +982,7 @@ Ext.define('PVE.node.CephOsdTree', {
 		osd: 'fa-hdd-o',
 		root: 'fa-server',
 	    };
-	    return 'fa x-fa-tree ' + iconMap[data.type];
+	    return `fa x-fa-tree ${iconMap[data.type] ?? 'fa-folder-o'}`;
 	},
 },
 	{ type: 'number', name: 'crush_weight' },

@@ -64,6 +64,31 @@ Ext.define('PVE.storage.CephFSInputPanel', {
 	    },
 	);
 
+	if (me.isCreate) {
+	    me.column1.push({
+		xtype: 'pveCephFSSelector',
+		nodename: me.nodename,
+		name: 'fs-name',
+		bind: {
+		    disabled: '{!pveceph}',
+		    submitValue: '{pveceph}',
+		    hidden: '{!pveceph}',
+		},
+		fieldLabel: gettext('FS Name'),
+		allowBlank: false,
+	    }, {
+		xtype: 'textfield',
+		nodename: me.nodename,
+		name: 'fs-name',
+		bind: {
+		    disabled: '{pveceph}',
+		    submitValue: '{!pveceph}',
+		    hidden: '{pveceph}',
+		},
+		fieldLabel: gettext('FS Name'),
+	    });
+	}
+
 	me.column2 = [
 	    {
 		xtype: 'pveContentTypeSelector',
@@ -76,20 +101,33 @@ Ext.define('PVE.storage.CephFSInputPanel', {
 	    },
 	];
 
-	me.columnB = [{
-	    xtype: 'proxmoxcheckbox',
-	    name: 'pveceph',
-	    reference: 'pvecephRef',
-	    bind: {
-		disabled: '{!pvecephPossible}',
-		value: '{pveceph}',
+	me.columnB = [
+	    {
+		xtype: me.isCreate ? 'textfield' : 'displayfield',
+		name: 'keyring',
+		fieldLabel: gettext('Secret Key'),
+		value: me.isCreate ? '' : '***********',
+		allowBlank: false,
+		bind: {
+		    hidden: '{pveceph}',
+		    disabled: '{pveceph}',
+		},
 	    },
-	    checked: true,
-	    uncheckedValue: 0,
-	    submitValue: false,
-	    hidden: !me.isCreate,
-	    boxLabel: gettext('Use Proxmox VE managed hyper-converged cephFS'),
-	}];
+	    {
+		xtype: 'proxmoxcheckbox',
+		name: 'pveceph',
+		reference: 'pvecephRef',
+		bind: {
+		    disabled: '{!pvecephPossible}',
+		    value: '{pveceph}',
+		},
+		checked: true,
+		uncheckedValue: 0,
+		submitValue: false,
+		hidden: !me.isCreate,
+		boxLabel: gettext('Use Proxmox VE managed hyper-converged cephFS'),
+	    },
+	];
 
 	me.callParent();
     },

@@ -21,6 +21,9 @@ Ext.define('PVE.FirewallOptions', {
 	    throw "unknown firewall option type";
 	}
 
+	let caps = Ext.state.Manager.get('GuiCap');
+	let canEdit = caps.vms['VM.Config.Network'] || caps.dc['Sys.Modify'] || caps.nodes['Sys.Modify'];
+
 	me.rows = {};
 
 	var add_boolean_row = function(name, text, defaultValue) {
@@ -161,7 +164,9 @@ Ext.define('PVE.FirewallOptions', {
 		return;
 	    }
 	    var rowdef = me.rows[rec.data.key];
-	    edit_btn.setDisabled(!rowdef.editor);
+	    if (canEdit) {
+		edit_btn.setDisabled(!rowdef.editor);
+	    }
 	};
 
 	Ext.apply(me, {
@@ -171,7 +176,7 @@ Ext.define('PVE.FirewallOptions', {
 		url: '/api2/extjs/' + me.base_url,
 	    },
 	    listeners: {
-		itemdblclick: me.run_editor,
+		itemdblclick: () => { if (canEdit) { me.run_editor(); } },
 		selectionchange: set_button_status,
 	    },
 	});

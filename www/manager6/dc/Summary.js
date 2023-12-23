@@ -57,14 +57,14 @@ Ext.define('PVE.dc.Summary', {
 	    height: 220,
 	    items: [
 		{
-		    itemId: 'subscriptions',
 		    xtype: 'pveHealthWidget',
+		    itemId: 'subscriptions',
 		    userCls: 'pointer',
 		    listeners: {
 			element: 'el',
 			click: function() {
 			    if (this.component.userCls === 'pointer') {
-				window.open('https://www.proxmox.com/en/proxmox-ve/pricing', '_blank');
+				window.open('https://www.proxmox.com/en/proxmox-virtual-environment/pricing', '_blank');
 			    }
 			},
 		    },

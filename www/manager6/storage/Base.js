@@ -5,7 +5,7 @@ Ext.define('PVE.panel.StorageBase', {
     type: '',
 
     onGetValues: function(values) {
-	var me = this;
+	let me = this;
 
 	if (me.isCreate) {
 	    values.type = me.type;
@@ -20,7 +20,7 @@ Ext.define('PVE.panel.StorageBase', {
     },
 
     initComponent: function() {
-	var me = this;
+	let me = this;
 
 	me.column1.unshift({
 	    xtype: me.isCreate ? 'textfield' : 'displayfield',
@@ -36,6 +36,7 @@ Ext.define('PVE.panel.StorageBase', {
 	    {
 		xtype: 'pveNodeSelector',
 		name: 'nodes',
+		reference: 'storageNodeRestriction',
 		disabled: me.storageId === 'local',
 		fieldLabel: gettext('Nodes'),
 		emptyText: gettext('All') + ' (' + gettext('No restrictions') +')',
@@ -51,102 +52,29 @@ Ext.define('PVE.panel.StorageBase', {
 	    },
 	);
 
+	const qemuImgStorageTypes = ['dir', 'btrfs', 'nfs', 'cifs', 'glusterfs'];
+
+	if (qemuImgStorageTypes.includes(me.type)) {
+	    const preallocSelector = {
+		xtype: 'pvePreallocationSelector',
+		name: 'preallocation',
+		fieldLabel: gettext('Preallocation'),
+		allowBlank: false,
+		deleteEmpty: !me.isCreate,
+		value: '__default__',
+	    };
+
+	    me.advancedColumn1 = me.advancedColumn1 || [];
+	    me.advancedColumn2 = me.advancedColumn2 || [];
+	    if (me.advancedColumn2.length < me.advancedColumn1.length) {
+		me.advancedColumn2.unshift(preallocSelector);
+	    } else {
+		me.advancedColumn1.unshift(preallocSelector);
+	    }
+	}
+
 	me.callParent();
     },
-});
-
-Ext.define('PVE.panel.StoragePruneInputPanel', {
-    extend: 'Proxmox.panel.PruneInputPanel',
-    xtype: 'pveStoragePruneInputPanel',
-    mixins: ['Proxmox.Mixin.CBind'],
-
-    onlineHelp: 'vzdump_retention',
-
-    onGetValues: function(formValues) {
-	if (this.needMask) { // isMasked() may not yet be true if not rendered once
-	    return {};
-	} else if (this.isCreate && !this.rendered) {
-	    return { 'prune-backups': 'keep-all=1' };
-	}
-	delete formValues.delete;
-	let retention = PVE.Parser.printPropertyString(formValues);
-	if (retention === '') {
-	    if (this.isCreate) {
-		return {};
-	    }
-	    // always delete old 'maxfiles' on edit, we map it to keep-last on window load
-	    return {
-		'delete': ['prune-backups', 'maxfiles'],
-	    };
-	}
-	let options = { 'prune-backups': retention };
-	if (!this.isCreate) {
-	    options.delete = 'maxfiles';
-	}
-	return options;
-    },
-
-    updateComponents: function() {
-	let me = this;
-
-	let keepAll = me.down('proxmoxcheckbox[name=keep-all]').getValue();
-	let anyValue = false;
-	me.query('pmxPruneKeepField').forEach(field => {
-	    anyValue = anyValue || field.getValue() !== null;
-	    field.setDisabled(keepAll);
-	});
-	me.down('component[name=no-keeps-hint]').setHidden(anyValue || keepAll);
-    },
-
-    listeners: {
-	afterrender: function(panel) {
-	    if (panel.needMask) {
-		panel.down('component[name=no-keeps-hint]').setHtml('');
-		panel.mask(
-		    gettext('Backup content type not available for this storage.'),
-		);
-	    } else if (panel.isCreate) {
-		panel.down('proxmoxcheckbox[name=keep-all]').setValue(true);
-	    }
-	    panel.down('component[name=pbs-hint]').setHidden(!panel.isPBS);
-
-	    panel.query('pmxPruneKeepField').forEach(field => {
-		field.on('change', panel.updateComponents, panel);
-	    });
-	    panel.updateComponents();
-	},
-    },
-
-    columnT: {
-	xtype: 'proxmoxcheckbox',
-	name: 'keep-all',
-	boxLabel: gettext('Keep all backups'),
-	listeners: {
-	    change: function(field, newValue) {
-		let panel = field.up('pveStoragePruneInputPanel');
-		panel.updateComponents();
-	    },
-	},
-    },
-
-    columnB: [
-	{
-	    xtype: 'component',
-	    userCls: 'pmx-hint',
-	    name: 'no-keeps-hint',
-	    hidden: true,
-	    padding: '5 1',
-	    html: gettext('Without any keep option, the node\'s vzdump.conf or `keep-all` is used as fallback for backup jobs'),
-	},
-	{
-	    xtype: 'component',
-	    userCls: 'pmx-hint',
-	    name: 'pbs-hint',
-	    hidden: true,
-	    padding: '5 1',
-	    html: gettext("It's preferred to configure backup retention directly on the Proxmox Backup Server."),
-	},
-    ],
 });
 
 Ext.define('PVE.storage.BaseEdit', {
@@ -160,7 +88,7 @@ Ext.define('PVE.storage.BaseEdit', {
     },
 
     initComponent: function() {
-	var me = this;
+	let me = this;
 
 	me.isCreate = !me.storageId;
 
@@ -191,10 +119,13 @@ Ext.define('PVE.storage.BaseEdit', {
 		items: [
 		    me.ipanel,
 		    {
-			xtype: 'pveStoragePruneInputPanel',
+			xtype: 'pveBackupJobPrunePanel',
 			title: gettext('Backup Retention'),
+			hasMaxProtected: true,
 			isCreate: me.isCreate,
-			isPBS: me.ipanel.isPBS,
+			keepAllDefaultForCreate: true,
+			showPBSHint: me.ipanel.isPBS,
+			fallbackHintHtml: gettext('Without any keep option, the node\'s vzdump.conf or `keep-all` is used as fallback for backup jobs'),
 		    },
 		],
 	    },
@@ -217,8 +148,8 @@ Ext.define('PVE.storage.BaseEdit', {
 	if (!me.isCreate) {
 	    me.load({
 		success: function(response, options) {
-		    var values = response.result.data;
-		    var ctypes = values.content || '';
+		    let values = response.result.data;
+		    let ctypes = values.content || '';
 
 		    values.content = ctypes.split(',');
 

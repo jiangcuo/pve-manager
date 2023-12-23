@@ -14,9 +14,21 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
 		afterrender: 'onOSTypeChange',
 		change: 'onOSTypeChange',
 	    },
+	    'checkbox[reference=enableSecondCD]': {
+		change: 'onSecondCDChange',
+	    },
 	},
 	onOSBaseChange: function(field, value) {
-	    this.lookup('ostype').getStore().setData(PVE.Utils.kvm_ostypes[value]);
+	    let me = this;
+	    me.lookup('ostype').getStore().setData(PVE.Utils.kvm_ostypes[value]);
+	    if (me.getView().insideWizard) {
+		let isWindows = value === 'Microsoft Windows';
+		let enableSecondCD = me.lookup('enableSecondCD');
+		enableSecondCD.setVisible(isWindows);
+		if (!isWindows) {
+		    enableSecondCD.setValue(false);
+		}
+	    }
 	},
 	onOSTypeChange: function(field) {
 	    var me = this, ostype = field.getValue();
@@ -27,8 +39,10 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
 
 	    me.setWidget('pveBusSelector', targetValues.busType);
 	    me.setWidget('pveNetworkCardSelector', targetValues.networkCard);
+	    me.setWidget('CPUModelSelector', targetValues.cputype);
 	    var scsihw = targetValues.scsihw || '__default__';
 	    this.getViewModel().set('current.scsihw', scsihw);
+	    this.getViewModel().set('current.ostype', ostype);
 	},
 	setWidget: function(widget, newValue) {
 	    // changing a widget is safe only if ComponentQuery.query returns us
@@ -37,9 +51,51 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
 	    if (widgets.length === 1) {
 		widgets[0].setValue(newValue);
 	    } else {
-		throw 'non unique widget :' + widget + ' in Wizard';
+		// ignore multiple disks, we only want to set the type if there is a single disk
 	    }
 	},
+	onSecondCDChange: function(widget, value, lastValue) {
+	    let me = this;
+	    let vm = me.getViewModel();
+	    let updateVMConfig = function() {
+		let widgets = Ext.ComponentQuery.query('pveMultiHDPanel');
+		if (widgets.length === 1) {
+		    widgets[0].getController().updateVMConfig();
+		}
+	    };
+	    if (value) {
+		// only for windows
+		vm.set('current.ide0', "some");
+		vm.notify();
+		updateVMConfig();
+		me.setWidget('pveBusSelector', 'scsi');
+		me.setWidget('pveNetworkCardSelector', 'virtio');
+	    } else {
+		vm.set('current.ide0', "");
+		vm.notify();
+		updateVMConfig();
+		me.setWidget('pveBusSelector', 'scsi');
+		let ostype = me.lookup('ostype').getValue();
+		var targetValues = PVE.qemu.OSDefaults.getDefaults(ostype);
+		me.setWidget('pveBusSelector', targetValues.busType);
+	    }
+	},
+    },
+
+    setNodename: function(nodename) {
+	var me = this;
+	me.lookup('isoSelector').setNodename(nodename);
+    },
+
+    onGetValues: function(values) {
+	if (values.ide0) {
+	    let drive = {
+		media: 'cdrom',
+		file: values.ide0,
+	    };
+	    values.ide0 = PVE.Parser.printQemuDrive(drive);
+	}
+	return values;
     },
 
     initComponent: function() {
@@ -89,6 +145,34 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
 		},
 	    },
 	];
+
+	if (me.insideWizard) {
+	    me.items.push(
+		{
+		    xtype: 'proxmoxcheckbox',
+		    reference: 'enableSecondCD',
+		    isFormField: false,
+		    hidden: true,
+		    checked: false,
+		    boxLabel: gettext('Add additional drive for VirtIO drivers'),
+		    listeners: {
+			change: function(cb, value) {
+			    me.lookup('isoSelector').setDisabled(!value);
+			    me.lookup('isoSelector').setHidden(!value);
+			},
+		    },
+		},
+		{
+		    xtype: 'pveIsoSelector',
+		    reference: 'isoSelector',
+		    name: 'ide0',
+		    nodename: me.nodename,
+		    insideWizard: true,
+		    hidden: true,
+		    disabled: true,
+		},
+	    );
+	}
 
 	me.callParent();
     },

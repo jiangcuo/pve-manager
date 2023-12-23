@@ -27,7 +27,8 @@ Ext.define('PVE.ceph.StatusDetail', {
 	    upout: 0,
 	    downin: 0,
 	    downout: 0,
-	    oldosds: [],
+	    oldOSD: [],
+	    ghostOSD: [],
 	},
 	tpl: [
 	    '<h3>OSDs</h3>',
@@ -59,12 +60,23 @@ Ext.define('PVE.ceph.StatusDetail', {
 	    gettext('Total'),
 	    ': {total}',
 	    '</div><br />',
-	    '<tpl if="oldosds.length &gt; 0">',
+	    '<tpl if="oldOSD.length &gt; 0">',
 	    '<i class="fa fa-refresh warning"></i> ' + gettext('Outdated OSDs') + "<br>",
 	    '<div class="osds">',
-	    '<tpl for="oldosds">',
+	    '<tpl for="oldOSD">',
 	    '<div class="left-aligned">osd.{id}:</div>',
 	    '<div class="right-aligned">{version}</div><br />',
+	    '<div style="clear:both"></div>',
+	    '</tpl>',
+	    '</div>',
+	    '</tpl>',
+	    '</div>',
+	    '<tpl if="ghostOSD.length &gt; 0">',
+	    '<br />',
+	    `<i class="fa fa-question-circle warning"></i> ${gettext('Ghost OSDs')}<br>`,
+	    `<div data-qtip="${gettext('OSDs with no metadata, possibly left over from removal')}" class="osds">`,
+	    '<tpl for="ghostOSD">',
+	    '<div class="left-aligned">osd.{id}</div>',
 	    '<div style="clear:both"></div>',
 	    '</tpl>',
 	    '</div>',
@@ -82,6 +94,7 @@ Ext.define('PVE.ceph.StatusDetail', {
 	colors: [
 	    '#CFCFCF',
 	    '#21BF4B',
+	    '#3892d4',
 	    '#FFCC00',
 	    '#FF6C59',
 	],
@@ -134,13 +147,12 @@ Ext.define('PVE.ceph.StatusDetail', {
 	clean: 1,
 	active: 1,
 
-	// working
+	// busy
 	activating: 2,
 	backfill_wait: 2,
 	backfilling: 2,
 	creating: 2,
 	deep: 2,
-	degraded: 2,
 	forced_backfill: 2,
 	forced_recovery: 2,
 	peered: 2,
@@ -153,17 +165,20 @@ Ext.define('PVE.ceph.StatusDetail', {
 	snaptrim: 2,
 	snaptrim_wait: 2,
 
-	// error
-	backfill_toofull: 3,
-	backfill_unfound: 3,
-	down: 3,
-	incomplete: 3,
-	inconsistent: 3,
-	recovery_toofull: 3,
-	recovery_unfound: 3,
-	snaptrim_error: 3,
-	stale: 3,
+	// warning
+	degraded: 3,
 	undersized: 3,
+
+	// critical
+	backfill_toofull: 4,
+	backfill_unfound: 4,
+	down: 4,
+	incomplete: 4,
+	inconsistent: 4,
+	recovery_toofull: 4,
+	recovery_unfound: 4,
+	snaptrim_error: 4,
+	stale: 4,
     },
 
     statecategories: [
@@ -178,39 +193,61 @@ Ext.define('PVE.ceph.StatusDetail', {
 	    cls: 'good',
 	},
 	{
-	    text: gettext('Working'),
+	    text: gettext('Busy'),
+	    cls: 'pve-ceph-status-busy',
+	},
+	{
+	    text: gettext('Warning'),
 	    cls: 'warning',
 	},
 	{
-	    text: gettext('Error'),
+	    text: gettext('Critical'),
 	    cls: 'critical',
 	},
     ],
+
+    checkThemeColors: function() {
+	let me = this;
+	let rootStyle = getComputedStyle(document.documentElement);
+
+	// get color
+	let background = rootStyle.getPropertyValue("--pwt-panel-background").trim() || "#ffffff";
+
+	// set the colors
+	me.chart.setBackground(background);
+	me.chart.redraw();
+    },
 
     updateAll: function(metadata, status) {
 	let me = this;
 	me.suspendLayout = true;
 
 	let maxversion = "0";
-	Object.values(metadata.version || {}).forEach(function(version) {
-	    if (PVE.Utils.compare_ceph_versions(version, maxversion) > 0) {
-		maxversion = version;
+	Object.values(metadata.node || {}).forEach(function(node) {
+	    if (PVE.Utils.compare_ceph_versions(node?.version?.parts, maxversion) > 0) {
+		maxversion = node.version.parts;
 	    }
 	});
 
-	var oldosds = [];
-
-	if (metadata.osd) {
-	    metadata.osd.forEach(function(osd) {
-		let version = PVE.Utils.parse_ceph_version(osd);
-		if (version !== maxversion) {
-		    oldosds.push({
+	let oldOSD = [], ghostOSD = [];
+	metadata.osd?.forEach(osd => {
+	    let version = PVE.Utils.parse_ceph_version(osd);
+	    if (version !== undefined) {
+		if (PVE.Utils.compare_ceph_versions(version, maxversion) !== 0) {
+		    oldOSD.push({
 			id: osd.id,
 			version: version,
 		    });
 		}
-	    });
-	}
+	    } else {
+		if (Object.keys(osd).length > 1) {
+		    console.warn('got OSD entry with no valid version but other keys', osd);
+		}
+		ghostOSD.push({
+		    id: osd.id,
+		});
+	    }
+	});
 
 	// update PGs sorted
 	let pgmap = status.pgmap || {};
@@ -239,7 +276,7 @@ Ext.define('PVE.ceph.StatusDetail', {
 	    me.statecategories[result].states.push(state);
 	});
 
-	me.getComponent('pgchart').getStore().setData(me.statecategories);
+	me.chart.getStore().setData(me.statecategories);
 	me.getComponent('pgs').update({ states: pgs_by_state });
 
 	let health = status.health || {};
@@ -276,13 +313,35 @@ Ext.define('PVE.ceph.StatusDetail', {
 	    upout: upout_osds,
 	    downin: downin_osds,
 	    downout: downout_osds,
-	    oldosds: oldosds,
+	    oldOSD: oldOSD,
+	    ghostOSD,
 	};
 	let osdcomponent = me.getComponent('osds');
 	osdcomponent.update(Ext.apply(osdcomponent.data, osds));
 
 	me.suspendLayout = false;
 	me.updateLayout();
+    },
+
+     initComponent: function() {
+	var me = this;
+	me.callParent();
+
+	me.chart = me.getComponent('pgchart');
+	me.checkThemeColors();
+
+	// switch colors on media query changes
+	me.mediaQueryList = window.matchMedia("(prefers-color-scheme: dark)");
+	me.themeListener = (e) => { me.checkThemeColors(); };
+	me.mediaQueryList.addEventListener("change", me.themeListener);
+    },
+
+    doDestroy: function() {
+	let me = this;
+
+	me.mediaQueryList.removeEventListener("change", me.themeListener);
+
+	me.callParent();
     },
 });
 

@@ -209,7 +209,7 @@ __PACKAGE__->register_method({
 	    type => {
 		description => "Only list specific interface types.",
 		type => 'string',
-		enum => [ @$network_type_enum, 'any_bridge' ],
+		enum => [ @$network_type_enum, 'any_bridge', 'any_local_bridge' ],
 		optional => 1,
 	    },
 	},
@@ -226,6 +226,7 @@ __PACKAGE__->register_method({
 	my ($param) = @_;
 
 	my $rpcenv = PVE::RPCEnvironment::get();
+	my $authuser = $rpcenv->get_user();
 
 	my $tmp = PVE::INotify::read_file('interfaces', 1);
 	my $config = $tmp->{data};
@@ -237,21 +238,34 @@ __PACKAGE__->register_method({
 
 	delete $ifaces->{lo}; # do not list the loopback device
 
-	if ($param->{type}) {
-	    foreach my $k (keys %$ifaces) {
+	if (my $tfilter = $param->{type}) {
+	    my $vnets;
+
+	    if ($have_sdn && $tfilter eq 'any_bridge') {
+		$vnets = PVE::Network::SDN::get_local_vnets(); # returns already access-filtered
+	    }
+
+	    for my $k (sort keys $ifaces->%*) {
 		my $type = $ifaces->{$k}->{type};
-		my $match =  ($param->{type} eq $type) || (
-		    ($param->{type} eq 'any_bridge') && 
-		    ($type eq 'bridge' || $type eq 'OVSBridge'));
+		my $is_bridge = $type eq 'bridge' || $type eq 'OVSBridge';
+		my $bridge_match = $is_bridge && $tfilter =~ /^any(_local)?_bridge$/;
+		my $match = $tfilter eq $type || $bridge_match;
 		delete $ifaces->{$k} if !$match;
 	    }
 
-	    if ($have_sdn && $param->{type} eq 'any_bridge') {
-		my $vnets = PVE::Network::SDN::get_local_vnets();
-		map {
-		    $ifaces->{$_} = $vnets->{$_};
-		} keys %$vnets;
+	    if (defined($vnets)) {
+		$ifaces->{$_} = $vnets->{$_} for keys $vnets->%*
 	    }
+	}
+
+	#always check bridge access
+	my $can_access_vnet = sub {
+	    return 1 if $authuser eq 'root@pam';
+	    return 1 if $rpcenv->check_sdn_bridge($authuser, "localnetwork", $_[0], ['SDN.Audit', 'SDN.Use'], 1);
+	};
+	for my $k (sort keys $ifaces->%*) {
+	    my $type = $ifaces->{$k}->{type};
+	    delete $ifaces->{$k} if ($type eq 'bridge' || $type eq 'OVSBridge') && !$can_access_vnet->($k);
 	}
 
 	return PVE::RESTHandler::hash_to_array($ifaces, 'iface');
@@ -599,7 +613,7 @@ sub ifupdown2_version {
     return if !defined($v) || $v !~ /^\s*ifupdown2:(\S+)\s*$/;
     $v = $1;
     my ($major, $minor, $extra, $pve) = split(/\.|-/, $v);
-    my $is_pve = defined($pve) && $pve =~ /pve/;
+    my $is_pve = defined($pve) && $pve =~ /(pve|pmx|proxmox)/;
 
     return ($major * 100000 + $minor * 1000 + $extra * 10, $is_pve, $v);
 }
@@ -646,6 +660,7 @@ __PACKAGE__->register_method({
 
 	    if ($have_sdn) {
 		PVE::Network::SDN::generate_zone_config();
+		PVE::Network::SDN::generate_dhcp_config();
 	    }
 
 	    my $err = sub {

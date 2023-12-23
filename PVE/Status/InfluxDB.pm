@@ -55,7 +55,13 @@ sub properties {
 	    type => 'integer',
 	    minimum => 1,
 	    default => 25_000_000,
-	}
+	},
+	'verify-certificate' => {
+	    description => "Set to 0 to disable certificate verification for https endpoints.",
+	    type => 'boolean',
+	    optional => 1,
+	    default => 1,
+	},
     };
 }
 sub options {
@@ -71,8 +77,23 @@ sub options {
 	timeout => { optional => 1},
 	'max-body-size' => { optional => 1 },
 	'api-path-prefix' => { optional => 1 },
+	'verify-certificate' => { optional => 1 },
    };
 }
+
+my $set_ssl_opts = sub {
+    my ($cfg, $ua) = @_;
+
+    my $cert_verify = $cfg->{'verify-certificate'} // 1;
+    if (!$cert_verify) {
+	$ua->ssl_opts(
+	    verify_hostname => 0,
+	    SSL_verify_mode => IO::Socket::SSL::SSL_VERIFY_NONE,
+	);
+    }
+
+    return;
+};
 
 # Plugin implementation
 sub update_node_status {
@@ -145,6 +166,7 @@ sub send {
 	return $class->SUPER::send($connection, $data, $cfg);
     } elsif ($proto =~ m/^https?$/) {
 	my $ua = LWP::UserAgent->new();
+	$set_ssl_opts->($cfg, $ua);
 	$ua->timeout($cfg->{timeout} // 1);
 	$connection->content($data);
 	my $response = $ua->request($connection);
@@ -203,7 +225,7 @@ sub _connect {
 
 	return $socket;
     } elsif ($proto =~ m/^https?$/) {
-	my $token = get_credentials($id);
+	my $token = get_credentials($id, 1);
 	my $org = $cfg->{organization} // 'proxmox';
 	my $bucket = $cfg->{bucket} // 'proxmox';
 	my $url = _get_v2url($cfg, "write?org=${org}&bucket=${bucket}");
@@ -222,12 +244,16 @@ sub _connect {
 sub test_connection {
     my ($class, $cfg, $id) = @_;
 
+    # do not check connection for disabled plugins
+    return if $cfg->{disable};
+
     my $proto = $cfg->{influxdbproto} // 'udp';
     if ($proto eq 'udp') {
 	return $class->SUPER::test_connection($cfg, $id);
     } elsif ($proto =~ m/^https?$/) {
 	my $url = _get_v2url($cfg, "health");
 	my $ua = LWP::UserAgent->new();
+	$set_ssl_opts->($cfg, $ua);
 	$ua->timeout($cfg->{timeout} // 1);
 	# in the initial add connection test, the token may still be in $cfg
 	my $token = $cfg->{token} // get_credentials($id, 1);
@@ -250,6 +276,9 @@ sub test_connection {
 sub build_influxdb_payload {
     my ($class, $txn, $data, $ctime, $tags, $excluded, $measurement, $instance) = @_;
 
+    # 'abc' and '123' are both valid hostnames, that confuses influx's type detection
+    my $to_quote = { name => 1 };
+
     my @values = ();
 
     foreach my $key (sort keys %$data) {
@@ -260,7 +289,7 @@ sub build_influxdb_payload {
 	if (!ref($value) && $value ne '') {
 	    # value is scalar
 
-	    if (defined(my $v = prepare_value($value))) {
+	    if (defined(my $v = prepare_value($value, $to_quote->{$key}))) {
 		push @values, "$key=$v";
 	    }
 	} elsif (ref($value) eq 'HASH') {
@@ -305,9 +334,10 @@ sub get_recursive_values {
 }
 
 sub prepare_value {
-    my ($value) = @_;
+    my ($value, $force_quote) = @_;
 
-    if (looks_like_number($value)) {
+    # don't treat value like a number if quote is 1
+    if (!$force_quote && looks_like_number($value)) {
 	if (isnan($value) || isinf($value)) {
 	    # we cannot send influxdb NaN or Inf
 	    return undef;
