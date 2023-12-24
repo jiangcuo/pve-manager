@@ -29,7 +29,7 @@ Build-Depends: debhelper-compat (= 13),
                sq,
                unzip,
 Standards-Version: 4.6.1
-Maintainer: Proxmox Support Team <support@proxmox.com>
+Maintainer: Jiangcuo <jiangcuo@bingsin.com>
 
 Package: pve-manager
 Section: admin

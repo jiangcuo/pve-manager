@@ -1,4 +1,9 @@
-<<<<<<< HEAD
+pve-manager (8.1.3+loong64) bookworm; urgency=medium
+
+  * Update to latest 
+
+ -- Jiangcuo <jiangcuo@bingsin.com>  Sun, 24 Dec 2023 05:06:46 +0000
+
 pve-manager (8.1.3) bookworm; urgency=medium
 
   * ui: pool view: fix editing nested pools
