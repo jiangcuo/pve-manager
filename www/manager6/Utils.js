@@ -1,6 +1,8 @@
 Ext.ns('PVE');
 
-console.log("Starting Proxmox VE Manager");
+console.log("Starting Proxmox VE Manager Loongarch64");
+console.log("It is an open-source platform, https://github.com/jiangcuo/Proxmox-Port && https://gitee.com/jiangcuo/Proxmox-Port");
+console.log("This platform uses AGPLv3 license, if you obtained this program through purchase, please contact the author of the GitHub project homepage");
 
 Ext.Ajax.defaultHeaders = {
     'Accept': 'application/json',
@@ -55,11 +57,12 @@ Ext.define('PVE.Utils', {
     },
 
     is_windows: function(ostype) {
+/*   ways return false on loongarch
 	for (let entry of PVE.Utils.kvm_ostypes['Microsoft Windows']) {
 	    if (entry.val === ostype) {
 		return true;
 	    }
-	}
+	} */
 	return false;
     },
 
@@ -507,8 +510,8 @@ Ext.define('PVE.Utils', {
     render_as_property_string: v => !v ? Proxmox.Utils.defaultText : PVE.Parser.printPropertyString(v),
 
     render_scsihw: function(value) {
-	if (!value) {
-	    return Proxmox.Utils.defaultText + ' (VirtIO SCSI)';
+	if (!value || value === '__default__') {
+			return Proxmox.Utils.defaultText + '(VirtIO SCSI)';
 	} else if (value === 'virtio-scsi-pci') {
 	    return 'VirtIO SCSI';
 	} else if (value === 'virtio-scsi-single') {

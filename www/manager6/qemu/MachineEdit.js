@@ -47,17 +47,10 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 	let me = this;
 
 	me.isWindows = values.isWindows;
-	if (values.machine === 'pc') {
+	if (values.machine === 'virt') {
 	    values.machine = '__default__';
 	}
 
-	if (me.isWindows) {
-	    if (values.machine === '__default__') {
-		values.version = 'virt';
-	    } else if (values.machine === 'q35') {
-		values.version = 'pc-q35-5.1';
-	    }
-	}
 	if (values.machine !== '__default__' && values.machine !== 'q35') {
 	    values.version = values.machine;
 	    values.machine = values.version.match(/q35/) ? 'q35' : '__default__';
