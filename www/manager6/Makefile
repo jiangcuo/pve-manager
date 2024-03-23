@@ -134,6 +134,7 @@ JSSRC= 							\
 	window/TreeSettingsEdit.js			\
 	window/PCIMapEdit.js				\
 	window/USBMapEdit.js				\
+	window/GuestImport.js				\
 	ha/Fencing.js					\
 	ha/GroupEdit.js					\
 	ha/GroupSelector.js				\
@@ -316,6 +317,7 @@ JSSRC= 							\
 	storage/TemplateView.js				\
 	storage/ZFSEdit.js				\
 	storage/ZFSPoolEdit.js				\
+	storage/ESXIEdit.js				\
 	Workspace.js					\
 # end of JSSRC list
 

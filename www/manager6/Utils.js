@@ -817,6 +817,12 @@ Ext.define('PVE.Utils', {
 	    hideAdd: true,
 	    backups: false,
 	},
+	esxi: {
+	    name: 'ESXi',
+	    ipanel: 'ESXIInputPanel',
+	    faIcon: 'cloud-download',
+	    backups: false,
+	},
     },
 
     sdnvnetSchema: {
@@ -994,6 +1000,8 @@ Ext.define('PVE.Utils', {
 	    result = "CH " +
 		Ext.String.leftPad(data.channel, 2, '0') +
 		" ID " + data.id + " LUN " + data.lun;
+	} else if (data.content === 'import') {
+	    result = data.volid.replace(/^.*?:/, '');
 	} else {
 	    result = data.volid.replace(/^.*?:(.*?\/)?/, '');
 	}
@@ -1214,6 +1222,8 @@ Ext.define('PVE.Utils', {
 	    // templates
 	    objType = 'template';
 	    status = type;
+	} else if (type === 'storage' && record.content.indexOf('import') !== -1) {
+	    return 'fa fa-cloud-download';
 	} else {
 	    // everything else
 	    status = record.status + ' ha-' + record.hastate;
@@ -1902,6 +1912,18 @@ Ext.define('PVE.Utils', {
 
     isStandaloneNode: function() {
 	return PVE.data.ResourceStore.getNodes().length < 2;
+    },
+
+    // main use case of this helper is the login window
+    getUiLanguage: function() {
+	let languageCookie = Ext.util.Cookies.get('PVELangCookie');
+	if (languageCookie === 'kr') {
+	    // fix-up 'kr' being used for Korean by mistake FIXME: remove with PVE 9
+	    let dt = Ext.Date.add(new Date(), Ext.Date.YEAR, 10);
+	    languageCookie = 'ko';
+	    Ext.util.Cookies.set('PVELangCookie', languageCookie, dt);
+	}
+	return languageCookie || Proxmox.defaultLang || 'en';
     },
 },
 

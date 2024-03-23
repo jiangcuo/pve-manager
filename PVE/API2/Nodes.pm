@@ -396,8 +396,47 @@ __PACKAGE__->register_method({
     },
     returns => {
 	type => "object",
+	additionalProperties => 1,
 	properties => {
-
+	    # TODO: document remaing ones
+	    'boot-info' => {
+		description => "Meta-information about the boot mode.",
+		type => 'object',
+		properties => {
+		    mode => {
+			description => 'Through which firmware the system got booted.',
+			type => 'string',
+			enum => [qw(efi legacy-bios)],
+		    },
+		    secureboot => {
+			description => 'System is booted in secure mode, only applicable for the "efi" mode.',
+			type => 'boolean',
+			optional => 1,
+		    },
+		},
+	    },
+	    'current-kernel' => {
+		description => "The uptime of the system in seconds.",
+		type => 'object',
+		properties => {
+		    sysname => {
+			description => 'OS kernel name (e.g., "Linux")',
+			type => 'string',
+		    },
+		    release => {
+			description => 'OS kernel release (e.g., "6.8.0")',
+			type => 'string',
+		    },
+		    version => {
+			description => 'OS kernel version with build info',
+			type => 'string',
+		    },
+		    machine => {
+			description => 'Hardware (architecture) type',
+			type => 'string',
+		    },
+		},
+	    },
 	},
     },
     code => sub {
@@ -1581,7 +1620,10 @@ __PACKAGE__->register_method({
     description => "Query metadata of an URL: file size, file name and mime type.",
     proxyto => 'node',
     permissions => {
-	check => ['perm', '/', [ 'Sys.Audit', 'Sys.Modify' ]],
+	check => ['or',
+	    ['perm', '/', [ 'Sys.Audit', 'Sys.Modify' ]],
+	    ['perm', '/nodes/{node}', [ 'Sys.AccessNetwork' ]],
+	],
     },
     parameters => {
 	additionalProperties => 0,
