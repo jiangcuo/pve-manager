@@ -365,8 +365,10 @@ my sub get_boot_mode_info {
 	mode => $is_efi_booted ? 'efi' : 'legacy-bios',
     };
 
-    if ($is_efi_booted) {
-	my $efi_var_sec_boot_entry = eval { file_get_contents("/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c") };
+    my $efi_var = "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c";
+
+    if ($is_efi_booted && -e $efi_var) {
+	my $efi_var_sec_boot_entry = eval { file_get_contents($efi_var) };
 	if ($@) {
 	    warn "Failed to read secure boot state: $@\n";
 	} else {
@@ -394,8 +396,47 @@ __PACKAGE__->register_method({
     },
     returns => {
 	type => "object",
+	additionalProperties => 1,
 	properties => {
-
+	    # TODO: document remaing ones
+	    'boot-info' => {
+		description => "Meta-information about the boot mode.",
+		type => 'object',
+		properties => {
+		    mode => {
+			description => 'Through which firmware the system got booted.',
+			type => 'string',
+			enum => [qw(efi legacy-bios)],
+		    },
+		    secureboot => {
+			description => 'System is booted in secure mode, only applicable for the "efi" mode.',
+			type => 'boolean',
+			optional => 1,
+		    },
+		},
+	    },
+	    'current-kernel' => {
+		description => "The uptime of the system in seconds.",
+		type => 'object',
+		properties => {
+		    sysname => {
+			description => 'OS kernel name (e.g., "Linux")',
+			type => 'string',
+		    },
+		    release => {
+			description => 'OS kernel release (e.g., "6.8.0")',
+			type => 'string',
+		    },
+		    version => {
+			description => 'OS kernel version with build info',
+			type => 'string',
+		    },
+		    machine => {
+			description => 'Hardware (architecture) type',
+			type => 'string',
+		    },
+		},
+	    },
 	},
     },
     code => sub {
@@ -1579,7 +1620,10 @@ __PACKAGE__->register_method({
     description => "Query metadata of an URL: file size, file name and mime type.",
     proxyto => 'node',
     permissions => {
-	check => ['perm', '/', [ 'Sys.Audit', 'Sys.Modify' ]],
+	check => ['or',
+	    ['perm', '/', [ 'Sys.Audit', 'Sys.Modify' ]],
+	    ['perm', '/nodes/{node}', [ 'Sys.AccessNetwork' ]],
+	],
     },
     parameters => {
 	additionalProperties => 0,

@@ -82,6 +82,16 @@ Ext.define('PVE.node.CephStatus', {
 		    stateId: 'ceph-status-warnings',
 		    viewConfig: {
 			enableTextSelection: true,
+			    listeners: {
+				collapsebody: function(rowNode, record) {
+				    record.set('expanded', false);
+				    record.commit();
+				},
+				expandbody: function(rowNode, record) {
+				    record.set('expanded', true);
+				    record.commit();
+				},
+			    },
 		    },
 		    // we load the store manually, to show an emptyText specify an empty intermediate store
 		    store: {
@@ -139,6 +149,12 @@ Ext.define('PVE.node.CephStatus', {
 			{
 			    dataIndex: 'summary',
 			    header: gettext('Summary'),
+			    renderer: function(value, metaData, record, rI, cI, store, view) {
+				if (record.get('expanded')) {
+				    metaData.tdCls = 'pmx-column-wrapped';
+				}
+				return value;
+			    },
 			    flex: 1,
 			},
 			{
@@ -330,7 +346,8 @@ Ext.define('PVE.node.CephStatus', {
 	);
 
 	// update the usage widget
-	me.down('#space').updateValue(used/total, text);
+	const usage = total > 0 ? used / total : 0;
+	me.down('#space').updateValue(usage, text);
 
 	let readiops = pgmap.read_op_per_sec;
 	let writeiops = pgmap.write_op_per_sec;
