@@ -16,6 +16,7 @@ JSSRC= 							\
 	data/PermPathStore.js				\
 	data/ResourceStore.js				\
 	data/model/RRDModels.js				\
+	container/TwoColumnContainer.js			\
 	form/ACMEAPISelector.js 			\
 	form/ACMEAccountSelector.js			\
 	form/ACMEPluginSelector.js			\
@@ -97,6 +98,7 @@ JSSRC= 							\
 	grid/Replication.js				\
 	grid/ResourceGrid.js				\
 	panel/ConfigPanel.js				\
+	panel/BackupAdvancedOptions.js			\
 	panel/BackupJobPrune.js				\
 	panel/HealthWidget.js				\
 	panel/IPSet.js					\
@@ -131,6 +133,7 @@ JSSRC= 							\
 	window/ScheduleSimulator.js			\
 	window/Wizard.js				\
 	window/GuestDiskReassign.js				\
+	window/GuestStop.js				\
 	window/TreeSettingsEdit.js			\
 	window/PCIMapEdit.js				\
 	window/USBMapEdit.js				\
@@ -188,6 +191,7 @@ JSSRC= 							\
 	lxc/CmdMenu.js					\
 	lxc/Config.js					\
 	lxc/CreateWizard.js				\
+	lxc/DeviceEdit.js				\
 	lxc/DNS.js					\
 	lxc/FeaturesEdit.js				\
 	lxc/MPEdit.js					\

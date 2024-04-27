@@ -25,6 +25,7 @@ use PVE::HA::Env::PVE2;
 use PVE::INotify;
 use PVE::JSONSchema qw(get_standard_option);
 use PVE::LXC;
+use PVE::NodeConfig;
 use PVE::ProcFSTools;
 use PVE::QemuConfig;
 use PVE::QemuServer;
@@ -682,22 +683,28 @@ __PACKAGE__->register_method({
 	my ($param) = @_;
 
 	my $node = $param->{node};
+	my $local_node = PVE::INotify::nodename();
 
 	die "'$node' is local node, cannot wake my self!\n"
-	    if $node eq 'localhost' || $node eq PVE::INotify::nodename();
+	    if $node eq 'localhost' || $node eq $local_node;
 
 	PVE::Cluster::check_node_exists($node);
 
 	my $config = PVE::NodeConfig::load_config($node);
-	my $mac_addr = $config->{wakeonlan};
+	my $wol_config = PVE::NodeConfig::get_wakeonlan_config($config);
+	my $mac_addr = $wol_config->{mac};
 	if (!defined($mac_addr)) {
 	    die "No wake on LAN MAC address defined for '$node'!\n";
 	}
 
+	my $local_config = PVE::NodeConfig::load_config($local_node);
+	my $local_wol_config = PVE::NodeConfig::get_wakeonlan_config($local_config);
+	my $broadcast_addr = $local_wol_config->{'broadcast-address'} // '255.255.255.255';
+
 	$mac_addr =~ s/://g;
 	my $packet = chr(0xff) x 6 . pack('H*', $mac_addr) x 16;
 
-	my $addr = gethostbyname('255.255.255.255');
+	my $addr = gethostbyname($broadcast_addr);
 	my $port = getservbyname('discard', 'udp');
 	my $to = Socket::pack_sockaddr_in($port, $addr);
 
@@ -706,12 +713,18 @@ __PACKAGE__->register_method({
 	setsockopt($sock, Socket::SOL_SOCKET, Socket::SO_BROADCAST, 1)
 	    || die "Unable to set socket option: $!\n";
 
+	if (defined(my $bind_iface = $local_wol_config->{'bind-interface'})) {
+	    my $bind_iface_raw = pack('Z*', $bind_iface); # Null terminated interface name
+	    setsockopt($sock, Socket::SOL_SOCKET, Socket::SO_BINDTODEVICE, $bind_iface_raw)
+		|| die "Unable to bind socket to interface '$bind_iface': $!\n";
+	}
+
 	send($sock, $packet, 0, $to)
 	    || die "Unable to send packet: $!\n";
 
 	close($sock);
 
-	return $config->{wakeonlan};
+	return $wol_config->{mac};
     }});
 
 __PACKAGE__->register_method({
@@ -1004,7 +1017,8 @@ my $get_vnc_connection_info = sub {
     my ($remip, $family);
     if ($node ne 'localhost' && $node ne PVE::INotify::nodename()) {
 	($remip, $family) = PVE::Cluster::remote_node_ip($node);
-	$remote_cmd = ['/usr/bin/ssh', '-e', 'none', '-t', $remip , '--'];
+	$remote_cmd = PVE::SSHInfo::ssh_info_to_command({ ip => $remip, name => $node }, ('-t'));
+	push @$remote_cmd, '--';
     } else {
 	$family = PVE::Tools::get_host_address_family($node);
     }

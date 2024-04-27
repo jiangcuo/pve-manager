@@ -28,7 +28,6 @@ Ext.define('PVE.lxc.RessourceView', {
 
     initComponent: function() {
 	var me = this;
-	let confid;
 
 	var nodename = me.pveSelNode.data.node;
 	if (!nodename) {
@@ -116,8 +115,7 @@ Ext.define('PVE.lxc.RessourceView', {
 	    },
 	};
 
-	PVE.Utils.forEachMP(function(bus, i) {
-	    confid = bus + i;
+	PVE.Utils.forEachLxcMP(function(bus, i, confid) {
 	    var group = 5;
 	    var header;
 	    if (bus === 'mp') {
@@ -134,6 +132,18 @@ Ext.define('PVE.lxc.RessourceView', {
 		header: header,
 	    };
 	}, true);
+
+	let deveditor = Proxmox.UserName === 'root@pam' ? 'PVE.lxc.DeviceEdit' : undefined;
+
+	PVE.Utils.forEachLxcDev(function(i, confid) {
+	    rows[confid] = {
+		group: 7,
+		order: i,
+		tdCls: 'pve-itype-icon-pci',
+		editor: deveditor,
+		header: gettext('Device') + ' (' + confid + ')',
+	    };
+	});
 
 	var baseurl = 'nodes/' + nodename + '/lxc/' + vmid + '/config';
 
@@ -311,6 +321,7 @@ Ext.define('PVE.lxc.RessourceView', {
 	    let isDisk = isRootFS || key.match(/^(mp|unused)\d+/);
 	    let isUnusedDisk = key.match(/^unused\d+/);
 	    let isUsedDisk = isDisk && !isUnusedDisk;
+	    let isDevice = key.match(/^dev\d+/);
 
 	    let noedit = isDelete || !rowdef.editor;
 	    if (!noedit && Proxmox.UserName !== 'root@pam' && key.match(/^mp\d+$/)) {
@@ -326,7 +337,7 @@ Ext.define('PVE.lxc.RessourceView', {
 	    reassign_menuitem.setDisabled(isRootFS);
 	    resize_menuitem.setDisabled(isUnusedDisk);
 
-	    remove_btn.setDisabled(!isDisk || isRootFS || !diskCap || pending);
+	    remove_btn.setDisabled(!(isDisk || isDevice) || isRootFS || !diskCap || pending);
 	    revert_btn.setDisabled(!pending);
 
 	    remove_btn.setText(isUsedDisk ? remove_btn.altText : remove_btn.defaultText);
@@ -373,6 +384,21 @@ Ext.define('PVE.lxc.RessourceView', {
 					autoShow: true,
 					url: `/api2/extjs/${baseurl}`,
 					unprivileged: me.getObjectValue('unprivileged'),
+					pveSelNode: me.pveSelNode,
+					listeners: {
+					    destroy: () => me.reload(),
+					},
+				    });
+				},
+			    },
+			    {
+				text: gettext('Device Passthrough'),
+				iconCls: 'pve-itype-icon-pci',
+				disabled: Proxmox.UserName !== 'root@pam',
+				handler: function() {
+				    Ext.create('PVE.lxc.DeviceEdit', {
+					autoShow: true,
+					url: `/api2/extjs/${baseurl}`,
 					pveSelNode: me.pveSelNode,
 					listeners: {
 					    destroy: () => me.reload(),

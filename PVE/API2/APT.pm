@@ -759,6 +759,7 @@ __PACKAGE__->register_method({
 	push @list, sort $byver grep { /^(?:pve|proxmox)-kernel-/ && $cache->{$_}->{CurrentState} eq 'Installed' } keys %$cache;
 
         my @opt_pack = qw(
+	    amd64-microcode
 	    ceph
 	    criu
 	    dnsmasq
@@ -766,6 +767,7 @@ __PACKAGE__->register_method({
 	    gfs2-utils
 	    ifupdown
 	    ifupdown2
+	    intel-microcode
 	    ksm-control-daemon
 	    ksmtuned
 	    libpve-apiclient-perl
@@ -774,6 +776,7 @@ __PACKAGE__->register_method({
 	    proxmox-backup-file-restore
 	    proxmox-kernel-helper
 	    proxmox-offline-mirror-helper
+	    pve-esxi-import-tools
 	    pve-zsync
 	    zfsutils-linux
 	);

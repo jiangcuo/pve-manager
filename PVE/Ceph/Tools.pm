@@ -18,7 +18,9 @@ my $ccname = 'ceph'; # ceph cluster name
 my $ceph_cfgdir = "/etc/ceph";
 my $pve_ceph_cfgpath = "/etc/pve/$ccname.conf";
 my $ceph_cfgpath = "$ceph_cfgdir/$ccname.conf";
+my $pve_ceph_cfgdir = "/etc/pve/ceph";
 
+my $pve_ceph_crash_key_path = "$pve_ceph_cfgdir/$ccname.client.crash.keyring";
 my $pve_mon_key_path = "/etc/pve/priv/$ccname.mon.keyring";
 my $pve_ckeyring_path = "/etc/pve/priv/$ccname.client.admin.keyring";
 my $ckeyring_path = "/etc/ceph/ceph.client.admin.keyring";
@@ -37,12 +39,14 @@ my $ceph_service = {
 
 my $config_values = {
     ccname => $ccname,
+    pve_ceph_cfgdir => $pve_ceph_cfgdir,
     ceph_mds_data_dir => $ceph_mds_data_dir,
     long_rados_timeout => 60,
 };
 
 my $config_files = {
     pve_ceph_cfgpath => $pve_ceph_cfgpath,
+    pve_ceph_crash_key_path => $pve_ceph_crash_key_path,
     pve_mon_key_path => $pve_mon_key_path,
     pve_ckeyring_path => $pve_ckeyring_path,
     ceph_bootstrap_osd_keyring => $ceph_bootstrap_osd_keyring,
@@ -186,8 +190,14 @@ sub check_ceph_inited {
 
     return undef if !check_ceph_installed('ceph_mon', $noerr);
 
-    if (! -f $pve_ceph_cfgpath) {
-	die "pveceph configuration not initialized\n" if !$noerr;
+    my @errors;
+
+    push(@errors, "missing '$pve_ceph_cfgpath'") if ! -f $pve_ceph_cfgpath;
+    push(@errors, "missing '$pve_ceph_cfgdir'") if ! -d $pve_ceph_cfgdir;
+
+    if (@errors) {
+	my $err = 'pveceph configuration not initialized - ' . join(', ', @errors) . "\n";
+	die $err if !$noerr;
 	return undef;
     }
 
@@ -410,6 +420,39 @@ sub get_or_create_admin_keyring {
 	}
     }
     return $pve_ckeyring_path;
+}
+
+# is also used in `pve-init-ceph-crash` helper
+sub create_or_update_crash_keyring_file {
+    my ($rados) = @_;
+
+    if (!defined($rados)) {
+	$rados = PVE::RADOS->new();
+    }
+
+    my $output = $rados->mon_command({
+	prefix => 'auth get-or-create',
+	entity => 'client.crash',
+	caps => [
+	    mon => 'profile crash',
+	    mgr => 'profile crash',
+	],
+	format => 'plain',
+    });
+
+    if (-f $pve_ceph_crash_key_path) {
+	my $contents = PVE::Tools::file_get_contents($pve_ceph_crash_key_path);
+
+	if ($contents ne $output) {
+	    PVE::Tools::file_set_contents($pve_ceph_crash_key_path, $output);
+	    return 1;
+	}
+    } else {
+	PVE::Tools::file_set_contents($pve_ceph_crash_key_path, $output);
+	return 1;
+    }
+
+    return 0;
 }
 
 # get ceph-volume managed osds

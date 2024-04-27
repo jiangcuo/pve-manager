@@ -7,6 +7,7 @@ Ext.define('PVE.dc.BackupEdit', {
     defaultFocus: undefined,
 
     subject: gettext("Backup Job"),
+    width: 720,
     bodyPadding: 0,
 
     url: '/api2/extjs/cluster/backup',
@@ -145,58 +146,79 @@ Ext.define('PVE.dc.BackupEdit', {
 	    }
 	},
 
+	compressionChange: function(f, value, oldValue) {
+	    this.getView().lookup('backupAdvanced').updateCompression(value, f.isDisabled());
+	},
+
+	compressionDisable: function(f) {
+	    this.getView().lookup('backupAdvanced').updateCompression(f.getValue(), true);
+	},
+
+	compressionEnable: function(f) {
+	    this.getView().lookup('backupAdvanced').updateCompression(f.getValue(), false);
+	},
+
+	prepareValues: function(data) {
+	    let me = this;
+	    let viewModel = me.getViewModel();
+
+	    // Migrate 'new'-old notification-policy back to old-old mailnotification.
+	    // Only should affect users who used pve-manager from pvetest. This was a remnant of
+	    // notifications before the  overhaul.
+	    let policy = data['notification-policy'];
+	    if (policy === 'always' || policy === 'failure') {
+		data.mailnotification = policy;
+	    }
+
+	    if (data.exclude) {
+		data.vmid = data.exclude;
+		data.selMode = 'exclude';
+	    } else if (data.all) {
+		data.vmid = '';
+		data.selMode = 'all';
+	    } else if (data.pool) {
+		data.selMode = 'pool';
+		data.selPool = data.pool;
+	    } else {
+		data.selMode = 'include';
+	    }
+	    viewModel.set('selMode', data.selMode);
+
+	    if (data['prune-backups']) {
+		Object.assign(data, data['prune-backups']);
+		delete data['prune-backups'];
+	    } else if (data.maxfiles !== undefined) {
+		if (data.maxfiles > 0) {
+		    data['keep-last'] = data.maxfiles;
+		} else {
+		    data['keep-all'] = 1;
+		}
+		delete data.maxfiles;
+	    }
+
+	    if (data['notes-template']) {
+		data['notes-template'] =
+		    PVE.Utils.unEscapeNotesTemplate(data['notes-template']);
+	    }
+
+	    if (data.performance) {
+		Object.assign(data, data.performance);
+		delete data.performance;
+	    }
+
+	    return data;
+	},
+
 	init: function(view) {
 	    let me = this;
+
 	    if (view.isCreate) {
 		me.lookup('modeSelector').setValue('include');
 	    } else {
 		view.load({
 		    success: function(response, _options) {
-			let data = response.result.data;
-
-			// Migrate 'new'-old notification-policy back to
-			// old-old mailnotification. Only should affect
-			// users who used pve-manager from pvetest.
-			// This was a remnant of notifications before the
-			// overhaul.
-			let policy = data['notification-policy'];
-			if (policy === 'always' || policy === 'failure') {
-			    data.mailnotification = policy;
-			}
-
-			if (data.exclude) {
-			    data.vmid = data.exclude;
-			    data.selMode = 'exclude';
-			} else if (data.all) {
-			    data.vmid = '';
-			    data.selMode = 'all';
-			} else if (data.pool) {
-			    data.selMode = 'pool';
-			    data.selPool = data.pool;
-			} else {
-			    data.selMode = 'include';
-			}
-
-			me.getViewModel().set('selMode', data.selMode);
-
-			if (data['prune-backups']) {
-			    Object.assign(data, data['prune-backups']);
-			    delete data['prune-backups'];
-			} else if (data.maxfiles !== undefined) {
-			    if (data.maxfiles > 0) {
-				data['keep-last'] = data.maxfiles;
-			    } else {
-				data['keep-all'] = 1;
-			    }
-			    delete data.maxfiles;
-			}
-
-			if (data['notes-template']) {
-			    data['notes-template'] =
-				PVE.Utils.unEscapeNotesTemplate(data['notes-template']);
-			}
-
-			view.setValues(data);
+			let values = me.prepareValues(response.result.data);
+			view.setValues(values);
 		    },
 		});
 	    }
@@ -207,13 +229,23 @@ Ext.define('PVE.dc.BackupEdit', {
 	data: {
 	    selMode: 'include',
 	    notificationMode: '__default__',
+	    mailto: '',
+	    mailNotification: 'always',
 	},
 
 	formulas: {
 	    poolMode: (get) => get('selMode') === 'pool',
-	    disableVMSelection: (get) => get('selMode') !== 'include' && get('selMode') !== 'exclude',
+	    disableVMSelection: (get) => get('selMode') !== 'include' &&
+		get('selMode') !== 'exclude',
 	    showMailtoFields: (get) =>
 		['auto', 'legacy-sendmail', '__default__'].includes(get('notificationMode')),
+	    enableMailnotificationField: (get) => {
+		let mode = get('notificationMode');
+		let mailto = get('mailto');
+
+		return (['auto', '__default__'].includes(mode) && mailto) ||
+		    mode === 'legacy-sendmail';
+	    },
 	},
     },
 
@@ -318,11 +350,21 @@ Ext.define('PVE.dc.BackupEdit', {
 				    ],
 				    fieldLabel: gettext('Notification mode'),
 				    name: 'notification-mode',
+				    value: '__default__',
 				    cbind: {
 					deleteEmpty: '{!isCreate}',
 				    },
 				    bind: {
 					value: '{notificationMode}',
+				    },
+				},
+				{
+				    xtype: 'textfield',
+				    fieldLabel: gettext('Send email to'),
+				    name: 'mailto',
+				    bind: {
+					hidden: '{!showMailtoFields}',
+					value: '{mailto}',
 				    },
 				},
 				{
@@ -334,15 +376,9 @@ Ext.define('PVE.dc.BackupEdit', {
 					deleteEmpty: '{!isCreate}',
 				    },
 				    bind: {
-					disabled: '{!showMailtoFields}',
-				    },
-				},
-				{
-				    xtype: 'textfield',
-				    fieldLabel: gettext('Send email to'),
-				    name: 'mailto',
-				    bind: {
-					disabled: '{!showMailtoFields}',
+					hidden: '{!showMailtoFields}',
+					disabled: '{!enableMailnotificationField}',
+					value: '{mailNotification}',
 				    },
 				},
 				{
@@ -354,6 +390,11 @@ Ext.define('PVE.dc.BackupEdit', {
 					deleteEmpty: '{!isCreate}',
 				    },
 				    value: 'zstd',
+				    listeners: {
+					change: 'compressionChange',
+					disable: 'compressionDisable',
+					enable: 'compressionEnable',
+				    },
 				},
 				{
 				    xtype: 'pveBackupModeSelector',
@@ -393,18 +434,6 @@ Ext.define('PVE.dc.BackupEdit', {
 				    columnSelection: ['vmid', 'node', 'status', 'name', 'type'],
 				    bind: {
 					disabled: '{disableVMSelection}',
-				    },
-				},
-			    ],
-			    advancedColumn1: [
-				{
-				    xtype: 'proxmoxcheckbox',
-				    fieldLabel: gettext('Repeat missed'),
-				    name: 'repeat-missed',
-				    uncheckedValue: 0,
-				    defaultValue: 0,
-				    cbind: {
-					deleteDefaultValue: '{!isCreate}',
 				    },
 				},
 			    ],
@@ -466,6 +495,14 @@ Ext.define('PVE.dc.BackupEdit', {
 			},
 		    ],
 		},
+		{
+		    xtype: 'pveBackupAdvancedOptionsPanel',
+		    reference: 'backupAdvanced',
+		    title: gettext('Advanced'),
+		    cbind: {
+			isCreate: '{isCreate}',
+		    },
+		},
 	    ],
 	},
     ],
@@ -515,11 +552,13 @@ Ext.define('PVE.dc.BackupView', {
 		return;
 	    }
 
-	    let win = Ext.create('PVE.dc.BackupEdit', {
+	    Ext.create('PVE.dc.BackupEdit', {
+		autoShow: true,
 		jobid: rec.data.id,
+		listeners: {
+		    destroy: () => reload(),
+		},
 	    });
-	    win.on('destroy', reload);
-	    win.show();
 	};
 
 	let run_detail = function() {
@@ -578,7 +617,7 @@ Ext.define('PVE.dc.BackupView', {
 	    delete job['repeat-missed'];
 	    job.all = job.all === true ? 1 : 0;
 
-	    ['performance', 'prune-backups'].forEach(key => {
+	    ['performance', 'prune-backups', 'fleecing'].forEach(key => {
 		if (job[key]) {
 		    job[key] = PVE.Parser.printPropertyString(job[key]);
 		}

@@ -11,6 +11,36 @@ Ext.define('PVE.qemu.DisplayInputPanel', {
 	return { vga: ret };
     },
 
+    viewModel: {
+	data: {
+	    type: '__default__',
+	    clipboard: '__default__',
+	},
+	formulas: {
+	    matchNonGUIOption: function(get) {
+		return get('type').match(/^(serial\d|none)$/);
+	    },
+	    memoryEmptyText: function(get) {
+		let val = get('type');
+		if (val === "cirrus") {
+		    return "4";
+		} else if (val === "std" || val.match(/^qxl\d?$/) || val === "vmware") {
+		    return "16";
+		} else if (val.match(/^virtio/)) {
+		    return "256";
+		} else if (get('matchNonGUIOption')) {
+		    return "N/A";
+		} else {
+		    console.debug("unexpected display type", val);
+		    return Proxmox.Utils.defaultText;
+		}
+	    },
+	    isVNC: get => get('clipboard') === 'vnc',
+	    hideDefaultHint: get => get('isVNC') || get('matchNonGUIOption'),
+	    hideVNCHint: get => !get('isVNC') || get('matchNonGUIOption'),
+	},
+    },
+
     items: [{
 	name: 'type',
 	xtype: 'proxmoxKVComboBox',
@@ -27,29 +57,8 @@ Ext.define('PVE.qemu.DisplayInputPanel', {
 	    }
 	    return true;
 	},
-	listeners: {
-	    change: function(cb, val) {
-		if (!val) {
-		    return;
-		}
-		let memoryfield = this.up('panel').down('field[name=memory]');
-		let disableMemoryField = false;
-
-		if (val === "cirrus") {
-		    memoryfield.setEmptyText("4");
-		} else if (val === "std" || val.match(/^qxl\d?$/) || val === "vmware") {
-		    memoryfield.setEmptyText("16");
-		} else if (val.match(/^virtio/)) {
-		    memoryfield.setEmptyText("256");
-		} else if (val.match(/^(serial\d|none)$/)) {
-		    memoryfield.setEmptyText("N/A");
-		    disableMemoryField = true;
-		} else {
-		    console.debug("unexpected display type", val);
-		    memoryfield.setEmptyText(Proxmox.Utils.defaultText);
-		}
-		memoryfield.setDisabled(disableMemoryField);
-	    },
+	bind: {
+	    value: '{type}',
 	},
     },
     {
@@ -60,7 +69,49 @@ Ext.define('PVE.qemu.DisplayInputPanel', {
 	maxValue: 512,
 	step: 4,
 	name: 'memory',
+	bind: {
+	    emptyText: '{memoryEmptyText}',
+	    disabled: '{matchNonGUIOption}',
+	},
     }],
+
+    advancedItems: [
+	{
+	    xtype: 'proxmoxKVComboBox',
+	    name: 'clipboard',
+	    deleteEmpty: false,
+	    value: '__default__',
+	    fieldLabel: gettext('Clipboard'),
+	    comboItems: [
+		['__default__', Proxmox.Utils.defaultText],
+		['vnc', 'VNC'],
+	    ],
+	    bind: {
+		value: '{clipboard}',
+		disabled: '{matchNonGUIOption}',
+	    },
+	},
+	{
+	    xtype: 'displayfield',
+	    name: 'vncHint',
+	    userCls: 'pmx-hint',
+	    value: gettext('You cannot use the default SPICE clipboard if the VNC Clipboard is selected.') + ' ' +
+		gettext('VNC Clipboard requires spice-tools installed in the Guest-VM.'),
+	    bind: {
+		hidden: '{hideVNCHint}',
+	    },
+	},
+	{
+	    xtype: 'displayfield',
+	    name: 'defaultHint',
+	    userCls: 'pmx-hint',
+	    value: gettext('This option depends on your display type.') + ' ' +
+		gettext('If the display type uses SPICE you are able to use the default SPICE Clipboard.'),
+	    bind: {
+		hidden: '{hideDefaultHint}',
+	    },
+	},
+    ],
 });
 
 Ext.define('PVE.qemu.DisplayEdit', {
