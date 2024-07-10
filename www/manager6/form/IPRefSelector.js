@@ -37,8 +37,10 @@ Ext.define('PVE.form.IPRefSelector', {
 		    calculate: function(v) {
 			if (v.type === 'alias') {
 			    return `${v.scope}/${v.name}`;
-			} else {
+			} else if (v.type === 'ipset') {
 			    return `+${v.scope}/${v.name}`;
+			} else {
+			    return v.ref;
 			}
 		    },
 		},
@@ -53,15 +55,6 @@ Ext.define('PVE.form.IPRefSelector', {
 		direction: 'ASC',
 	    },
 	});
-
-	var disable_query_for_ips = function(f, value) {
-	    if (value === null ||
-		value.match(/^\d/)) { // IP address starts with \d
-		f.queryDelay = 9999999999; // hack: disable with long delay
-	    } else {
-		f.queryDelay = 10;
-	    }
-	};
 
 	var columns = [];
 
@@ -107,7 +100,9 @@ Ext.define('PVE.form.IPRefSelector', {
 	    },
 	});
 
-	me.on('change', disable_query_for_ips);
+	me.on('beforequery', function(queryPlan) {
+	    return !(queryPlan.query === null || queryPlan.query.match(/^\d/));
+	});
 
         me.callParent();
     },

@@ -238,12 +238,6 @@ __PACKAGE__->register_method({
 	return $pkglist;
     }});
 
-my $updates_available_subject_template = "New software packages available ({{hostname}})";
-my $updates_available_body_template = <<EOT;
-The following updates are available:
-{{table updates}}
-EOT
-
 __PACKAGE__->register_method({
     name => 'update_database',
     path => 'update',
@@ -354,12 +348,12 @@ __PACKAGE__->register_method({
 		# matchers.
 		my $metadata_fields = {
 		    type => 'package-updates',
-		    hostname => $hostname,
+		    # Hostname (without domain part)
+		    hostname => PVE::INotify::nodename(),
 		};
 
 		PVE::Notify::info(
-		    $updates_available_subject_template,
-		    $updates_available_body_template,
+		    "package-updates",
 		    $template_data,
 		    $metadata_fields,
 		);
@@ -759,6 +753,7 @@ __PACKAGE__->register_method({
 	push @list, sort $byver grep { /^(?:pve|proxmox)-kernel-/ && $cache->{$_}->{CurrentState} eq 'Installed' } keys %$cache;
 
         my @opt_pack = qw(
+	    amd64-microcode
 	    ceph
 	    criu
 	    dnsmasq
@@ -766,14 +761,17 @@ __PACKAGE__->register_method({
 	    gfs2-utils
 	    ifupdown
 	    ifupdown2
+	    intel-microcode
 	    ksm-control-daemon
 	    ksmtuned
 	    libpve-apiclient-perl
 	    libpve-network-perl
 	    openvswitch-switch
 	    proxmox-backup-file-restore
+	    proxmox-firewall
 	    proxmox-kernel-helper
 	    proxmox-offline-mirror-helper
+	    pve-esxi-import-tools
 	    pve-zsync
 	    zfsutils-linux
 	);

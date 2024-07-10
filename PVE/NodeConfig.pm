@@ -85,12 +85,6 @@ my $confdesc = {
 	maxLength => 64 * 1024,
 	optional => 1,
     },
-    wakeonlan => {
-	type => 'string',
-	description => 'MAC address for wake on LAN',
-	format => 'mac-addr',
-	optional => 1,
-    },
     'startall-onboot-delay' => {
 	description => 'Initial delay in seconds, before starting all the Virtual Guests with on-boot enabled.',
 	type => 'integer',
@@ -99,6 +93,39 @@ my $confdesc = {
 	default => 0,
 	optional => 1,
     },
+};
+
+my $wakeonlan_desc = {
+    mac => {
+	type => 'string',
+	description => 'MAC address for wake on LAN',
+	format => 'mac-addr',
+	format_description => 'MAC address',
+	default_key => 1,
+    },
+    'bind-interface' => {
+	type => 'string',
+	description => 'Bind to this interface when sending wake on LAN packet',
+	default => 'The interface carrying the default route',
+	format => 'pve-iface',
+	format_description => 'bind interface',
+	optional => 1,
+    },
+    'broadcast-address' => {
+	type => 'string',
+	description => 'IPv4 broadcast address to use when sending wake on LAN packet',
+	default => '255.255.255.255',
+	format => 'ipv4',
+	format_description => 'IPv4 broadcast address',
+	optional => 1,
+    },
+};
+
+$confdesc->{wakeonlan} = {
+    type => 'string',
+    description => 'Node specific wake on LAN settings.',
+    format => $wakeonlan_desc,
+    optional => 1,
 };
 
 my $acme_domain_desc = {
@@ -191,6 +218,22 @@ sub write_node_config {
     }
 
     return $raw;
+}
+
+sub get_wakeonlan_config {
+    my ($node_conf) = @_;
+
+    $node_conf //= {};
+
+    my $res = {};
+    if (defined($node_conf->{wakeonlan})) {
+	$res = eval {
+	    PVE::JSONSchema::parse_property_string($wakeonlan_desc, $node_conf->{wakeonlan})
+	};
+	die $@ if $@;
+    }
+
+    return $res;
 }
 
 # we always convert domain values to lower case, since DNS entries are not case

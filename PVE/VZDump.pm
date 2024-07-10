@@ -130,13 +130,37 @@ my $generate_notes = sub {
     return $notes_template;
 };
 
+sub parse_fleecing {
+    my ($param) = @_;
+
+    if (defined(my $fleecing = $param->{fleecing})) {
+	return $fleecing if ref($fleecing) eq 'HASH'; # already parsed
+	$param->{fleecing} = PVE::JSONSchema::parse_property_string('backup-fleecing', $fleecing);
+    }
+
+    return $param->{fleecing};
+}
+
 my sub parse_performance {
     my ($param) = @_;
 
     if (defined(my $perf = $param->{performance})) {
-	return if ref($perf) eq 'HASH'; # already parsed
+	return $perf if ref($perf) eq 'HASH'; # already parsed
 	$param->{performance} = PVE::JSONSchema::parse_property_string('backup-performance', $perf);
     }
+
+    return $param->{performance};
+}
+
+my sub merge_performance {
+    my ($prefer, $fallback) = @_;
+
+    my $res = {};
+    for my $opt (keys PVE::JSONSchema::get_format('backup-performance')->%*) {
+	$res->{$opt} = $prefer->{$opt} // $fallback->{$opt}
+	    if defined($prefer->{$opt}) || defined($fallback->{$opt});
+    }
+    return $res;
 }
 
 my $parse_prune_backups_maxfiles = sub {
@@ -149,7 +173,7 @@ my $parse_prune_backups_maxfiles = sub {
         if defined($maxfiles) && defined($prune_backups);
 
     if (defined($prune_backups)) {
-	return if ref($prune_backups) eq 'HASH'; # already parsed
+	return $prune_backups if ref($prune_backups) eq 'HASH'; # already parsed
 	$param->{'prune-backups'} = PVE::JSONSchema::parse_property_string(
 	    'prune-backups',
 	    $prune_backups
@@ -161,6 +185,8 @@ my $parse_prune_backups_maxfiles = sub {
 	    $param->{'prune-backups'} = { 'keep-all' => 1 };
 	}
     }
+
+    return $param->{'prune-backups'};
 };
 
 sub storage_info {
@@ -277,8 +303,21 @@ sub read_vzdump_defaults {
 	     defined($default) ? ($_ => $default) : ()
 	} keys %$confdesc_for_defaults
     };
+    my $performance_fmt = PVE::JSONSchema::get_format('backup-performance');
+    $defaults->{performance} = {
+	map {
+	    my $default = $performance_fmt->{$_}->{default};
+	    defined($default) ? ($_ => $default) : ()
+	} keys $performance_fmt->%*
+    };
+    my $fleecing_fmt = PVE::JSONSchema::get_format('backup-fleecing');
+    $defaults->{fleecing} = {
+	map {
+	    my $default = $fleecing_fmt->{$_}->{default};
+	    defined($default) ? ($_ => $default) : ()
+	} keys $fleecing_fmt->%*
+    };
     $parse_prune_backups_maxfiles->($defaults, "defaults in VZDump schema");
-    parse_performance($defaults);
 
     my $raw;
     eval { $raw = PVE::Tools::file_get_contents($fn); };
@@ -304,10 +343,15 @@ sub read_vzdump_defaults {
 	$res->{mailto} = [ @mailto ];
     }
     $parse_prune_backups_maxfiles->($res, "options in '$fn'");
+    parse_fleecing($res);
     parse_performance($res);
 
-    foreach my $key (keys %$defaults) {
-	$res->{$key} = $defaults->{$key} if !defined($res->{$key});
+    for my $key (keys $defaults->%*) {
+	if (!defined($res->{$key})) {
+	    $res->{$key} = $defaults->{$key};
+	} elsif ($key eq 'performance') {
+	    $res->{$key} = merge_performance($res->{$key}, $defaults->{$key});
+	}
     }
 
     if (defined($res->{storage}) && defined($res->{dumpdir})) {
@@ -433,20 +477,6 @@ my sub get_hostname {
     return $hostname;
 }
 
-my $subject_template = "vzdump backup status ({{hostname}}): {{status-text}}";
-
-my $body_template = <<EOT;
-{{error-message}}
-{{heading-1 "Details"}}
-{{table guest-table}}
-{{#verbatim}}
-Total running time: {{duration total-time}}
-Total size: {{human-bytes total-size}}
-{{/verbatim}}
-{{heading-1 "Logs"}}
-{{verbatim-monospaced logs}}
-EOT
-
 use constant MAX_LOG_SIZE => 1024*1024;
 
 sub send_notification {
@@ -486,10 +516,9 @@ sub send_notification {
 	    "See Task History for details!\n";
     };
 
-    my $hostname = get_hostname();
-
     my $notification_props = {
-	"hostname" => $hostname,
+	# Hostname, might include domain part
+	"hostname" => get_hostname(),
 	"error-message" => $err,
 	"guest-table" => build_guest_table($tasklist),
 	"logs" => $text_log_part,
@@ -503,7 +532,8 @@ sub send_notification {
 	# backup job id here... (I think pvescheduler would need
 	# to pass that to the vzdump call?)
 	type => "vzdump",
-	hostname => $hostname,
+	# Hostname (without domain part)
+	hostname => PVE::INotify::nodename(),
     };
 
     my $severity = $failed ? "error" : "info";
@@ -544,8 +574,7 @@ sub send_notification {
 
 	    PVE::Notify::notify(
 		$severity,
-		$subject_template,
-		$body_template,
+		"vzdump",
 		$notification_props,
 		$fields,
 		$notification_config
@@ -556,8 +585,7 @@ sub send_notification {
 	# no email addresses were configured.
 	PVE::Notify::notify(
 	    $severity,
-	    $subject_template,
-	    $body_template,
+	    "vzdump",
 	    $notification_props,
 	    $fields,
 	);
@@ -592,8 +620,10 @@ sub new {
 	if ($k eq 'dumpdir' || $k eq 'storage') {
 	    $opts->{$k} = $defaults->{$k} if !defined ($opts->{dumpdir}) &&
 		!defined ($opts->{storage});
-	} else {
-	    $opts->{$k} = $defaults->{$k} if !defined ($opts->{$k});
+	} elsif (!defined($opts->{$k})) {
+	    $opts->{$k} = $defaults->{$k};
+	} elsif ($k eq 'performance') {
+	    $opts->{$k} = merge_performance($opts->{$k}, $defaults->{$k});
 	}
     }
 
@@ -1054,7 +1084,7 @@ sub exec_backup_task {
 	$task->{mode} = $mode;
 
    	debugmsg ('info', "backup mode: $mode", $logfd);
-	debugmsg ('info', "bandwidth limit: $opts->{bwlimit} KB/s", $logfd)  if $opts->{bwlimit};
+	debugmsg ('info', "bandwidth limit: $opts->{bwlimit} KiB/s", $logfd)  if $opts->{bwlimit};
 	debugmsg ('info', "ionice priority: $opts->{ionice}", $logfd);
 
 	if ($mode eq 'stop') {
@@ -1273,6 +1303,7 @@ sub exec_backup_task {
 	debugmsg ('info', "Failed at " . strftime("%F %H:%M:%S", localtime()));
 
 	eval { $self->run_hook_script ('backup-abort', $task, $logfd); };
+	debugmsg('warn', $@) if $@; # message already contains command with phase name
 
     } else {
 	$task->{state} = 'ok';
@@ -1304,6 +1335,7 @@ sub exec_backup_task {
     }
 
     eval { $self->run_hook_script ('log-end', $task); };
+    debugmsg('warn', $@) if $@; # message already contains command with phase name
 
     die $err if $err && $err =~ m/^interrupted by signal$/;
 }
@@ -1453,6 +1485,7 @@ sub verify_vzdump_parameters {
 	if defined($param->{'prune-backups'}) && defined($param->{maxfiles});
 
     $parse_prune_backups_maxfiles->($param, 'CLI parameters');
+    parse_fleecing($param);
     parse_performance($param);
 
     if (my $template = $param->{'notes-template'}) {

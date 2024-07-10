@@ -1,3 +1,182 @@
+pve-manager (8.2.4) bookworm; urgency=medium
+
+  * pvestatd: clear trailing newlines
+
+  * www: advanced backup: add pbs change detection mode selector
+
+  * vzdump: add pbs-change-detection-mode to config template
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 10 Jun 2024 13:59:52 +0200
+
+pve-manager (8.2.3) bookworm; urgency=medium
+
+  * update shipped appliance info index
+
+  * api: add proxmox-firewall to versions pkg list
+
+  * gitignore: ignore any test artifacts
+
+  * tests: remove vzdump_notification test
+
+  * notifications: use named templates instead of in-code templates
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 04 Jun 2024 11:08:41 +0200
+
+pve-manager (8.2.2) bookworm; urgency=medium
+
+  * ui: fix form-reset behavior of backup job editor
+
+  * ui: backup jobs: fix fleecing parameters for 'run now' button
+
+  * ui: mobile: fix login for users that have a TOTP based second factor set up
+
+  * ui: mobile: show is setup is lacking the best recommendations for
+    enterprise production set ups
+
+  * vzdump: also warn when hook script fails for backup-abort or log-end phase
+
+  * ui: user edit: protect user's TFA settings for new factor variants
+
+  * fix #5251: ui: login: set autocomplete on password and user
+
+  * ui: esxi importer: try to better convey what live-import does
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 23 Apr 2024 21:33:31 +0200
+
+pve-manager (8.2.1) bookworm; urgency=medium
+
+  * d/control: add proxmox-firewall as recommended dependency
+
+  * ui: backup job: correctly align descriptions with fields in advanced
+    options
+
+  * ui: backup job: rework empty-text for advanced fields again, mention schema
+    default values at the end of the descriptions
+
+  * ui: acme eab: handle missing meta field in directory response
+
+  * ui: qemu: add clipboard selection as advanced option to display editor
+
+  * ui: qemu: allow one to enable a vIOMMU (emulated IOMMU) in the machine
+    editor
+
+  * ui: backup job: allow setting up fleecing for a job in advanced config
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 22 Apr 2024 19:36:21 +0200
+
+pve-manager (8.2.0) bookworm; urgency=medium
+
+  * node: firewall options: add setting to select new nftables-based firewall
+    implementation tech preview
+
+  * ui: virtual machines: add Windows Server 2025 to OS types
+
+  * ui: browser local settings: add new edit-notes-on-double-click option
+
+  * fix #4474: ui: guest stop: offer to overrule active shutdown tasks
+
+  * ui: backup job: disable 'mailtnotification' field if the notification mode
+    is set to 'auto'
+
+  * ui: backup job: switch order of 'mailto' and 'mailnotification' field
+
+  * ui: sdn: QinQ: vlan: properly validate bridge name
+
+  * ui: sdn: vlan: fix indentation in vlan edit dialogue
+
+ -- Proxmox Support Team <support@proxmox.com>  Sun, 21 Apr 2024 13:03:54 +0200
+
+pve-manager (8.1.11) bookworm; urgency=medium
+
+  * fix #4136: backup: implement fleecing option for improved guest
+    stability when the backup target is slow
+
+  * api: notifications: add missing 'smtp' to index
+
+  * use SSH command helper for pvesh and to get VNC connection info to benefit
+    from improvements like known host key pinning
+
+  * system report: list held-back and pinned APT packages and priorities of APT
+    sources
+
+  * system report: avoid printing the contents of certain wrongly named
+    configuration files
+
+  * system report: output cluster-wide job configuration
+
+  * system report: output kernel command line from current boot
+
+  * ui: acl: allow searching by typing in the group selector
+
+  * api: apt versions: track optional amd64-/intel-microcode and
+    pve-esxi-import-tools packages
+
+  * ui: acme: add External Account Binding (EAB) related fields
+
+  * fix #5093: ui: acme: expose custom directory option
+
+  * d/postinst: make deb-systemd-invoke non-fatal to avoid potentially
+    breaking an update for unrelated reasons
+
+  * fix #4513: ui: backup job: add tab for advanced options
+
+  * vzdump: improve handling performance settings, by using a per-property
+    fallback and honoring the schema defaults
+
+  * ui: lxc: add edit window for device passthrough
+
+  * ui: lxc: add firewall log view filtering
+
+  * fix #4963: ui: firewall: fix edge case where editing firewall rules using
+    ips / cidrs would be broken
+
+  * fix #1905: ui: VM: allow moving unused disks
+
+  * fix #4759: ceph: configure ceph-crash.service and its key
+
+  * sdn: evpn: allow empty primary exit node in zone form which was broken by a
+    change in libpve-network-perl
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 19 Apr 2024 16:24:37 +0200
+
+pve-manager (8.1.10) bookworm; urgency=medium
+
+  * guest import: allow setting VLAN-tag for network devices in advanced tab
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 28 Mar 2024 19:57:05 +0100
+
+pve-manager (8.1.9) bookworm; urgency=medium
+
+  * ui: guest import: actually copy the initial guest config state before
+    applying value overrides to avoid a old state being send if one edits the
+    values after checking the resulting config tab before hand
+
+  * fix #5255: node: wol: add optional bind-interface where magic packet is
+    sent on
+
+  * fix #5255: node: wol: make broadcast address configurable
+
+  * fix #5337: ui: parse a port in the server field
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 28 Mar 2024 18:12:47 +0100
+
+pve-manager (8.1.8) bookworm; urgency=medium
+
+  * ui: parser: recognize Intel E1000E as network card
+
+  * ui: network card selector: add Intel E1000E as choosable model
+
+  * ui: guest import: allow setting mac addresses to newly generated unique
+    ones
+
+  * ui: guest import: use box-label style for prepare-for-virtio checkbox
+
+  * ui: guest import: fine tune icons
+
+  * ui: guest import: validate that selected VMID does not exist yet
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 27 Mar 2024 14:33:49 +0100
+
 pve-manager (8.1.7) bookworm; urgency=medium
 
   * fix #5293: ceph status: fix division-by-zero when calculating usage
