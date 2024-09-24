@@ -399,7 +399,7 @@ __PACKAGE__->register_method({
 	type => "object",
 	additionalProperties => 1,
 	properties => {
-	    # TODO: document remaing ones
+	    # TODO: document remaining ones
 	    'boot-info' => {
 		description => "Meta-information about the boot mode.",
 		type => 'object',
@@ -417,7 +417,7 @@ __PACKAGE__->register_method({
 		},
 	    },
 	    'current-kernel' => {
-		description => "The uptime of the system in seconds.",
+		description => "Meta-information about the currently booted kernel of this node.",
 		type => 'object',
 		properties => {
 		    sysname => {
@@ -906,6 +906,7 @@ __PACKAGE__->register_method({
 	check => ['perm', '/nodes/{node}', [ 'Sys.Syslog' ]],
     },
     protected => 1,
+    download_allowed => 1,
     parameters => {
 	additionalProperties => 0,
 	properties => {

@@ -486,17 +486,19 @@ Ext.define('PVE.qemu.HardwareView', {
 		return msg;
 	    },
 	    handler: function(btn, e, rec) {
+		let params = { 'delete': rec.data.key };
+		if (btn.RESTMethod === 'POST') {
+		    params.background_delay = 5;
+		}
 		Proxmox.Utils.API2Request({
 		    url: '/api2/extjs/' + baseurl,
 		    waitMsgTarget: me,
 		    method: btn.RESTMethod,
-		    params: {
-			'delete': rec.data.key,
-		    },
+		    params: params,
 		    callback: () => me.reload(),
 		    failure: response => Ext.Msg.alert('Error', response.htmlStatus),
 		    success: function(response, options) {
-			if (btn.RESTMethod === 'POST') {
+			if (btn.RESTMethod === 'POST' && response.result.data !== null) {
 			    Ext.create('Proxmox.window.TaskProgress', {
 				autoShow: true,
 				upid: response.result.data,
@@ -591,7 +593,7 @@ Ext.define('PVE.qemu.HardwareView', {
 	    me.down('#addNet').setDisabled(noVMConfigNetPerm || isAtLimit('net'));
 	    me.down('#addRng').setDisabled(noSysConsolePerm || isAtLimit('rng'));
 	    efidisk_menuitem.setDisabled(noVMConfigDiskPerm || isAtLimit('efidisk'));
-	    me.down('#addTpmState').setDisabled(noSysConsolePerm || isAtLimit('tpmstate'));
+	    me.down('#addTpmState').setDisabled(noVMConfigDiskPerm || isAtLimit('tpmstate'));
 	    me.down('#addCloudinitDrive').setDisabled(noVMConfigCDROMPerm || noVMConfigCloudinitPerm || hasCloudInit);
 
 	    if (!rec) {
@@ -606,6 +608,7 @@ Ext.define('PVE.qemu.HardwareView', {
 
 	    const deleted = !!rec.data.delete;
 	    const pending = deleted || me.hasPendingChanges(key);
+	    const isRunning = me.pveSelNode.data.running;
 
 	    const isCloudInit = isCloudInitKey(value);
 	    const isCDRom = value && !!value.toString().match(/media=cdrom/);
@@ -614,7 +617,7 @@ Ext.define('PVE.qemu.HardwareView', {
 	    const isUsedDisk = !isUnusedDisk && row.isOnStorageBus && !isCDRom;
 	    const isDisk = isUnusedDisk || isUsedDisk;
 	    const isEfi = key === 'efidisk0';
-	    const tpmMoveable = key === 'tpmstate0' && !me.pveSelNode.data.running;
+	    const tpmMoveable = key === 'tpmstate0' && !isRunning;
 
 	    let cannotDelete = deleted || row.never_delete;
 	    cannotDelete ||= isCDRom && !cdromCap;
@@ -623,7 +626,7 @@ Ext.define('PVE.qemu.HardwareView', {
 	    remove_btn.setDisabled(cannotDelete);
 
 	    remove_btn.setText(isUsedDisk && !isCloudInit ? remove_btn.altText : remove_btn.defaultText);
-	    remove_btn.RESTMethod = isUnusedDisk ? 'POST':'PUT';
+	    remove_btn.RESTMethod = isUnusedDisk || (isDisk && isRunning) ? 'POST' : 'PUT';
 
 	    edit_btn.setDisabled(
 	        deleted || !row.editor || isCloudInit || (isCDRom && !cdromCap) || (isDisk && !diskCap));

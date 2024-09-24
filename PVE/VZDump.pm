@@ -27,6 +27,17 @@ use PVE::VZDump::Plugin;
 use PVE::Tools qw(extract_param split_list);
 use PVE::API2Tools;
 
+# section config header/ID, this needs to cover UUIDs, user given values
+# and `$digest:$counter` values converted from vzdump.cron
+# TODO move to a better place once cycle
+# Jobs::VZDump -> API2::VZDump -> API2::Backups -> Jobs::VZDump is broken..
+PVE::JSONSchema::register_standard_option('pve-backup-jobid', {
+    type => 'string',
+    description => "The job ID.",
+    maxLength => 50,
+    pattern => '\S+',
+});
+
 my @posix_filesystems = qw(ext3 ext4 nfs nfs4 reiserfs xfs);
 
 my $lockfile = '/var/run/vzdump.lock';
@@ -483,6 +494,7 @@ sub send_notification {
     my ($self, $tasklist, $total_time, $err, $detail_pre, $detail_post) = @_;
 
     my $opts = $self->{opts};
+    my $job_id = $opts->{'job-id'};
     my $mailto = $opts->{mailto};
     my $cmdline = $self->{cmdline};
     my $policy = $opts->{mailnotification} // 'always';
@@ -516,10 +528,9 @@ sub send_notification {
 	    "See Task History for details!\n";
     };
 
-    my $hostname = get_hostname();
-
     my $notification_props = {
-	"hostname" => $hostname,
+	# Hostname, might include domain part
+	"hostname" => get_hostname(),
 	"error-message" => $err,
 	"guest-table" => build_guest_table($tasklist),
 	"logs" => $text_log_part,
@@ -529,12 +540,12 @@ sub send_notification {
     };
 
     my $fields = {
-	# TODO: There is no straight-forward way yet to get the
-	# backup job id here... (I think pvescheduler would need
-	# to pass that to the vzdump call?)
 	type => "vzdump",
-	hostname => $hostname,
+	# Hostname (without domain part)
+	hostname => PVE::INotify::nodename(),
     };
+    # Add backup-job metadata field in case this is a backup job.
+    $fields->{'job-id'} = $job_id if $job_id;
 
     my $severity = $failed ? "error" : "info";
     my $email_configured = $mailto && scalar(@$mailto);
@@ -1084,7 +1095,7 @@ sub exec_backup_task {
 	$task->{mode} = $mode;
 
    	debugmsg ('info', "backup mode: $mode", $logfd);
-	debugmsg ('info', "bandwidth limit: $opts->{bwlimit} KB/s", $logfd)  if $opts->{bwlimit};
+	debugmsg ('info', "bandwidth limit: $opts->{bwlimit} KiB/s", $logfd)  if $opts->{bwlimit};
 	debugmsg ('info', "ionice priority: $opts->{ionice}", $logfd);
 
 	if ($mode eq 'stop') {
