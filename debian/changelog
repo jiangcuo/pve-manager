@@ -499,6 +499,12 @@ pve-manager (8.3.2+port) bookworm; urgency=medium
 
  -- Jiangcuo <jiangcuo@lierfang.com>  Fri, 27 Dec 2024 05:23:21 +0800
 
+pve-manager (8.3.2+port) bookworm; urgency=medium
+
+  * ui: ovmf as default bios
+
+ -- Jiangcuo <jiangcuo@lierfang.com>  Fri, 27 Dec 2024 05:23:21 +0800
+
 pve-manager (8.3.2) bookworm; urgency=medium
 
   * api: network: add return schema for interface listing
