@@ -524,25 +524,17 @@ Ext.define('PVE.Utils', {
         render_as_property_string: (v) =>
             !v ? Proxmox.Utils.defaultText : PVE.Parser.printPropertyString(v),
 
-        render_scsihw: function (value) {
-            if (!value || value === '__default__') {
-                return Proxmox.Utils.defaultText + ' (LSI 53C895A)';
-            } else if (value === 'lsi') {
-                return 'LSI 53C895A';
-            } else if (value === 'lsi53c810') {
-                return 'LSI 53C810';
-            } else if (value === 'megasas') {
-                return 'MegaRAID SAS 8708EM2';
-            } else if (value === 'virtio-scsi-pci') {
-                return 'VirtIO SCSI';
-            } else if (value === 'virtio-scsi-single') {
-                return 'VirtIO SCSI single';
-            } else if (value === 'pvscsi') {
-                return 'VMware PVSCSI';
-            } else {
-                return value;
-            }
-        },
+    render_scsihw: function(value) {
+	if (!value || value === '__default__') {
+	    return Proxmox.Utils.defaultText + '(VirtIO SCSI)';
+	} else if (value === 'virtio-scsi-pci') {
+	    return 'VirtIO SCSI';
+	} else if (value === 'virtio-scsi-single') {
+	    return 'VirtIO SCSI single';
+	} else {
+	    return value;
+	}
+    },
 
         render_spice_enhancements: function (values) {
             let props = PVE.Parser.parsePropertyString(values);
