@@ -168,7 +168,7 @@ Ext.define('PVE.qemu.HardwareView', {
 		    let ostype = me.getObjectValue('ostype', undefined, pending);
 		    if (PVE.Utils.is_windows(ostype) &&
 			(!value || value === 'pc' || value === 'q35')) {
-			return value === 'q35' ? 'pc-q35-5.1' : 'pc-i440fx-5.1';
+			return value === 'q35' ? 'pc-q35-5.1' : 'virt';
 		    }
 		    return PVE.Utils.render_qemu_machine(value);
 		},

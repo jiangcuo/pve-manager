@@ -190,7 +190,7 @@ Ext.define('PVE.qemu.CreateWizard', {
 		    bind: {
 			nodename: '{nodename}',
 		    },
-		    confid: 'ide2',
+		    confid: 'scsi2',
 		    insideWizard: true,
 		},
 		{

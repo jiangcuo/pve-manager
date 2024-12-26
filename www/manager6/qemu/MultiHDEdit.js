@@ -7,7 +7,7 @@ Ext.define('PVE.qemu.MultiHDPanel', {
     controller: {
 	xclass: 'Ext.app.ViewController',
 
-	// maxCount is the sum of all controller ids - 1 (ide2 is fixed in the wizard)
+	// maxCount is the sum of all controller ids - 1 (scsi2 is fixed in the wizard)
 	maxCount: Object.values(PVE.Utils.diskControllerMaxIDs)
 		.reduce((previous, current) => previous+current, 0) - 1,
 
@@ -38,7 +38,7 @@ Ext.define('PVE.qemu.MultiHDPanel', {
 	    let vm = me.getViewModel();
 
 	    let res = {
-		ide2: 'media=cdrom',
+		scsi2: 'media=cdrom',
 		scsihw: vm.get('current.scsihw'),
 		ostype: vm.get('current.ostype'),
 	    };
