@@ -6,8 +6,10 @@ export VERSION = $(DEB_VERSION_UPSTREAM_REVISION)
 
 BUILDDIR = $(PACKAGE)-$(DEB_VERSION_UPSTREAM)
 
+ARCH:=$(shell dpkg-architecture -qDEB_BUILD_ARCH)
+
 DSC=$(PACKAGE)_$(DEB_VERSION).dsc
-DEB=$(PACKAGE)_$(DEB_VERSION)_all.deb
+DEB=$(PACKAGE)_$(DEB_VERSION)_$(ARCH).deb
 
 DESTDIR=
 SUBDIRS = aplinfo PVE bin www services configs network-hooks test templates
