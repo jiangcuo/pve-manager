@@ -109,7 +109,13 @@ Ext.define('PVE.node.StatusView', {
 		    return data.kversion;
 		}
 		let kernel = data['current-kernel'];
-		let buildDate = kernel.version.match(/\((.+)\)\s*$/)?.[1] ?? 'unknown';
+		let buildDate;
+		try {
+		    buildDate = kernel.version.match(/\((.+)\)\s*$/)[1] ?? 'unknown';
+		} catch {
+		    // Patch for some kernels not match (date).
+		    buildDate = kernel.version ?? 'unknown';
+		}
 		return `${kernel.sysname} ${kernel.release} (${buildDate})`;
 	    },
 	    value: '',
@@ -121,7 +127,7 @@ Ext.define('PVE.node.StatusView', {
 	    textField: 'boot-info',
 	    renderer: boot => {
 		if (boot.mode === 'legacy-bios') {
-		    return 'Legacy BIOS';
+		    return 'U-BOOT';
 		} else if (boot.mode === 'efi') {
 		    return `EFI${boot.secureboot ? ' (Secure Boot)' : ''}`;
 		}
