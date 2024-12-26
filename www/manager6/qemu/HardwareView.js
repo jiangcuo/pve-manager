@@ -151,94 +151,92 @@ Ext.define('PVE.qemu.HardwareView', {
                         res += ' [cpuaffinity=' + cpuaffinity + ']';
                     }
 
-                    return res;
-                },
-            },
-            bios: {
-                header: 'BIOS',
-                group: 4,
-                never_delete: true,
-                editor: caps.vms['VM.Config.Options'] ? 'PVE.qemu.BiosEdit' : undefined,
-                defaultValue: '',
-                iconCls: 'microchip',
-                renderer: PVE.Utils.render_qemu_bios,
-            },
-            vga: {
-                header: gettext('Display'),
-                editor: caps.vms['VM.Config.HWType'] ? 'PVE.qemu.DisplayEdit' : undefined,
-                never_delete: true,
-                iconCls: 'desktop',
-                group: 5,
-                defaultValue: '',
-                renderer: PVE.Utils.render_kvm_vga_driver,
-            },
-            machine: {
-                header: gettext('Machine'),
-                editor: caps.vms['VM.Config.HWType'] ? 'PVE.qemu.MachineEdit' : undefined,
-                iconCls: 'cogs',
-                never_delete: true,
-                group: 6,
-                defaultValue: '',
-                renderer: function (value, metaData, record, rowIndex, colIndex, store, pending) {
-                    let ostype = me.getObjectValue('ostype', undefined, pending);
-                    if (
-                        PVE.Utils.is_windows(ostype) &&
-                        (!value || value === 'pc' || value === 'q35')
-                    ) {
-                        return value === 'q35' ? 'pc-q35-5.1' : 'pc-i440fx-5.1';
-                    }
-                    return PVE.Utils.render_qemu_machine(value);
-                },
-            },
-            scsihw: {
-                header: gettext('SCSI Controller'),
-                iconCls: 'database',
-                editor: caps.vms['VM.Config.Options'] ? 'PVE.qemu.ScsiHwEdit' : undefined,
-                renderer: PVE.Utils.render_scsihw,
-                group: 7,
-                never_delete: true,
-                defaultValue: '',
-            },
-            vmstate: {
-                header: gettext('Hibernation VM State'),
-                iconCls: 'download',
-                del_extra_msg: gettext('The saved VM state will be permanently lost.'),
-                group: 100,
-            },
-            cores: {
-                visible: false,
-            },
-            cpu: {
-                visible: false,
-            },
-            numa: {
-                visible: false,
-            },
-            balloon: {
-                visible: false,
-            },
-            hotplug: {
-                visible: false,
-            },
-            vcpus: {
-                visible: false,
-            },
-            cpuunits: {
-                visible: false,
-            },
-            cpulimit: {
-                visible: false,
-            },
-            shares: {
-                visible: false,
-            },
-            ostype: {
-                visible: false,
-            },
-            affinity: {
-                visible: false,
-            },
-        };
+		    return res;
+		},
+	    },
+	    bios: {
+		header: 'BIOS',
+		group: 4,
+		never_delete: true,
+		editor: caps.vms['VM.Config.Options'] ? 'PVE.qemu.BiosEdit' : undefined,
+		defaultValue: '',
+		iconCls: 'microchip',
+		renderer: PVE.Utils.render_qemu_bios,
+	    },
+	    vga: {
+		header: gettext('Display'),
+		editor: caps.vms['VM.Config.HWType'] ? 'PVE.qemu.DisplayEdit' : undefined,
+		never_delete: true,
+		iconCls: 'desktop',
+		group: 5,
+		defaultValue: '',
+		renderer: PVE.Utils.render_kvm_vga_driver,
+	    },
+	    machine: {
+		header: gettext('Machine'),
+		editor: caps.vms['VM.Config.HWType'] ? 'PVE.qemu.MachineEdit' : undefined,
+		iconCls: 'cogs',
+		never_delete: true,
+		group: 6,
+		defaultValue: '',
+		renderer: function(value, metaData, record, rowIndex, colIndex, store, pending) {
+		    let ostype = me.getObjectValue('ostype', undefined, pending);
+		    if (PVE.Utils.is_windows(ostype) &&
+			(!value || value === 'pc' || value === 'q35')) {
+			return value === 'q35' ? 'pc-q35-5.1' : 'virt';
+		    }
+		    return PVE.Utils.render_qemu_machine(value);
+		},
+	    },
+	    scsihw: {
+		header: gettext('SCSI Controller'),
+		iconCls: 'database',
+		editor: caps.vms['VM.Config.Options'] ? 'PVE.qemu.ScsiHwEdit' : undefined,
+		renderer: PVE.Utils.render_scsihw,
+		group: 7,
+		never_delete: true,
+		defaultValue: '',
+	    },
+	    vmstate: {
+		header: gettext('Hibernation VM State'),
+		iconCls: 'download',
+		del_extra_msg: gettext('The saved VM state will be permanently lost.'),
+		group: 100,
+	    },
+	    cores: {
+		visible: false,
+	    },
+	    cpu: {
+		visible: false,
+	    },
+	    numa: {
+		visible: false,
+	    },
+	    balloon: {
+		visible: false,
+	    },
+	    hotplug: {
+		visible: false,
+	    },
+	    vcpus: {
+		visible: false,
+	    },
+	    cpuunits: {
+		visible: false,
+	    },
+	    cpulimit: {
+		visible: false,
+	    },
+	    shares: {
+		visible: false,
+	    },
+	    ostype: {
+		visible: false,
+	    },
+	    affinity: {
+		visible: false,
+	    },
+	};
 
         PVE.Utils.forEachBus(undefined, function (type, id) {
             let confid = type + id;

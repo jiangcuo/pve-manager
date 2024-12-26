@@ -172,101 +172,99 @@ Ext.define('PVE.qemu.CreateWizard', {
                 delete values.up;
                 delete values.down;
 
-                return values;
-            },
-        },
-        {
-            xtype: 'container',
-            layout: 'hbox',
-            defaults: {
-                flex: 1,
-                padding: '0 10',
-            },
-            title: gettext('OS'),
-            items: [
-                {
-                    xtype: 'pveQemuCDInputPanel',
-                    bind: {
-                        nodename: '{nodename}',
-                    },
-                    confid: 'ide2',
-                    insideWizard: true,
-                },
-                {
-                    xtype: 'pveQemuOSTypePanel',
-                    insideWizard: true,
-                    bind: {
-                        nodename: '{nodename}',
-                    },
-                },
-            ],
-        },
-        {
-            xtype: 'pveQemuSystemPanel',
-            title: gettext('System'),
-            isCreate: true,
-            insideWizard: true,
-        },
-        {
-            xtype: 'pveMultiHDPanel',
-            bind: {
-                nodename: '{nodename}',
-            },
-            title: gettext('Disks'),
-        },
-        {
-            xtype: 'pveQemuProcessorPanel',
-            insideWizard: true,
-            title: gettext('CPU'),
-        },
-        {
-            xtype: 'pveQemuMemoryPanel',
-            insideWizard: true,
-            title: gettext('Memory'),
-        },
-        {
-            xtype: 'pveQemuNetworkInputPanel',
-            bind: {
-                nodename: '{nodename}',
-            },
-            title: gettext('Network'),
-            insideWizard: true,
-        },
-        {
-            title: gettext('Confirm'),
-            layout: 'fit',
-            items: [
-                {
-                    xtype: 'grid',
-                    store: {
-                        model: 'KeyValue',
-                        sorters: [
-                            {
-                                property: 'key',
-                                direction: 'ASC',
-                            },
-                        ],
-                    },
-                    columns: [
-                        { header: 'Key', width: 150, dataIndex: 'key' },
-                        { header: 'Value', flex: 1, dataIndex: 'value', renderer: Ext.htmlEncode },
-                    ],
-                },
-            ],
-            dockedItems: [
-                {
-                    xtype: 'proxmoxcheckbox',
-                    name: 'start',
-                    dock: 'bottom',
-                    margin: '5 0 0 0',
-                    boxLabel: gettext('Start after created'),
-                },
-            ],
-            listeners: {
-                show: function (panel) {
-                    let wizard = this.up('window');
-                    var kv = wizard.getValues();
-                    var data = [];
+		return values;
+	    },
+	},
+	{
+	    xtype: 'container',
+	    layout: 'hbox',
+	    defaults: {
+		flex: 1,
+		padding: '0 10',
+	    },
+	    title: gettext('OS'),
+	    items: [
+		{
+		    xtype: 'pveQemuCDInputPanel',
+		    bind: {
+			nodename: '{nodename}',
+		    },
+		    confid: 'scsi2',
+		    insideWizard: true,
+		},
+		{
+		    xtype: 'pveQemuOSTypePanel',
+		    insideWizard: true,
+		    bind: {
+			nodename: '{nodename}',
+		    },
+		},
+	    ],
+	},
+	{
+	    xtype: 'pveQemuSystemPanel',
+	    title: gettext('System'),
+	    isCreate: true,
+	    insideWizard: true,
+	},
+	{
+	    xtype: 'pveMultiHDPanel',
+	    bind: {
+		nodename: '{nodename}',
+	    },
+	    title: gettext('Disks'),
+	},
+	{
+	    xtype: 'pveQemuProcessorPanel',
+	    insideWizard: true,
+	    title: gettext('CPU'),
+	},
+	{
+	    xtype: 'pveQemuMemoryPanel',
+	    insideWizard: true,
+	    title: gettext('Memory'),
+	},
+	{
+	    xtype: 'pveQemuNetworkInputPanel',
+	    bind: {
+		nodename: '{nodename}',
+	    },
+	    title: gettext('Network'),
+	    insideWizard: true,
+	},
+	{
+	    title: gettext('Confirm'),
+	    layout: 'fit',
+	    items: [
+		{
+		    xtype: 'grid',
+		    store: {
+			model: 'KeyValue',
+			sorters: [{
+			    property: 'key',
+			    direction: 'ASC',
+			}],
+		    },
+		    columns: [
+			{ header: 'Key', width: 150, dataIndex: 'key' },
+			{ header: 'Value', flex: 1, dataIndex: 'value' },
+		    ],
+		},
+	    ],
+	    dockedItems: [
+		{
+		    xtype: 'proxmoxcheckbox',
+		    name: 'start',
+		    dock: 'bottom',
+		    margin: '5 0 0 0',
+		    boxLabel: gettext('Start after created'),
+		},
+	    ],
+	    listeners: {
+		show: function(panel) {
+		    let wizard = this.up('window');
+		    var kv = wizard.getValues();
+		    var data = [];
 
                     let boot = wizard.calculateBootOrder(kv);
                     if (boot) {

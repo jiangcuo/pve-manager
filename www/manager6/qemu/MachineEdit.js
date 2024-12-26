@@ -13,35 +13,35 @@ Ext.define('PVE.qemu.MachineInputPanel', {
     },
 
     controller: {
-        xclass: 'Ext.app.ViewController',
-        control: {
-            'combobox[name=machine]': {
-                change: 'onMachineChange',
-            },
-        },
-        onMachineChange: function (field, value) {
-            let me = this;
-            let version = me.lookup('version');
-            let store = version.getStore();
-            let oldRec = store.findRecord('id', version.getValue(), 0, false, false, true);
-            let type = value === 'q35' ? 'q35' : 'i440fx';
-            store.clearFilter();
-            store.addFilter((val) => val.data.id === 'latest' || val.data.type === type);
-            if (!me.getView().isWindows) {
-                version.setValue('latest');
-            } else {
-                store.isWindows = true;
-                if (!oldRec) {
-                    return;
-                }
-                let oldVers = oldRec.data.version;
-                // we already filtered by correct type, so just check version property
-                let rec = store.findRecord('version', oldVers, 0, false, false, true);
-                if (rec) {
-                    version.select(rec);
-                }
-            }
-        },
+	xclass: 'Ext.app.ViewController',
+	control: {
+	    'combobox[name=machine]': {
+		change: 'onMachineChange',
+	    },
+	},
+	onMachineChange: function(field, value) {
+	    let me = this;
+	    let version = me.lookup('version');
+	    let store = version.getStore();
+	    let oldRec = store.findRecord('id', version.getValue(), 0, false, false, true);
+	    let type = value === 'q35' ? 'q35' : 'virt';
+	    store.clearFilter();
+	    store.addFilter(val => val.data.id === 'latest' || val.data.type === type);
+	    if (!me.getView().isWindows) {
+		version.setValue('latest');
+	    } else {
+		store.isWindows = true;
+		if (!oldRec) {
+		    return;
+		}
+		let oldVers = oldRec.data.version;
+		// we already filtered by correct type, so just check version property
+		let rec = store.findRecord('version', oldVers, 0, false, false, true);
+		if (rec) {
+		    version.select(rec);
+		}
+	    }
+	},
     },
 
     onGetValues: function (values) {
@@ -73,13 +73,13 @@ Ext.define('PVE.qemu.MachineInputPanel', {
             values.machine = '__default__';
         }
 
-        if (me.isWindows) {
-            if (values.machine === '__default__') {
-                values.version = 'pc-i440fx-5.1';
-            } else if (values.machine === 'q35') {
-                values.version = 'pc-q35-5.1';
-            }
-        }
+	if (me.isWindows) {
+	    if (values.machine === '__default__') {
+		values.version = 'virt';
+	    } else if (values.machine === 'q35') {
+		values.version = 'pc-q35-5.1';
+	    }
+	}
 
         values.viommu = machineConf.viommu || '__default__';
 
