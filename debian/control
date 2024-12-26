@@ -35,7 +35,7 @@ Maintainer: Proxmox Support Team <support@proxmox.com>
 Package: pve-manager
 Section: admin
 Priority: optional
-Architecture: all
+Architecture: any
 Depends: apt (>= 1.5~),
          ca-certificates,
          cstream,
