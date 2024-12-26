@@ -491,7 +491,7 @@ Ext.define('PVE.Utils', {
 
     render_qemu_bios: function(value) {
 	if (!value) {
-	    return Proxmox.Utils.defaultText + ' (SeaBIOS)';
+	    return "OVMF (UEFI)";
 	} else if (value === 'seabios') {
 	    return "SeaBIOS";
 	} else if (value === 'ovmf') {
