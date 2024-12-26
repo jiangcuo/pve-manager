@@ -502,17 +502,17 @@ Ext.define('PVE.Utils', {
 	return value || Proxmox.Utils.defaultText + ' (virt)';
     },
 
-        render_qemu_bios: function (value) {
-            if (!value) {
-                return Proxmox.Utils.defaultText + ' (SeaBIOS)';
-            } else if (value === 'seabios') {
-                return 'SeaBIOS';
-            } else if (value === 'ovmf') {
-                return 'OVMF (UEFI)';
-            } else {
-                return value;
-            }
-        },
+    render_qemu_bios: function(value) {
+	if (!value) {
+	    return "OVMF (UEFI)";
+	} else if (value === 'seabios') {
+	    return "SeaBIOS";
+	} else if (value === 'ovmf') {
+	    return "OVMF (UEFI)";
+	} else {
+	    return value;
+	}
+    },
 
         render_dc_ha_opts: function (value) {
             if (!value) {
