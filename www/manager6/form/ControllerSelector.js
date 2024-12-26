@@ -32,18 +32,18 @@ Ext.define('PVE.form.ControllerSelector', {
         let bussel = me.down('field[name=controller]');
         let deviceid = me.down('field[name=deviceid]');
 
-        let clist;
-        if (autoSelect === 'cdrom') {
-            if (!Ext.isDefined(me.vmconfig.ide2)) {
-                bussel.setValue('ide');
-                deviceid.setValue(2);
-                return;
-            }
-            clist = ['ide', 'scsi', 'sata'];
-        } else {
-            // in most cases we want to add a disk to the same controller we previously used
-            clist = PVE.Utils.sortByPreviousUsage(me.vmconfig);
-        }
+	let clist;
+	if (autoSelect === 'cdrom') {
+	    if (!Ext.isDefined(me.vmconfig.scsi2)) {
+		bussel.setValue('ide');
+		deviceid.setValue(2);
+		return;
+	    }
+	    clist = ['ide', 'scsi', 'sata'];
+	} else {
+	    // in most cases we want to add a disk to the same controller we previously used
+	    clist = PVE.Utils.sortByPreviousUsage(me.vmconfig);
+	}
 
         me.setToFree(clist, bussel, deviceid);
 

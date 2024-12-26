@@ -24,7 +24,7 @@ Ext.define('PVE.qemu.MachineInputPanel', {
             let version = me.lookup('version');
             let store = version.getStore();
             let oldRec = store.findRecord('id', version.getValue(), 0, false, false, true);
-            let type = value === 'q35' ? 'q35' : 'i440fx';
+            let type = value === 'q35' ? 'q35' : 'virt';
             store.clearFilter();
             store.addFilter((val) => val.data.id === 'latest' || val.data.type === type);
             if (!me.getView().isWindows) {
@@ -73,13 +73,13 @@ Ext.define('PVE.qemu.MachineInputPanel', {
             values.machine = '__default__';
         }
 
-        if (me.isWindows) {
-            if (values.machine === '__default__') {
-                values.version = 'pc-i440fx-5.1';
-            } else if (values.machine === 'q35') {
-                values.version = 'pc-q35-5.1';
-            }
-        }
+	if (me.isWindows) {
+	    if (values.machine === '__default__') {
+		values.version = 'virt';
+	    } else if (values.machine === 'q35') {
+		values.version = 'pc-q35-5.1';
+	    }
+	}
 
         values.viommu = machineConf.viommu || '__default__';
 
