@@ -598,17 +598,13 @@ Ext.define('PVE.Utils', {
     kvm_vga_drivers: {
 	'__default__': Proxmox.Utils.defaultText,
 	std: gettext('Standard VGA'),
-	vmware: gettext('VMware compatible'),
-	qxl: 'SPICE',
-	qxl2: 'SPICE dual monitor',
-	qxl3: 'SPICE three monitors',
-	qxl4: 'SPICE four monitors',
 	serial0: gettext('Serial terminal') + ' 0',
 	serial1: gettext('Serial terminal') + ' 1',
 	serial2: gettext('Serial terminal') + ' 2',
 	serial3: gettext('Serial terminal') + ' 3',
 	virtio: 'VirtIO-GPU',
 	'virtio-gl': 'VirGL GPU',
+	ramfb: 'ramfb',
 	none: Proxmox.Utils.noneText,
     },
 
