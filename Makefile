@@ -68,6 +68,8 @@ install: vzdump-hook-script.pl
 	install -d $(DESTDIR)/var/lib/vz/template/iso
 	install -m 0644 vzdump-hook-script.pl $(DOCDIR)/examples/vzdump-hook-script.pl
 	install -m 0644 spice-example-sh $(DOCDIR)/examples/spice-example-sh
+	install -d $(DESTDIR)/lib/udev/rules.d
+	install -m 0644 udev/99-query-machine-info.rules $(DESTDIR)/lib/udev/rules.d/99-query-machine-info.rules
 	set -e && for i in $(SUBDIRS); do $(MAKE) -C $$i $@; done
 
 .PHONY: distclean

@@ -1,0 +1,4 @@
+#!/bin/bash
+filename="/run/pve/query-machine-info"
+cpuname=`lscpu|grep "BIOS Model name"|cut -d ":" -f2|xargs`
+dmidecode | jc --dmidecode | jq --arg cpu "$cpuname" '. += [{"cpu": $cpu}]' >$filename

@@ -1,0 +1,13 @@
+[Unit]
+Description=PVE Query Machine Info
+RequiresMountsFor=/run
+Before=pvedaemon.service
+Before=pveproxy.service
+
+[Service]
+ExecStart=/usr/bin/query-machine-info
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

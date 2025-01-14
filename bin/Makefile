@@ -12,7 +12,7 @@ CLITOOLS = \
 	pvesr \
 	pvenode \
 	pvesh \
-	pve7to8 \
+	pve7to8
 	pve8to9 \
 
 LIBEXECCLITOOLS = \
@@ -27,7 +27,8 @@ SCRIPTS =  			\
 	pveupgrade		\
 	pveupdate		\
 	pveperf			\
-	pvereport
+	pvereport		\
+	query-machine-info
 
 HELPERS =			\
 	pve-startall-delay	\
