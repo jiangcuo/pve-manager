@@ -15,7 +15,8 @@ SERVICES=			\
 	pve-daily-update.timer	\
 	pvescheduler.service	\
 	pve-sdn-commit.service	\
-	pve-firewall-commit.service
+	pve-firewall-commit.service   \
+	pve-query-machine-info.service
 
 .PHONY: install
 install: $(SERVICES)

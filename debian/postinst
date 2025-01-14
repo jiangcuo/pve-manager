@@ -151,6 +151,7 @@ case "$1" in
     deb-systemd-invoke reload-or-try-restart pveproxy.service || true
     deb-systemd-invoke reload-or-try-restart spiceproxy.service || true
     deb-systemd-invoke reload-or-try-restart pvescheduler.service || true
+    deb-systemd-invoke reload-or-try-restart pve-query-machine-info.service || true
 
     exit 0;;
 
@@ -170,7 +171,7 @@ case "$1" in
 
     # same as dh_systemd_enable (code copied)
 
-    UNITS="pvedaemon.service pveproxy.service spiceproxy.service pvestatd.service pvebanner.service pvescheduler.service pve-daily-update.timer"
+    UNITS="pvedaemon.service pveproxy.service spiceproxy.service pvestatd.service pvebanner.service pvescheduler.service pve-daily-update.timer pve-query-machine-info.service"
     NO_RESTART_UNITS="pvenetcommit.service pve-guests.service pve-sdn-commit.service pve-firewall-commit.service"
 
     for unit in ${UNITS} ${NO_RESTART_UNITS}; do

@@ -25,7 +25,8 @@ SCRIPTS =  			\
 	pveupgrade		\
 	pveupdate		\
 	pveperf			\
-	pvereport
+	pvereport		\
+	query-machine-info
 
 HELPERS =			\
 	pve-startall-delay	\
