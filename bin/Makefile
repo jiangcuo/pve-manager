@@ -12,7 +12,7 @@ CLITOOLS = \
 	pvesr \
 	pvenode \
 	pvesh \
-	pve7to8
+	pve7to8 \
 	pve8to9 \
 
 LIBEXECCLITOOLS = \
