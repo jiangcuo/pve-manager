@@ -1,2 +1,2 @@
-ACTION=="add", SUBSYSTEM=="*", RUN="/usr/sbin/query-machine-info"
-ACTION=="remove", SUBSYSTEM=="*", RUN="/usr/sbin/query-machine-info"
+ACTION=="add", SUBSYSTEM=="*", RUN="/usr/bin/query-machine-info"
+ACTION=="remove", SUBSYSTEM=="*", RUN="/usr/bin/query-machine-info"
