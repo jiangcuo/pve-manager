@@ -278,7 +278,7 @@ Ext.define('PVE.qemu.Options', {
 	    },
 	    agent: {
 		header: 'QEMU Guest Agent',
-		defaultValue: false,
+		defaultValue: true,
 		renderer: PVE.Utils.render_qga_features,
 		editor: caps.vms['VM.Config.Options'] ? {
 		    xtype: 'proxmoxWindowEdit',

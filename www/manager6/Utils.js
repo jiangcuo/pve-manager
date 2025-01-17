@@ -48,12 +48,22 @@ Ext.define('PVE.Utils', {
     kvm_ostypes: {
 	'Linux': [
 	    { desc: '6.x - 2.6 Kernel', val: 'l26' },
+		{ desc: '2.4 Kernel - x86', val: 'l24' },
 	],
 	'Microsoft Windows': [
 	    { desc: '11/2022', val: 'win11' },
+		{ desc: '10/2016/2019 - x86', val: 'win10' },
+	    { desc: '8.x/2012/2012r2 - x86', val: 'win8' },
+	    { desc: '7/2008r2 - x86', val: 'win7' },
+	    { desc: 'Vista/2008 - x86', val: 'w2k8' },
+	    { desc: 'XP/2003 - x86', val: 'wxp' },
+	    { desc: '2000 - x86', val: 'w2k' },
 	],
 	'Other': [
 	    { desc: '-', val: 'other' },
+	],
+	'Solaris Kernel - x86': [
+	    { desc: '-', val: 'solaris' },
 	],
     },
 
@@ -486,7 +496,7 @@ Ext.define('PVE.Utils', {
     },
 
     render_qemu_machine: function(value) {
-	return value || Proxmox.Utils.defaultText + ' (virt)';
+	return value || Proxmox.Utils.defaultText;
     },
 
     render_qemu_bios: function(value) {

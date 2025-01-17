@@ -65,11 +65,15 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    let me = this;
 	    let vm = this.getViewModel();
 	    let ostype = vm.get('current.ostype');
+		me.lookup('bios').setValue('ovmf');
 	    if (ostype === 'win11') {
 		me.lookup('machine').setValue('q35');
-		me.lookup('bios').setValue('ovmf');
 		me.lookup('addtpmbox').setValue(true);
 	    }
+		let arch = vm.get('current.arch');
+		if (arch && arch !== 'x86_64') {
+			me.lookup('machine').setValue('virt');
+		}
 	},
     },
 
@@ -91,6 +95,8 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    comboItems: [
 		['__default__', PVE.Utils.render_qemu_machine('')],
 		['q35', 'q35'],
+		['virt', 'virt'],
+		['pc', 'i440fx'],
 	    ],
 	},
 	{
@@ -147,9 +153,9 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    xtype: 'proxmoxcheckbox',
 	    name: 'agent',
 	    uncheckedValue: 0,
-	    defaultValue: 0,
-	    deleteDefaultValue: true,
+	    defaultValue: 1,
 	    fieldLabel: gettext('Qemu Agent'),
+	    checked: true,
 	},
 	{
 	    // fake for spacing

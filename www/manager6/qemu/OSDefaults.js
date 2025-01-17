@@ -34,16 +34,15 @@ Ext.define('PVE.qemu.OSDefaults', {
 
 	// default values
 	me.generic = {
-	    busType: 'ide',
-	    networkCard: 'e1000',
+	    busType: 'scsi',
+	    networkCard: 'virtio',
 	    busPriority: {
 		    ide: 4,
 		    sata: 3,
 		    scsi: 2,
 		    virtio: 1,
 	    },
-	    scsihw: 'virtio-scsi-single',
-	    cputype: 'x86-64-v2-AES',
+	    scsihw: 'virtio-scsi-pci',
 	};
 
        // virtio-net is in kernel since 2.6.25
