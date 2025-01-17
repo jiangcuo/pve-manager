@@ -65,7 +65,7 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    let me = this;
 	    let vm = this.getViewModel();
 	    let ostype = vm.get('current.ostype');
-		me.lookup('bios').setValue('ovmf');
+	    me.lookup('bios').setValue('ovmf');
 	    if (ostype === 'win11') {
 		me.lookup('machine').setValue('q35');
 		me.lookup('addtpmbox').setValue(true);
