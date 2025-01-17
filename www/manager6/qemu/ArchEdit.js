@@ -9,7 +9,7 @@ Ext.define('PVE.qemu.ArchEdit', {
     xtype: 'proxmoxKVComboBox',
 	name: 'arch',
 	fieldLabel: gettext('Arch'),
-    defaultValue: '',
+	defaultValue: '',
 	comboItems: [
 	    ['__default__', Proxmox.Utils.defaultText],
 	    ['x86_64', 'x86_64'],
