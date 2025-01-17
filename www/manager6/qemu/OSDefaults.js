@@ -31,19 +31,19 @@ Ext.define('PVE.qemu.OSDefaults', {
             }
         };
 
-        // default values
-        me.generic = {
-            busType: 'ide',
-            networkCard: 'e1000',
-            busPriority: {
-                ide: 4,
-                sata: 3,
-                scsi: 2,
-                virtio: 1,
-            },
-            scsihw: 'virtio-scsi-single',
-            cputype: 'x86-64-v2-AES',
-        };
+	// default values
+	me.generic = {
+	    busType: 'scsi',
+	    networkCard: 'virtio',
+	    busPriority: {
+		    ide: 4,
+		    sata: 3,
+		    scsi: 2,
+		    virtio: 1,
+	    },
+	    scsihw: 'virtio-scsi-pci',
+        cputype: 'host',
+	};
 
         // virtio-net is in kernel since 2.6.25
         // virtio-scsi since 3.2 but backported in RHEL with 2.6 kernel

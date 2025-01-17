@@ -24,7 +24,7 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 	    let version = me.lookup('version');
 	    let store = version.getStore();
 	    let oldRec = store.findRecord('id', version.getValue(), 0, false, false, true);
-	    let type = value === 'q35' ? 'q35' : 'virt';
+	    let type = value === 'q35' ? 'q35' : 'default';
 	    store.clearFilter();
 	    store.addFilter(val => val.data.id === 'latest' || val.data.type === type);
 	    if (!me.getView().isWindows) {
@@ -95,17 +95,19 @@ Ext.define('PVE.qemu.MachineInputPanel', {
     },
 
     items: {
-        xtype: 'proxmoxKVComboBox',
-        name: 'machine',
-        reference: 'machine',
-        fieldLabel: gettext('Machine'),
-        comboItems: [
-            ['__default__', PVE.Utils.render_qemu_machine('')],
-            ['q35', 'q35'],
-        ],
-        bind: {
-            value: '{type}',
-        },
+	xtype: 'proxmoxKVComboBox',
+	name: 'machine',
+	reference: 'machine',
+	fieldLabel: gettext('Machine'),
+	comboItems: [
+	    ['__default__', PVE.Utils.render_qemu_machine('')],
+	    ['q35', 'q35'],
+	    ['virt', 'virt'],
+	    ['pc', 'i440fx'],
+	],
+	bind: {
+	    value: '{type}',
+	},
     },
 
     advancedItems: [
