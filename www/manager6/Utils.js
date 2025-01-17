@@ -52,7 +52,7 @@ Ext.define('PVE.Utils', {
 	],
 	'Microsoft Windows': [
 	    { desc: '11/2022', val: 'win11' },
-		{ desc: '10/2016/2019 - x86', val: 'win10' },
+	    { desc: '10/2016/2019 - x86', val: 'win10' },
 	    { desc: '8.x/2012/2012r2 - x86', val: 'win8' },
 	    { desc: '7/2008r2 - x86', val: 'win7' },
 	    { desc: 'Vista/2008 - x86', val: 'w2k8' },
