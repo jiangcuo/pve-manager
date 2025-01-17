@@ -232,6 +232,7 @@ JSSRC= 							\
 	pool/StatusView.js				\
 	pool/Summary.js					\
 	qemu/AgentIPView.js				\
+	qemu/ArchEdit.js				\
 	qemu/AudioEdit.js				\
 	qemu/BootOrderEdit.js				\
 	qemu/CDEdit.js					\
