@@ -1310,6 +1310,14 @@ Ext.define('PVE.Utils', {
 	return retVal.length < 1 ? value : retVal;
     },
 
+    render_get_arch: function(value) {
+	if (!value){
+		return Proxmox.Utils.defaultText;
+	}else{
+		return value;
+	}
+    },
+
     windowHostname: function() {
 	return window.location.hostname.replace(Proxmox.Utils.IP6_bracket_match,
             function(m, addr, offset, original) { return addr; });
