@@ -52,6 +52,12 @@ Ext.define('PVE.qemu.Options', {
                           },
                       }
                     : undefined,
+	    },
+	    arch: {
+		header: gettext('Arch'),
+		editor: caps.vms['VM.Config.HWType'] ? 'PVE.qemu.ArchEdit' : undefined,
+		defaultValue: '',
+		renderer: PVE.Utils.render_get_arch,
             },
             onboot: {
                 header: gettext('Start at boot'),
