@@ -67,7 +67,7 @@ Ext.define('PVE.qemu.EFIDiskInputPanel', {
             {
                 xtype: 'proxmoxcheckbox',
                 name: 'preEnrolledKeys',
-                checked: true,
+                checked: false,
                 fieldLabel: gettext('Pre-Enroll keys'),
                 disabled: me.disabled,
                 //boxLabel: '(e.g., Microsoft secure-boot keys')',
