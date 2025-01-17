@@ -58,7 +58,6 @@ Ext.define('PVE.qemu.CreateWizard', {
 
 	    return `order=${order.join(';')}`;
 	}
-
 	return undefined;
     },
 
