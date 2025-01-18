@@ -475,6 +475,16 @@ pve-manager (8.3.3) bookworm; urgency=medium
 
  -- Proxmox Support Team <support@proxmox.com>  Mon, 20 Jan 2025 11:37:32 +0100
 
+pve-manager (8.3.2+port1) bookworm; urgency=medium
+  
+  * ui: add arch select when vm create and edit
+
+  * api: add query machine info support
+ 
+  * ui: Add more compatibility
+
+ -- Jiangcuo <jiangcuo@lierfang.com>  Sat, 18 Jan 2025 13:17:28 +0800
+
 pve-manager (8.3.2+port) bookworm; urgency=medium
 
   * ui: ovmf as default bios
