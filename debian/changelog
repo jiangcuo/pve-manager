@@ -475,6 +475,14 @@ pve-manager (8.3.3) bookworm; urgency=medium
 
  -- Proxmox Support Team <support@proxmox.com>  Mon, 20 Jan 2025 11:37:32 +0100
 
+pve-manager (8.3.3) bookworm; urgency=medium
+
+  * update shipped appliance info index
+
+  * add missing htmlEncode for some UI elements
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 20 Jan 2025 11:37:32 +0100
+
 pve-manager (8.3.2+port1) bookworm; urgency=medium
   
   * ui: add arch select when vm create and edit
