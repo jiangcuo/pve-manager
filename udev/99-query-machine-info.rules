@@ -1,2 +1,0 @@
-ACTION=="add", SUBSYSTEM=="*", RUN="/usr/bin/query-machine-info"
-ACTION=="remove", SUBSYSTEM=="*", RUN="/usr/bin/query-machine-info"
