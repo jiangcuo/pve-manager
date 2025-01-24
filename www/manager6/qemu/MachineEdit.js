@@ -9,39 +9,33 @@ Ext.define('PVE.qemu.MachineInputPanel', {
         },
         formulas: {
             q35: (get) => get('type') === 'q35',
+		pc: get => get('type') === 'pc',
+		virt: get => get('type') === 'virt',
         },
     },
 
     controller: {
-        xclass: 'Ext.app.ViewController',
-        control: {
-            'combobox[name=machine]': {
-                change: 'onMachineChange',
-            },
-        },
-        onMachineChange: function (field, value) {
-            let me = this;
-            let version = me.lookup('version');
-            let store = version.getStore();
-            let oldRec = store.findRecord('id', version.getValue(), 0, false, false, true);
-            let type = value === 'q35' ? 'q35' : 'default';
-            store.clearFilter();
-            store.addFilter((val) => val.data.id === 'latest' || val.data.type === type);
-            if (!me.getView().isWindows) {
-                version.setValue('latest');
-            } else {
-                store.isWindows = true;
-                if (!oldRec) {
-                    return;
-                }
-                let oldVers = oldRec.data.version;
-                // we already filtered by correct type, so just check version property
-                let rec = store.findRecord('version', oldVers, 0, false, false, true);
-                if (rec) {
-                    version.select(rec);
-                }
-            }
-        },
+	xclass: 'Ext.app.ViewController',
+	control: {
+	    'combobox[name=machine]': {
+		change: 'onMachineChange',
+	    },
+	},
+	onMachineChange: function(field, value) {
+	    let me = this;
+	    let version = me.lookup('version');
+	    let store = version.getStore();
+		if (value === 'pc'){
+		    value = 'i440fx';
+		}
+		store.clearFilter();
+		console.log('value is '+ value)
+		if (value === null || value === '__default__') {
+			store.addFilter(val => val.data.id === 'latest');
+		}else{
+			store.addFilter(val => val.data.id === 'latest' || val.data.type === value);
+		}
+	},
     },
 
     onGetValues: function (values) {
@@ -83,13 +77,13 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 
         values.viommu = machineConf.viommu || '__default__';
 
-        if (values.machine !== '__default__' && values.machine !== 'q35') {
-            values.version = values.machine;
-            values.machine = values.version.match(/q35/) ? 'q35' : '__default__';
+	// if (values.machine !== '__default__' && values.machine !== 'q35') {
+	//     values.version = values.machine;
+	//     values.machine = values.version.match(/q35/) ? 'q35' : '__default__';
 
-            // avoid hiding a pinned version
-            me.setAdvancedVisible(true);
-        }
+	//     // avoid hiding a pinned version
+	//     me.setAdvancedVisible(true);
+	// }
 
         this.callParent(arguments);
     },
@@ -131,13 +125,13 @@ Ext.define('PVE.qemu.MachineInputPanel', {
                 },
                 listeners: {
                     load: function (records) {
-                        if (!this.isWindows) {
+                        
                             this.insert(0, {
                                 id: 'latest',
                                 type: 'any',
                                 version: gettext('Latest'),
                             });
-                        }
+                        
                     },
                 },
             },
