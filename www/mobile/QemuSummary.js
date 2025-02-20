@@ -12,7 +12,7 @@ Ext.define('PVE.QemuSummary', {
 
     config_keys: [
 	'name', 'memory', 'sockets', 'cores', 'ostype', 'bootdisk', /^net\d+/,
-	/^ide\d+/, /^virtio\d+/, /^sata\d+/, /^scsi\d+/, /^unused\d+/,
+	/^ide\d+/, /^virtio\d+/, /^sata\d+/, /^scsi\d+/, /^nvme\d+/, /^unused\d+/,
     ],
 
     initialize: function() {
