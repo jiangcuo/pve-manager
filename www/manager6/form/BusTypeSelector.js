@@ -8,10 +8,7 @@ Ext.define('PVE.form.BusTypeSelector', {
     initComponent: function () {
         var me = this;
 
-        me.comboItems = [
-            ['ide', 'IDE'],
-            ['sata', 'SATA'],
-        ];
+	me.comboItems = [['ide', 'IDE'], ['sata', 'SATA'],['nvme', 'NVME']];
 
         if (me.withVirtIO) {
             me.comboItems.push(['virtio', 'VirtIO Block']);
