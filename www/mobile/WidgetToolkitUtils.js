@@ -116,7 +116,7 @@ utilities: {
     },
 
     getNoSubKeyHtml: function(url) {
-	return Ext.String.format('You do not have a valid subscription for this server. Please visit <a target="_blank" href="{0}">www.proxmox.com</a> to get a list of available options.', url || 'https://www.proxmox.com');
+	return Ext.String.format('You do not have a valid subscription for this server. Please visit <a target="_blank" href="{0}">www.lierfang.com</a> to get a list of available options.', url || 'https://www.lierfang.com');
     },
 
     format_boolean_with_default: function(value) {
