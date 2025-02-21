@@ -398,6 +398,11 @@ __PACKAGE__->register_method({
                     type => 'string',
                     optional => 1,
                 },
+		uuid => {
+		    description => "VM UUID",
+		    type => 'string',
+		    optional => 1,
+		},
                 vmid => get_standard_option(
                     'pve-vmid',
                     {
@@ -470,7 +475,7 @@ __PACKAGE__->register_method({
 
         # we try to generate 'numbers' by using "$X + 0"
         if (!$param->{type} || $param->{type} eq 'vm') {
-            my $prop_list = [qw(lock tags)];
+            my $prop_list = [qw(lock tags uuid arch)];
             my $props = PVE::Cluster::get_guest_config_properties($prop_list);
 
             for my $vmid (sort keys %$idlist) {
@@ -518,6 +523,20 @@ __PACKAGE__->register_method({
                 ) {
                     delete $entry->{pool};
                 }
+
+		if ($entry->{status} eq 'unknown'){
+			my $vmconf;
+			if ( $data->{type} eq 'qemu' ){
+			    $vmconf = PVE::QemuConfig->load_config($vmid,$data->{node});
+			}else{
+				$vmconf = PVE::LXC::Config->load_config($vmid,$data->{node});
+			}
+			$entry->{uuid} = $vmconf->{uuid} if $data->{type} eq 'qemu';
+			$entry->{name} = $vmconf->{name};
+			$entry->{arch} = $vmconf->{arch} // 'unknown';
+			$entry->{maxcpu} = $vmconf->{cores} ;
+			$entry->{maxmem} = $vmconf->{memory} ;
+		}
 
                 # get ha status
                 if (my $hatype = $hatypemap->{ $entry->{type} }) {
