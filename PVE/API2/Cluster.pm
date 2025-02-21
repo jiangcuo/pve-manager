@@ -532,7 +532,8 @@ __PACKAGE__->register_method({
 				$vmconf = PVE::LXC::Config->load_config($vmid,$data->{node});
 			}
 			$entry->{uuid} = $vmconf->{uuid} if $data->{type} eq 'qemu';
-			$entry->{name} = $vmconf->{name};
+			$entry->{name} = $vmconf->{name} // "VM ".$vmid if $data->{type} eq 'qemu';
+			$entry->{name} = $vmconf->{hostname}  // "VM ".$vmid if $data->{type} eq 'lxc';
 			$entry->{arch} = $vmconf->{arch} // 'unknown';
 			$entry->{maxcpu} = $vmconf->{cores} ;
 			$entry->{maxmem} = $vmconf->{memory} ;
