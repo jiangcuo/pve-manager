@@ -65,7 +65,7 @@ Ext.define('PVE.dc.Summary', {
                         click: function () {
                             if (this.component.userCls === 'pointer') {
                                 window.open(
-                                    'https://www.proxmox.com/en/proxmox-virtual-environment/pricing',
+                                    'https://www.lierfang.com',
                                     '_blank',
                                 );
                             }
