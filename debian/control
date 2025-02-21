@@ -29,7 +29,7 @@ Build-Depends: debhelper-compat (= 13),
                sq,
                unzip,
 Standards-Version: 4.6.1
-Maintainer: Proxmox Support Team <support@proxmox.com>
+Maintainer: Lierfang <itsupport@lierfang.com>
 
 Package: pve-manager
 Section: admin
@@ -38,14 +38,14 @@ Architecture: any
 Depends: apt (>= 1.5~),
          ca-certificates,
          cstream,
-	 dmidecode,
+         dmidecode,
          dtach,
          fonts-font-awesome,
          fonts-font-logos,
          gdisk,
          hdparm,
-	 jc,
-	 jq,
+         jc,
+         jq,
          libapt-pkg-perl,
          libcrypt-ssleay-perl,
          libfile-readbackwards-perl,
