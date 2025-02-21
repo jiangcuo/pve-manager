@@ -2,9 +2,12 @@
 filename="/run/pve/query-machine-info"
 cpuname=$(lscpu|grep "BIOS Model name"|cut -d ":" -f2|xargs)
 if [ -z "$cpuname" ];then
-        cpuname=$(lscpu|grep "Model name"|grep -v 'BIOS'|cut -d ":" -f2|xargs)
-	if [ -z "$cpuname" ];then
-		cpuname="unknow"
-	fi
+        cpuname=$(lscpu|grep "Model name"|grep -v 'BIOS'|cut -d ":" -f2|head -n 1|xargs)
+        if [ "$cpuname" == "-" ];then
+                cpuname=$(lscpu|grep "Model:"|grep -v 'BIOS'|cut -d ":" -f2|head -n 1|xargs)
+                if [ -z "$cpuname" ];then
+                   cpuname="unknow"
+                fi
+        fi
 fi
 dmidecode | jc --dmidecode | jq --arg cpu "$cpuname" '. += [{"cpu": $cpu}]' >$filename
