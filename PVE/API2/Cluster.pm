@@ -257,6 +257,11 @@ __PACKAGE__->register_method({
 		    type => 'string',
 		    optional => 1,
 		},
+		arch => {
+		    description => "vm or node arch.",
+		    type => 'string',
+		    optional => 1,
+		},
 		node => get_standard_option('pve-node', {
 		    description => "The cluster node name"
 			." (for types 'node', 'storage', 'qemu', and 'lxc').",
@@ -403,6 +408,13 @@ __PACKAGE__->register_method({
 		    optional => 1,
 		    default => 0,
 		},
+		pxvditemplate => {
+		    description => "Determines if the guest is a pxvdi template."
+			." (for types 'qemu')",
+		    type => 'boolean',
+		    optional => 1,
+		    default => 0,
+		},
 	    },
 	},
     },
@@ -451,7 +463,7 @@ __PACKAGE__->register_method({
 
 	# we try to generate 'numbers' by using "$X + 0"
 	if (!$param->{type} || $param->{type} eq 'vm') {
-	    my $prop_list = [qw(lock tags uuid arch)];
+	    my $prop_list = [qw(lock tags uuid arch pxvditemplate)];
 	    my $props = PVE::Cluster::get_guest_config_properties($prop_list);
 
 	    for my $vmid (sort keys %$idlist) {
@@ -508,6 +520,7 @@ __PACKAGE__->register_method({
 			$entry->{arch} = $vmconf->{arch} // 'unknown';
 			$entry->{maxcpu} = $vmconf->{cores} ;
 			$entry->{maxmem} = $vmconf->{memory} ;
+			$entry->{pxvditemplate} = $vmconf->{pxvditemplate} ;
 		}
 
 		# get ha status
@@ -536,6 +549,10 @@ __PACKAGE__->register_method({
 		if (defined(my $mode = $info->{'cgroup-mode'})) {
 		    $entry->{'cgroup-mode'} = int($mode);
 		}
+		if (defined(my $arch = $info->{'arch'})) {
+		    $entry->{'arch'} = $arch;
+		}
+
 		if (defined(my $status = $hastatus->{node_status}->{$node})) {
 		    $entry->{'hastate'} = $status;
 		}

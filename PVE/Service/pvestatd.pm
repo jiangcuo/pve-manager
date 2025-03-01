@@ -9,7 +9,7 @@ use PVE::Daemon;
 use JSON;
 
 use Time::HiRes qw (gettimeofday);
-use PVE::Tools qw(dir_glob_foreach file_read_firstline);
+use PVE::Tools qw(dir_glob_foreach file_read_firstline get_host_arch);
 use PVE::ProcFSTools;
 use PVE::CpuSet;
 use Filesys::Df;
@@ -143,6 +143,7 @@ my sub broadcast_static_node_info {
 	    memory => $memory,
 	};
 	$info->{'cgroup-mode'} = $cgroup_mode if defined($cgroup_mode);
+	$info->{'arch'} = get_host_arch();
 	PVE::Cluster::broadcast_node_kv('static-info', encode_json($info));
     }
 }
