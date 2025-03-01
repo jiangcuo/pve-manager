@@ -4,6 +4,7 @@ PERLSOURCE=			\
 	PCI.pm			\
 	USB.pm			\
 	INFO.pm			\
+	NET.pm          \
 
 all:
 
