@@ -103,7 +103,15 @@ __PACKAGE__->register_method ({
 		    description => "If set, marks that the device is capable of creating mediated"
 			." devices.",
 		},
-	    },
+		driver_inuse => {
+		    type => 'string',
+		    optional => 1,
+		},
+		driver => {
+		    type => 'string',
+		    optional => 1,
+	    }
+		},
 	},
     },
     code => sub {
