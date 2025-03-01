@@ -258,3 +258,39 @@ __PACKAGE__->register_method({
 
     },
 });
+
+__PACKAGE__->register_method ({
+    name => 'pcitool',
+    path => '{pci-id-or-mapping}/pcitool',
+    method => 'POST',
+    description => "Reset, bind, and unbind operations on PCIe",
+    permissions => {
+	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ] , [ 'sys.Modify' ]],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    'pci-id-or-mapping' => {
+		type => 'string',
+		pattern => '(?:(?:[0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F])|([a-zA-Z][a-zA-Z0-9_-]+)',
+	    },
+		options => {
+		type => 'string',
+		enum => [qw(bind unbind reset)],
+		},
+		driver => {
+		type => 'string',
+		optional => 1,
+		},
+	},
+    },
+    returns => {
+	type => 'string',
+    },
+    code => sub {
+	my ($param) = @_;
+
+	return PVE::SysFSTools::pcitool($param->{'pci-id-or-mapping'},$param->{options},$param->{driver});
+    }});
+
