@@ -8,6 +8,7 @@ use PVE::RESTHandler;
 
 use PVE::API2::Hardware::PCI;
 use PVE::API2::Hardware::USB;
+use PVE::API2::Hardware::INFO;
 
 use base qw(PVE::RESTHandler);
 
@@ -19,6 +20,11 @@ __PACKAGE__->register_method ({
 __PACKAGE__->register_method ({
     subclass => "PVE::API2::Hardware::USB",
     path => 'usb',
+});
+
+__PACKAGE__->register_method ({
+    subclass => "PVE::API2::Hardware::INFO",
+    path => 'info',
 });
 
 __PACKAGE__->register_method ({
@@ -49,6 +55,7 @@ __PACKAGE__->register_method ({
 	my $res = [
 	    { type => 'pci' },
 	    { type => 'usb' },
+	    { type => 'info' },
 	];
 
 	return $res;
