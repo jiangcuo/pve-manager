@@ -72,7 +72,13 @@ __PACKAGE__->register_method({
         dir_glob_foreach('/sys/class/net/', $pattern, sub {
             my ($dev) = @_;
             return if ! -d "/sys/class/net/$dev/device/";
-            my $pciid = basename(realpath("/sys/class/net/$dev/device/../"));
+            my $path = realpath("/sys/class/net/$dev/device/");
+            my $pciid;
+            if ($path =~ /^virtio/){
+                $pciid = basename(realpath("/sys/class/net/$dev/device/../"));
+            } else{
+                $pciid = basename(realpath("/sys/class/net/$dev/device/"));
+            }
             unless ($pciid =~ /^(
 				(?:[0-9a-fA-F]{4}:)?    
 				[0-9a-fA-F]{2}:         
@@ -84,7 +90,7 @@ __PACKAGE__->register_method({
 			}
 			my $safe_pciid = $1;
 
-            my $driver = basename(realpath("/sys/bus/pci/devices/$pciid/driver/"));
+            my $driver = basename(realpath("/sys/bus/pci/devices/$safe_pciid/driver/"));
             my $speed = file_read_firstline("/sys/class/net/$dev/speed");
             # my $cmd = ["lspci","-s",$safe_pciid];
 			# # push @$cmd, ' |grep "Subsystem"';
