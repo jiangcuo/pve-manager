@@ -294,3 +294,50 @@ __PACKAGE__->register_method ({
 	return PVE::SysFSTools::pcitool($param->{'pci-id-or-mapping'},$param->{options},$param->{driver});
     }});
 
+__PACKAGE__->register_method ({
+    name => 'pciprobe',
+    path => '{pci-id-or-mapping}/pciprobe',
+    method => 'POST',
+    description => "Set pci driver in /etc/modprobe.d/",
+    permissions => {
+	check => ['perm', '/nodes/{node}', [ 'Sys.Audit' ] , [ 'sys.Modify' ]],
+    },
+    parameters => {
+	additionalProperties => 0,
+	properties => {
+	    node => get_standard_option('pve-node'),
+	    'pci-id-or-mapping' => {
+		type => 'string',
+		pattern => '(?:(?:[0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F])|([a-zA-Z][a-zA-Z0-9_-]+)',
+	    },
+		driver => {
+		type => 'string',
+		optional => 1,
+		},
+		blacklist => {
+		type => 'boolean',
+		optional => 1,
+		},
+		clean => {
+		type => 'boolean',
+		optional => 1,
+		},
+	},
+    },
+    returns => {
+	type => 'string',
+    },
+    code => sub {
+	my ($param) = @_;
+
+	my $driver = $param->{driver};
+	my $blacklist = $param->{blacklist};
+	my $clean = $param->{clean};
+	if (!$clean) {
+		die "driver is need!" if (!$driver && $blacklist);
+	}
+
+	return PVE::SysFSTools::pciprobe($param->{'pci-id-or-mapping'},$blacklist,$driver,$clean);
+    }});
+
+
