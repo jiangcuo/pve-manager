@@ -128,6 +128,37 @@ $confdesc->{wakeonlan} = {
     optional => 1,
 };
 
+my $ipmi_desc = {
+    address => {
+	type => 'string',
+	description => 'ipmi lan ip',
+	format => 'address',
+	format_description => 'ip address',
+	default_key => 1,
+    },
+    'username' => {
+	type => 'string',
+	format => 'string',
+	description => 'ipmi user name',
+	format_description => 'ipmi user name',
+	optional => 1,
+    },
+    'password' => {
+	type => 'string',
+	format => 'string',
+	description => 'ipmi user password',
+	format_description => 'ipmi user password',
+	optional => 1,
+    },
+};
+
+$confdesc->{ipmi} = {
+    type => 'string',
+    description => 'Node ipmi settings.',
+    format => $ipmi_desc,
+    optional => 1,
+};
+
 my $acme_domain_desc = {
     domain => {
 	type => 'string',
@@ -229,6 +260,22 @@ sub get_wakeonlan_config {
     if (defined($node_conf->{wakeonlan})) {
 	$res = eval {
 	    PVE::JSONSchema::parse_property_string($wakeonlan_desc, $node_conf->{wakeonlan})
+	};
+	die $@ if $@;
+    }
+
+    return $res;
+}
+
+sub get_ipmi_config {
+    my ($node_conf) = @_;
+
+    $node_conf //= {};
+
+    my $res = {};
+    if (defined($node_conf->{ipmi})) {
+	$res = eval {
+	    PVE::JSONSchema::parse_property_string($ipmi_desc, $node_conf->{ipmi})
 	};
 	die $@ if $@;
     }
