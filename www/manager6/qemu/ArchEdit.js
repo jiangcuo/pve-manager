@@ -16,6 +16,8 @@ Ext.define('PVE.qemu.ArchEdit', {
         ['riscv64', 'riscv64'],
         ['loongarch64', 'loongarch64'],
         ['aarch64', 'aarch64'],
+        ['s390x', 's390x'],
+        ['ppc64', 'ppc64'],
 	],
 	bind: {
 	    value: '{arch}',
