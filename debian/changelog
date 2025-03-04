@@ -1,3 +1,16 @@
+pve-manager (8.3.4+port2) bookworm; urgency=medium
+
+  * api: Add ipmi config to nodeconfig
+  * api: Add host arch and pxvditemplate show in /cluster/resources
+  * api: Add driver_inuse driver output on Hardware/PCI.pm
+  * api: Add pcitool api method
+  * api: Add pciprobe func
+  * api: Api add hardware/info
+  * api: Add api Hardware/net
+  * ui:  Add s390x and power support
+
+ -- Lierfang <itsupport@lierfang.com>  Tue, 04 Mar 2025 15:58:31 +0800
+
 pve-manager (8.3.4+port1) bookworm; urgency=medium
 
   * ui: add nvme support.
