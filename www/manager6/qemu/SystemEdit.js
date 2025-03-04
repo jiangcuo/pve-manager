@@ -71,8 +71,14 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 		me.lookup('addtpmbox').setValue(true);
 	    }
 		let arch = vm.get('current.arch');
-		if (arch && arch !== 'x86_64') {
+		if (arch && (arch === 'aarch64' || arch === 'loongarch64' || arch === 'riscv64')) {
 			me.lookup('machine').setValue('virt');
+		}
+		if (arch && arch === 'ppc64') {
+			me.lookup('machine').setValue('pseries');
+		}
+		if (arch && arch === 's390x') {
+			me.lookup('machine').setValue('s390-ccw-virtio');
 		}
 	},
     },
@@ -97,6 +103,8 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 		['q35', 'q35'],
 		['virt', 'virt'],
 		['pc', 'i440fx'],
+		['pseries','pseries'],
+		['s390-ccw-virtio','s390-ccw-virtio']
 	    ],
 	},
 	{

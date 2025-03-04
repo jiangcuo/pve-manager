@@ -11,6 +11,8 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 	    q35: get => get('type') === 'q35',
 		pc: get => get('type') === 'pc',
 		virt: get => get('type') === 'virt',
+		pseries: get => get('type') === 'pseries',
+		's390-ccw-virtio': get => get('type') === 's390-ccw-virtio',
 	},
     },
 
@@ -85,6 +87,8 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 	    ['q35', 'q35'],
 	    ['virt', 'virt'],
 	    ['pc', 'i440fx'],
+		['pseries','pseries'],
+		['s390-ccw-virtio','s390-ccw-virtio']
 	],
 	bind: {
 	    value: '{type}',
