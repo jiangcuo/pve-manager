@@ -16,7 +16,7 @@ if ($localip) {
 
 $xline
 
-Welcome to the Proxmox Virtual Environment. Please use your web browser to 
+Welcome to the Pxvirt Powered by Lierfang. Please use your web browser to 
 configure this server - connect to:
 
   https://${localip}:8006/
