@@ -2,7 +2,7 @@ Package: pve-web-news
 Description: News displayed on the admin interface
   <b>Welcome</b> to the Proxmox Virtual Environment!<br><br>
   For more information please visit our homepage at
-  <a href='https://www.proxmox.com' target='_blank'>www.proxmox.com</a>
+  <a href='https://www.lierfang.com' target='_blank'>www.lierfang.com</a>
 
 Package: almalinux-9-default
 Version: 20240911

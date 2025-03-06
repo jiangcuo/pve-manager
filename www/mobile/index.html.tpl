@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>[% nodename %] - Proxmox Virtual Environment</title>
+    <title>[% nodename %] - PXVIRT</title>
 
     <link rel="icon" sizes="128x128" href="/pve2/images/logo-128.png" />
     <link rel="apple-touch-icon" sizes="128x128" href="/pve2/images/logo-128.png" />

@@ -127,7 +127,7 @@ Ext.define('PVE.node.StatusView', {
 	    textField: 'boot-info',
 	    renderer: boot => {
 		if (boot.mode === 'legacy-bios') {
-		    return 'U-BOOT';
+		    return 'U-BOOT or Legacy';
 		} else if (boot.mode === 'efi') {
 		    return `EFI${boot.secureboot ? ' (Secure Boot)' : ''}`;
 		}
@@ -151,24 +151,4 @@ Ext.define('PVE.node.StatusView', {
 	me.setTitle(me.pveSelNode.data.node + ' (' + gettext('Uptime') + ': ' + uptime + ')');
     },
 
-    initComponent: function() {
-	let me = this;
-
-	let stateProvider = Ext.state.Manager.getProvider();
-	let repoLink = stateProvider.encodeHToken({
-	    view: "server",
-	    rid: `node/${me.pveSelNode.data.node}`,
-	    ltab: "tasks",
-	    nodetab: "aptrepositories",
-	});
-
-	me.items.push({
-	    xtype: 'pmxNodeInfoRepoStatus',
-	    itemId: 'repositoryStatus',
-	    product: 'Proxmox VE',
-	    repoLink: `#${repoLink}`,
-	});
-
-	me.callParent();
-    },
 });

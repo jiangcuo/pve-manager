@@ -9,7 +9,7 @@
 Ext.define('PVE.Workspace', {
     extend: 'Ext.container.Viewport',
 
-    title: 'Proxmox Virtual Environment',
+    title: 'PXVIRT',
 
     loginData: null, // Data from last login call
 
@@ -208,9 +208,9 @@ Ext.define('PVE.StdWorkspace', {
 
 	if (PVE.VersionInfo) {
 	    let version = PVE.VersionInfo.version;
-	    ui.update('Virtual Environment ' + version);
+	    ui.update('Pxvirt  ' + version);
 	} else {
-	    ui.update('Virtual Environment');
+	    ui.update('Pxvirt');
 	}
 	ui.updateLayout();
     },
@@ -330,7 +330,7 @@ Ext.define('PVE.StdWorkspace', {
 			{
 			    minWidth: 150,
 			    id: 'versioninfo',
-			    html: 'Virtual Environment',
+			    html: 'PXVIRT ',
 			    style: {
 				'font-size': '14px',
 				'line-height': '18px',
