@@ -77,7 +77,7 @@ Ext.define('PVE.Login', {
 	    },
 	    {
 	        xtype: 'fieldset',
-	        title: 'Proxmox VE Login',
+	        title: 'PXVIRT Login',
 	        items: [
 	            {
 	                xtype: 'textfield',
