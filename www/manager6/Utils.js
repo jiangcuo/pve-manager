@@ -34,7 +34,7 @@ Ext.define('PVE.Utils', {
 
     noSubKeyHtml: 'You do not have a valid subscription for this server. Please visit '
       +'<a target="_blank" href="https://www.lierfang.com">'
-      +'www.proxmox.com</a> to get a list of available options.',
+      +'www.lierfang.com</a> to get a list of available options.',
 
         getClusterSubscriptionLevel: async function () {
             let { result } = await Proxmox.Async.api2({ url: '/cluster/status' });
@@ -617,6 +617,7 @@ Ext.define('PVE.Utils', {
             virtio: 'VirtIO-GPU',
             'virtio-gl': 'VirGL GPU',
             rambfb: 'ramfb',
+	mdev: 'Mdev Display',
             none: Proxmox.Utils.noneText,
         },
 

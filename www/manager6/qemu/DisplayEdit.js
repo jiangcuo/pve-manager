@@ -18,7 +18,7 @@ Ext.define('PVE.qemu.DisplayInputPanel', {
         },
         formulas: {
             matchNonGUIOption: function (get) {
-                return get('type').match(/^(serial\d|none)$/);
+                return get('type').match(/^(serial\d|none|ramfb|mdev)$/);
             },
             memoryEmptyText: function (get) {
                 let val = get('type');
