@@ -195,31 +195,32 @@ __PACKAGE__->register_method ({
 	my $authuser = $rpcenv->get_user();
 	my $has_permission = $rpcenv->check($authuser, "/nodes/$node", ['Sys.Audit'], 1);
 
-	my $server_id = PVE::API2Tools::get_hwaddress();
-	my $url = "https://www.proxmox.com/en/proxmox-virtual-environment/pricing";
+#	my $server_id = PVE::API2Tools::get_hwaddress();
+	my $url = "https://www.lierfang.com";
+	#my $info = [];
+	# if (!$info) {
+	#     my $no_subscription_info = {
+	# 	status => "notfound",
+	# 	message => "There is no subscription key",
+	# 	url => $url,
+	#     };
+	#     $no_subscription_info->{serverid} = $server_id if $has_permission;
+	#     return $no_subscription_info;
+	# }
 
-	my $info = read_etc_subscription();
-	if (!$info) {
-	    my $no_subscription_info = {
-		status => "notfound",
-		message => "There is no subscription key",
-		url => $url,
-	    };
-	    $no_subscription_info->{serverid} = $server_id if $has_permission;
-	    return $no_subscription_info;
-	}
-
-	if (!$has_permission) {
-	    return {
-		status => $info->{status},
-		message => $info->{message},
-		url => $url,
-	    }
-	}
-
-	$info->{serverid} = $server_id;
-	$info->{sockets} = get_sockets();
-	$info->{url} = $url;
+	# if (!$has_permission) {
+	#     return {
+	# 	status => $info->{status},
+	# 	message => $info->{message},
+	# 	url => $url,
+	#     }
+	# }
+	my $info = {
+	status => "active",
+	serverid => "lierfangnode",
+	sockets => get_sockets(),
+	url => $url,
+	};
 
 	return $info
     }});
