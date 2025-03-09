@@ -29,6 +29,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 
 	    values['x-vga'] = PVE.Parser.parseBoolean(values['x-vga'], 0);
 	    values.pcie = PVE.Parser.parseBoolean(values.pcie, 0);
+		values.ramfb = PVE.Parser.parseBoolean(values.ramfb, 0);
 	    values.rombar = PVE.Parser.parseBoolean(values.rombar, 1);
 
 	    view.setValues(values);
@@ -52,6 +53,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	pciDevChange: function(pcisel, value) {
 	    let me = this;
 	    let mdevfield = me.lookup('mdev');
+		let ramfb = me.lookup('ramfb');
 	    if (!value) {
 		if (!pcisel.isDisabled()) {
 		    mdevfield.setDisabled(true);
@@ -61,6 +63,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	    let pciDev = pcisel.getStore().getById(value);
 
 	    mdevfield.setDisabled(!pciDev || !pciDev.data.mdev);
+		ramfb.setDisabled(!pciDev || !pciDev.data.mdev);
 	    if (!pciDev) {
 		return;
 	    }
@@ -257,8 +260,10 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 		listeners: {
 		    change: function(field, value) {
 			let multiFunction = me.down('field[name=multifunction]');
+			let ramfb = me.down('field[name=ramfb]');
 			if (value) {
 			    multiFunction.setValue(false);
+				ramfb.setDisabled(false);
 			}
 			multiFunction.setDisabled(!!value);
 		    },
@@ -268,6 +273,13 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 		xtype: 'proxmoxcheckbox',
 		fieldLabel: gettext('Primary GPU'),
 		name: 'x-vga',
+	    },
+	    {
+		xtype: 'proxmoxcheckbox',
+		fieldLabel: gettext('Ramfb Display'),
+		reference: 'ramfb',
+		disabled: true,
+		name: 'ramfb',
 	    },
 	];
 
