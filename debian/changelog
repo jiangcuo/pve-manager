@@ -1,3 +1,11 @@
+pve-manager (8.3.5-1+port2) bookworm; urgency=medium
+
+  * ui: add ramfb on pci select.
+
+  * ui: Remove some proxmox ve text
+
+ -- Lierfang Support Team <itsupport@lierfang.com>  Sun, 09 Mar 2025 12:36:35 +0800
+
 pve-manager (8.3.5-1+port1) bookworm; urgency=medium
 
   * ui: add pxvirt icon
