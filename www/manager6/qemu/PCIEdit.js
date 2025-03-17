@@ -320,6 +320,14 @@ Ext.define('PVE.qemu.PCIInputPanel', {
                 allowBlank: true,
                 submitEmpty: false,
             },
+		{
+		xtype: 'textfield',
+		name: 'mac',
+		fieldLabel: gettext('MAC address'),
+		vtype: 'MacAddress',
+		allowBlank: true,
+		emptyText: 'auto',
+		},
         ];
 
         me.advancedColumn2 = [
@@ -346,7 +354,12 @@ Ext.define('PVE.qemu.PCIInputPanel', {
                 vtype: 'PciId',
                 allowBlank: true,
                 submitEmpty: false,
-            },
+	    },
+		{
+		xtype: 'pveVlanField',
+		name: 'tag',
+		value: '',
+        	},
         ];
 
         me.callParent();
