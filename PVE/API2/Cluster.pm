@@ -439,8 +439,14 @@ __PACKAGE__->register_method({
 		    optional => 1,
 		    default => 0,
 		},
-            },
-        },
+		snapshot => {
+		    description => "The guest has snapshot protected.",
+		    type => 'boolean',
+		    optional => 1,
+		    default => 0,
+		}
+	    },
+	},
     },
     code => sub {
         my ($param) = @_;
@@ -485,10 +491,10 @@ __PACKAGE__->register_method({
             }
         }
 
-        # we try to generate 'numbers' by using "$X + 0"
-        if (!$param->{type} || $param->{type} eq 'vm') {
-            my $prop_list = [qw(lock tags uuid arch pxvditemplate)];
-            my $props = PVE::Cluster::get_guest_config_properties($prop_list);
+	# we try to generate 'numbers' by using "$X + 0"
+	if (!$param->{type} || $param->{type} eq 'vm') {
+	    my $prop_list = [qw(lock tags uuid arch pxvditemplate snapshot)];
+	    my $props = PVE::Cluster::get_guest_config_properties($prop_list);
 
             for my $vmid (sort keys %$idlist) {
 
