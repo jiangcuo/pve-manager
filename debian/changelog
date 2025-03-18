@@ -1,3 +1,11 @@
+pve-manager (8.3.5-2) bookworm; urgency=medium
+
+  * ui: Add snapshot flag show on /cluster/resources
+
+  * ui: Add sriove device mac and tag set on webui
+
+ -- Lierfang Support Team <itsupport@lierfang.com>  Tue, 18 Mar 2025 14:34:56 +0800
+
 pve-manager (8.3.5-1+port2) bookworm; urgency=medium
 
   * ui: add ramfb on pci select.
