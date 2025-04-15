@@ -137,6 +137,10 @@ Ext.define('PVE.lxc.DNS', {
 				values.hostname === '') {
 				params = { hostname: 'CT'+vmid.toString() };
 			    }
+				try {
+					params.hostname = punycode.toASCII(params.hostname);
+				} catch (e) {
+				}
 			    return params;
 			},
 		    },
