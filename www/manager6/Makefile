@@ -4,6 +4,7 @@ ESLINT ?= $(if $(shell command -v pve-eslint), pve-eslint, eslint)
 
 JSSRC= 							\
 	Parser.js					\
+	Puncode.js					\
 	StateProvider.js				\
 	Utils.js					\
 	UIOptions.js					\

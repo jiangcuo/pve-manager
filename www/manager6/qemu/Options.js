@@ -44,6 +44,10 @@ Ext.define('PVE.qemu.Options', {
 				values.name === '') {
 				params = { 'delete': 'name' };
 			    }
+				try {
+					params.name = punycode.toASCII(params.name);
+				} catch (e) {
+				}
 			    return params;
 			},
 		    },

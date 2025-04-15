@@ -318,6 +318,10 @@ Ext.define('PVE.qemu.CreateWizard', {
 		if (boot) {
 		    kv.boot = boot;
 		}
+		try {
+		    kv.name = punycode.toASCII(kv.name);
+		} catch (e) {
+		}
 
 		Proxmox.Utils.API2Request({
 		    url: '/nodes/' + nodename + '/qemu',

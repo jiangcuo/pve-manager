@@ -45,6 +45,7 @@
     };
     </script>
     <script type="text/javascript" src="/proxmoxlib.js?ver=[% wtversion %]"></script>
+    <script type="text/javascript" src="/punycode.min.js"></script>
     <script type="text/javascript" src="/pve2/js/pvemanagerlib.js?ver=[% version %]"></script>
     <script type="text/javascript" src="/pve2/ext6/locale/locale-[% lang %].js?ver=7.0.0"></script>
 
