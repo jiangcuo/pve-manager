@@ -36,6 +36,7 @@ JSSRC= 							\
 	form/ContentTypeSelector.js			\
 	form/ControllerSelector.js			\
 	form/DayOfWeekSelector.js			\
+	form/DirMapSelector.js                          \
 	form/DiskFormatSelector.js			\
 	form/DiskStorageSelector.js			\
 	form/FileSelector.js				\
@@ -139,6 +140,7 @@ JSSRC= 							\
 	window/TreeSettingsEdit.js			\
 	window/PCIMapEdit.js				\
 	window/USBMapEdit.js				\
+	window/DirMapEdit.js                            \
 	window/GuestImport.js				\
 	ha/Fencing.js					\
 	ha/GroupEdit.js					\
@@ -189,6 +191,7 @@ JSSRC= 							\
 	dc/RealmSyncJob.js				\
 	dc/PCIMapView.js				\
 	dc/USBMapView.js				\
+	dc/DirMapView.js				\
 	lxc/CmdMenu.js					\
 	lxc/Config.js					\
 	lxc/CreateWizard.js				\
@@ -270,6 +273,7 @@ JSSRC= 							\
 	qemu/Smbios1Edit.js				\
 	qemu/SystemEdit.js				\
 	qemu/USBEdit.js					\
+	qemu/VirtiofsEdit.js				\
 	sdn/Browser.js					\
 	sdn/ControllerView.js				\
 	sdn/Status.js					\

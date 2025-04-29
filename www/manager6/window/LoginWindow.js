@@ -18,8 +18,21 @@ Ext.define('PVE.window.LoginWindow', {
     },
 
     controller: {
-
 	xclass: 'Ext.app.ViewController',
+
+	init: async function() {
+	    if (Proxmox.ConsentText) {
+		let oidc_auth_redirect = Proxmox.Utils.getOpenIDRedirectionAuthorization();
+		if (oidc_auth_redirect === undefined) {
+		    Ext.create("Proxmox.window.ConsentModal", {
+			autoShow: true,
+			consent: Proxmox.Markdown.parse(
+			    Proxmox.Utils.base64ToUtf8(Proxmox.ConsentText),
+			),
+		    });
+		}
+	    }
+	},
 
 	onLogon: async function() {
 	    var me = this;
