@@ -9,6 +9,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	setVMConfig: function(vmconfig) {
 	    let me = this;
 	    let view = me.getView();
+	    let vm = me.getViewModel();
 	    me.vmconfig = vmconfig;
 
 	    let hostpci = me.vmconfig[view.confid] || '';
@@ -26,6 +27,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	    } else if (values.mapping) {
 		values.type = 'mapped';
 	    }
+	    vm.set('isMapped', values.type !== 'raw');
 
 	    values['x-vga'] = PVE.Parser.parseBoolean(values['x-vga'], 0);
 	    values.pcie = PVE.Parser.parseBoolean(values.pcie, 0);
@@ -183,6 +185,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 		xtype: 'radiofield',
 		name: 'type',
 		inputValue: 'mapped',
+		checked: true,
 		boxLabel: gettext('Mapped Device'),
 		bind: {
 		    value: '{isMapped}',
@@ -208,7 +211,6 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 		xtype: 'radiofield',
 		name: 'type',
 		inputValue: 'raw',
-		checked: true,
 		boxLabel: gettext('Raw Device'),
 	    },
 	    {
@@ -300,7 +302,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	    {
 		xtype: 'textfield',
 		name: 'vendor-id',
-		fieldLabel: Ext.String.format(gettext('{0} ID'), gettext('Vendor')),
+		fieldLabel: gettext('Vendor ID'),
 		emptyText: gettext('From Device'),
 		vtype: 'PciId',
 		allowBlank: true,
@@ -309,7 +311,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	    {
 		xtype: 'textfield',
 		name: 'device-id',
-		fieldLabel: Ext.String.format(gettext('{0} ID'), gettext('Device')),
+		fieldLabel: gettext('Device ID'),
 		emptyText: gettext('From Device'),
 		vtype: 'PciId',
 		allowBlank: true,
@@ -335,7 +337,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	    {
 		xtype: 'textfield',
 		name: 'sub-vendor-id',
-		fieldLabel: Ext.String.format(gettext('{0} ID'), gettext('Sub-Vendor')),
+		fieldLabel: gettext('Sub-Vendor ID'),
 		emptyText: gettext('From Device'),
 		vtype: 'PciId',
 		allowBlank: true,
@@ -344,7 +346,7 @@ Ext.define('PVE.qemu.PCIInputPanel', {
 	    {
 		xtype: 'textfield',
 		name: 'sub-device-id',
-		fieldLabel: Ext.String.format(gettext('{0} ID'), gettext('Sub-Device')),
+		fieldLabel: gettext('Sub-Device ID'),
 		emptyText: gettext('From Device'),
 		vtype: 'PciId',
 		allowBlank: true,
