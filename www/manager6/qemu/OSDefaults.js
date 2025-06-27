@@ -42,6 +42,7 @@ Ext.define('PVE.qemu.OSDefaults', {
 		    scsi: 2,
 		    virtio: 1,
 		    nvme: 2,
+		    spdk: 1,
 	    },
 	    scsihw: 'virtio-scsi-pci',
 	};
@@ -58,6 +59,7 @@ Ext.define('PVE.qemu.OSDefaults', {
 		    sata: 2,
 		    ide: 1,
 		    nvme: 2,
+		    spdk: 1,
 	    },
 	    networkCard: 'virtio',
 	});
