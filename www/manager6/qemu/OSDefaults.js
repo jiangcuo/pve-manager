@@ -41,6 +41,7 @@ Ext.define('PVE.qemu.OSDefaults', {
 		    scsi: 2,
 		    virtio: 1,
 		    nvme: 2,
+		    spdk: 1,
 	    },
 	    scsihw: 'virtio-scsi-pci',
         cputype: 'host',
@@ -58,9 +59,10 @@ Ext.define('PVE.qemu.OSDefaults', {
                 sata: 2,
                 ide: 1,
 		    nvme: 2,
-            },
-            networkCard: 'virtio',
-        });
+		    spdk: 1,
+	    },
+	    networkCard: 'virtio',
+	});
 
         // recommendation from http://wiki.qemu.org/Windows2000
         addOS({
