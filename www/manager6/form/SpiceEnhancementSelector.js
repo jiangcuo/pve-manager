@@ -26,6 +26,20 @@ Ext.define('PVE.form.SpiceEnhancementSelector', {
 	    ],
 	},
 	{
+	    xtype: 'proxmoxKVComboBox',
+	    itemId: 'preferredcodec',
+	    name: 'preferredcodec',
+	    value: 'off',
+	    fieldLabel: 'Gstreamer Codec',
+	    comboItems: [
+		['off', 'off'],
+		['h264', 'h264'],
+		['h265', 'h265'],
+		['h264vaapi', 'h264vaapi'],
+		['vp8', 'vp8'],
+	    ],
+	},
+	{
 	    xtype: 'displayfield',
 	    itemId: 'spicehint',
 	    userCls: 'pmx-hint',
@@ -48,6 +62,9 @@ Ext.define('PVE.form.SpiceEnhancementSelector', {
 
 	if (values.videostreaming !== "off") {
 	    ret.videostreaming = values.videostreaming;
+	}
+	if (values.preferredcodec !== "off") {
+	    ret.preferredcodec = values.preferredcodec;
 	}
 	if (values.foldersharing) {
 	    ret.foldersharing = 1;
