@@ -16,6 +16,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
             isVirtIO: false,
             isSCSISingle: false,
 		    isNVME: false,
+		    isSPDK: false,
         },
     },
 
@@ -30,6 +31,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
             vm.set('isSCSI', value.match(/^scsi/));
             vm.set('isVirtIO', value.match(/^virtio/));
 	    vm.set('isNVME', value.match(/^nvme/));
+		vm.set('isSPDK', value.match(/^spdk/));
 
             me.fireIdChange();
         },
@@ -63,7 +65,8 @@ Ext.define('PVE.qemu.HDInputPanel', {
             if (view.confid) {
                 vm.set('isSCSI', view.confid.match(/^scsi/));
                 vm.set('isVirtIO', view.confid.match(/^virtio/));
-		        vm.set('isNVME', view.confid.match(/^nvme/));
+                vm.set('isNVME', view.confid.match(/^nvme/));
+                vm.set('isSPDK', view.confid.match(/^spdk/));
             }
         },
     },
@@ -255,7 +258,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
                 reference: 'discard',
                 name: 'discard',
                 bind: {
-                    disabled: '{isNVME}',
+                    disabled: '{isNVME || isSPDK}',
                 },
             },
             {
@@ -283,7 +286,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
                 name: 'ssd',
                 clearOnDisable: true,
                 bind: {
-                    disabled: '{isVirtIO || isNVME}',
+                    disabled: '{isVirtIO || isNVME || isSPDK}',
                 },
             },
             {
@@ -329,7 +332,7 @@ Ext.define('PVE.qemu.HDInputPanel', {
                     ['threads', 'threads'],
                 ],
                 bind: {
-                    disabled: '{isNVME}',
+                    disabled: '{isNVME || isSPDK}',
                 },
             },
         );

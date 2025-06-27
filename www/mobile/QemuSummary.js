@@ -23,6 +23,7 @@ Ext.define('PVE.QemuSummary', {
         /^sata\d+/,
         /^scsi\d+/,
         /^nvme\d+/,
+        /^spdk\d+/, 
         /^unused\d+/,
     ],
 
