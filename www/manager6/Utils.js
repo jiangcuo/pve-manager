@@ -560,6 +560,13 @@ Ext.define('PVE.Utils', {
             if (props.videostreaming === 'all' || props.videostreaming === 'filter') {
                 output.push('Video Streaming: ' + props.videostreaming);
             }
+
+	if (props.preferredcodec === 'off') {
+	    output.push('Gstreamer Codec: ' + gettext('Disabled'));
+	} else if (props.preferredcodec) {
+	    output.push('Gstreamer Codec: ' + props.preferredcodec);
+	}
+
             return output.join(', ');
         },
 
