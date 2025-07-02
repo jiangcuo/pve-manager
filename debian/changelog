@@ -297,6 +297,12 @@ pve-manager (9.0.0~1) trixie; urgency=medium
 
  -- Proxmox Support Team <support@proxmox.com>  Tue, 17 Jun 2025 20:36:36 +0200
 
+pve-manager (8.4.1-1) bookworm; urgency=medium
+
+  * ui: add spice gstreamer ecoder selector
+
+  * ui: add spdk disk type
+
 pve-manager (8.4.1) bookworm; urgency=medium
 
   * ui: fix regression with checking if volume is QEMU backup, which could
