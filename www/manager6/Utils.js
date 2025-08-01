@@ -13,7 +13,6 @@ Ext.define('PVE.Utils', {
         toolkit: undefined, // (extjs|touch), set inside Toolkit.js
 
     bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
-    bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
 
         log_severity_hash: {
             0: 'panic',
@@ -33,9 +32,7 @@ Ext.define('PVE.Utils', {
             p: gettext('Premium'),
         },
 
-    noSubKeyHtml: 'You do not have a valid subscription for this server. Please visit '
-      +'<a target="_blank" href="https://www.lierfang.com">'
-      +'www.lierfang.com</a> to get a list of available options.',
+    noSubKeyHtml: 'You do not have a valid subscription for this server. Please visit <a target="_blank" href="https://www.lierfang.com"> www.lierfang.com</a> to get a list of available options.',
 
         getClusterSubscriptionLevel: async function () {
             let { result } = await Proxmox.Async.api2({ url: '/cluster/status' });

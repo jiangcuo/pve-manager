@@ -192,7 +192,7 @@ Ext.define('PVE.ceph.StatusDetail', {
             cls: 'pve-ceph-status-busy',
         },
         {
-            text: ngettext('Warning', 'Warnings', 1),
+            text: gettext('Warning', 'Warnings', 1),
             cls: 'warning',
         },
         {

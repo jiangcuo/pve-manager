@@ -35,8 +35,6 @@ Ext.define('PVE.qemu.OSDefaults', {
 	me.generic = {
 	    busType: 'scsi',
 	    networkCard: 'virtio',
-	    busType: 'scsi',
-	    networkCard: 'virtio',
 	    busPriority: {
 		    ide: 4,
 		    sata: 3,

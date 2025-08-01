@@ -59,7 +59,6 @@ Ext.define('PVE.qemu.MachineInputPanel', {
     },
 
     setValues: function (values) {
-        let me = this;
 
 	let machineConf = PVE.Parser.parsePropertyString(values.machine, 'type');
 	values.machine = machineConf.type;

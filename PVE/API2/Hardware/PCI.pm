@@ -92,7 +92,7 @@ __PACKAGE__->register_method({
                     type => 'string',
                     optional => 1,
                 },
-                iommugroup => {
+		iommugroup => {
                     type => 'integer',
                     description =>
                         "The IOMMU group in which the device is in. If no IOMMU group is"
@@ -112,20 +112,12 @@ __PACKAGE__->register_method({
 		driver => {
 		    type => 'string',
 		    optional => 1,
-	    }
         	},
-        },
 		driver_inuse => {
 		    type => 'string',
 		    optional => 1,
 		},
-		driver => {
-		    type => 'string',
-		    optional => 1,
-	    }
-		},
-	},
-    },
+    }}},
     code => sub {
         my ($param) = @_;
 
@@ -348,5 +340,4 @@ __PACKAGE__->register_method ({
 
 	return PVE::SysFSTools::pciprobe($param->{'pci-id-or-mapping'},$blacklist,$driver,$clean);
     }});
-
 
