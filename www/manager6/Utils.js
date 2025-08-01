@@ -13,6 +13,7 @@ Ext.define('PVE.Utils', {
         toolkit: undefined, // (extjs|touch), set inside Toolkit.js
 
     bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
+    bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
 
         log_severity_hash: {
             0: 'panic',

@@ -152,6 +152,7 @@ case "$1" in
     deb-systemd-invoke reload-or-try-restart spiceproxy.service || true
     deb-systemd-invoke reload-or-try-restart pvescheduler.service || true
     deb-systemd-invoke reload-or-try-restart pve-query-machine-info.service || true
+    deb-systemd-invoke reload-or-try-restart pve-query-machine-info.service || true
 
     exit 0;;
 

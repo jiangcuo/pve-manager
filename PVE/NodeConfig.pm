@@ -298,6 +298,22 @@ sub get_ipmi_config {
     return $res;
 }
 
+sub get_ipmi_config {
+    my ($node_conf) = @_;
+
+    $node_conf //= {};
+
+    my $res = {};
+    if (defined($node_conf->{ipmi})) {
+	$res = eval {
+	    PVE::JSONSchema::parse_property_string($ipmi_desc, $node_conf->{ipmi})
+	};
+	die $@ if $@;
+    }
+
+    return $res;
+}
+
 # we always convert domain values to lower case, since DNS entries are not case
 # sensitive and ACME implementations might convert the ordered identifiers
 # to lower case

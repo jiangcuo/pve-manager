@@ -115,6 +115,16 @@ __PACKAGE__->register_method({
 	    }
         	},
         },
+		driver_inuse => {
+		    type => 'string',
+		    optional => 1,
+		},
+		driver => {
+		    type => 'string',
+		    optional => 1,
+	    }
+		},
+	},
     },
     code => sub {
         my ($param) = @_;
@@ -256,8 +266,7 @@ __PACKAGE__->register_method({
             return [sort { $a->{type} cmp $b->{type} } values($types->%*)];
         }
 
-    },
-});
+    }});
 
 __PACKAGE__->register_method ({
     name => 'pcitool',

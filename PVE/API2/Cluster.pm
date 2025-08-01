@@ -535,12 +535,10 @@ __PACKAGE__->register_method({
                     }
                 }
 
-                if (
-                    defined($entry->{pool})
-                    && !$rpcenv->check($authuser, "/pool/$entry->{pool}", ['Pool.Audit'], 1)
-                ) {
-                    delete $entry->{pool};
-                }
+		if (defined($entry->{pool}) &&
+		    !$rpcenv->check($authuser, "/pool/$entry->{pool}", ['Pool.Audit'], 1)) {
+		    delete $entry->{pool};
+		}
 
 		if ($entry->{status} eq 'unknown'){
 			my $vmconf;
