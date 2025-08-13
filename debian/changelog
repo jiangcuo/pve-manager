@@ -117,6 +117,8 @@ pve-manager (8.4.1-1) bookworm; urgency=medium
 
   * ui: add spdk disk type
 
+ -- Jiangcuo <jiangcuo@lierfang.com>  Fri, 13 Aug 2025 17:41:07 +0800
+
 pve-manager (8.4.1) bookworm; urgency=medium
 
   * ui: fix regression with checking if volume is QEMU backup, which could
