@@ -1,3 +1,122 @@
+pve-manager (9.0.4) trixie; urgency=medium
+
+  * 8to9 upgrade checks (pve8to9):
+    - skip check for running guests if already upgraded
+    - use check for unified cgroup v2 support via pve-container
+    - rework systemd-boot checks
+    - add check for removable GRUB entry
+    - support single-line repo entries with bracket options
+    - lvm config: check that --clear-needs-check-flag is set if there is a
+      thin_check_options override
+
+  * d/postinst: lvm config: check that --clear-needs-check-flag is set if there
+    is a thin_check_options override
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 08 Aug 2025 16:40:26 +0200
+
+pve-manager (9.0.3) trixie; urgency=medium
+
+  * d/postinst: add snippet to manage systemd-tmpfiles configurations to
+    ensure they are updated on package upgrade.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 05 Aug 2025 12:36:45 +0200
+
+pve-manager (9.0.2) trixie; urgency=medium
+
+  * fix permission regression for '/run/pve' directory, which is now managed
+    by systemd's tmpfile mechanism. Ensure it's created with root:www-data
+    user:group.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 05 Aug 2025 12:15:38 +0200
+
+pve-manager (9.0.1) trixie; urgency=medium
+
+  * network-interface-pinning: move to libexec and rename but add symlink to
+    pve-network-pinning-tool into usr/bin.
+
+  * ui: node memory RRD: change ZFS ARC color to a blue shade and available
+    memory to a green shade for more visual difference.
+
+  * pveproxy service: use heuristic to trigger initial appliance update on
+    first boot.
+
+  * network: improve reloading logic for FFR config, trust flag if set, else
+    reload only if there is a FRR controller configured.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 05 Aug 2025 12:07:04 +0200
+
+pve-manager (9.0.0) trixie; urgency=medium
+
+  * bump for final Proxmox VE 9.0 release.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 04 Aug 2025 23:13:26 +0200
+
+pve-manager (9.0.0~22) trixie; urgency=medium
+
+  * sync over 8 to 9 upgrade checks from stable-8 branch.
+
+  * api: backup: remove unneeded call of rrd_dump method.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 04 Aug 2025 21:43:25 +0200
+
+pve-manager (9.0.0~21) trixie; urgency=medium
+
+  * ui: migration pre-conditions: make lack of support for conntrack state
+    migration only a info-level severity.
+
+  * sync over 8 to 9 upgrade checks from stable-8 branch.
+
+  * api: network: default to not regenerating the frr configuration using new
+    parameter from SDN stack.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 04 Aug 2025 18:30:55 +0200
+
+pve-manager (9.0.0~20) trixie; urgency=medium
+
+  * api: node status: add the available memory to return value.
+
+  * ui: avoid stacked graphs for memory usage, can easily lead to confusion as
+    y-axis does not match the values anymore.
+
+  * ui: node memory RRD: add 'Available' graph.
+
+  * ui: ignore backend 501 error for migration precondition checks, most
+    likely stems from using a new web UI version operating on an older node,
+    e.g., when during the major upgrade.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 04 Aug 2025 16:58:46 +0200
+
+pve-manager (9.0.0~19) trixie; urgency=medium
+
+  * ui: ha affinity rules: use single data store and mirror it to child grids,
+    this avoids loading the data twice which then also ensures that they both
+    show the same consistent view of the ruleset.
+
+  * ui: ha affinity rules: various small UX polishing:
+    - give resource rule some more vertical space.
+    - add ID column but hide by default for now.
+    - give resource rules some more vertical space.
+
+  * ui: guest migrate: adapt HA migration checks to new property name also for
+    Containers.
+
+ -- Proxmox Support Team <support@proxmox.com>  Sat, 02 Aug 2025 19:42:57 +0200
+
+pve-manager (9.0.0~18) trixie; urgency=medium
+
+  * sync over 8 to 9 upgrade checks from stable-8 branch.
+
+  * ui: RRD graphs: display PSI as percent again
+
+  * ui: guest migrate: fix logging unexpected errors to developer
+    console.
+
+  * ui: guest migrate: adapt HA migration checks to altered property name
+
+  * ui: sdn: allow sorting the IPAM and DHCP view by guest ID.
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 01 Aug 2025 18:41:47 +0200
+
 pve-manager (9.0.0~17) trixie; urgency=medium
 
   * make Yew based mobile UI package a required dependency and completely drop

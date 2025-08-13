@@ -237,7 +237,9 @@ Ext.define('PVE.window.Migrate', {
                 });
                 migrateStats = result.data;
             } catch (error) {
-                Ext.Msg.alert(Proxmox.Utils.errorText, error.htmlStatus);
+                if (error?.result?.status !== 501) {
+                    Ext.Msg.alert(Proxmox.Utils.errorText, error.htmlStatus);
+                }
                 me.fetchingNodeMigrateInfo = false;
                 return;
             }
@@ -254,7 +256,7 @@ Ext.define('PVE.window.Migrate', {
             } catch (err) {
                 // Only emit a warning in the case the target node does not (yet) support the
                 // `capabilites/qemu/migration` endpoint and simply treat all features as unsupported.
-                console.warn(`failed to query /capabilites/qemu/migration on '${target}': ${err}`);
+                console.warn(`failed to query /capabilites/qemu/migration on '${target}':`, err);
             }
 
             me.fetchingNodeMigrateInfo = false;
@@ -392,9 +394,10 @@ Ext.define('PVE.window.Migrate', {
                 if (migration.withConntrackState && !migrateStats['has-dbus-vmstate']) {
                     migration.preconditions.push({
                         text: gettext(
-                            'Cannot migrate conntrack state, source node is lacking support. Active network connections might get dropped.',
+                            'Cannot migrate conntrack state, source node is lacking support.',
                         ),
-                        severity: 'warning',
+                        // user cannot really do anything about this, do not bother with scaring them!
+                        severity: 'info',
                     });
                 }
                 if (migration.withConntrackState && !targetCapabilities['has-dbus-vmstate']) {
@@ -446,9 +449,9 @@ Ext.define('PVE.window.Migrate', {
                 }
             }
 
-            let comigratedHAResources = migrateStats['comigrated-ha-resources'];
-            if (comigratedHAResources !== undefined) {
-                for (const sid of comigratedHAResources) {
+            let dependentHAResources = migrateStats['dependent-ha-resources'];
+            if (dependentHAResources !== undefined) {
+                for (const sid of dependentHAResources) {
                     const text = Ext.String.format(
                         gettext(
                             'HA resource {0} with positive affinity to VM is also migrated to selected target node.',
@@ -486,7 +489,10 @@ Ext.define('PVE.window.Migrate', {
                 migrateStats = result.data;
                 me.fetchingNodeMigrateInfo = false;
             } catch (error) {
-                Ext.Msg.alert(Proxmox.Utils.errorText, error.htmlStatus);
+                if (error?.result?.status !== 501) {
+                    Ext.Msg.alert(Proxmox.Utils.errorText, error.htmlStatus);
+                }
+                me.fetchingNodeMigrateInfo = false;
                 return;
             }
 
@@ -533,9 +539,9 @@ Ext.define('PVE.window.Migrate', {
                 }
             }
 
-            let comigratedHAResources = migrateStats['comigrated-ha-resources'];
-            if (comigratedHAResources !== undefined) {
-                for (const sid of comigratedHAResources) {
+            let dependentHAResources = migrateStats['dependent-ha-resources'];
+            if (dependentHAResources !== undefined) {
+                for (const sid of dependentHAResources) {
                     const text = Ext.String.format(
                         gettext(
                             'HA resource {0} with positive affinity to container is also migrated to selected target node.',
@@ -676,6 +682,8 @@ Ext.define('PVE.window.Migrate', {
                                 return '<i class="fa fa-exclamation-triangle warning"></i> ';
                             case 'error':
                                 return '<i class="fa fa-times critical"></i>';
+                            case 'info':
+                                return '<i class="fa fa-info-circle info-blue"></i>';
                             default:
                                 return v;
                         }

@@ -1,5 +1,49 @@
+Ext.define('pve-ha-rules', {
+    extend: 'Ext.data.Model',
+    fields: [
+        'rule',
+        'type',
+        'nodes',
+        'digest',
+        'errors',
+        'disable',
+        'comment',
+        'affinity',
+        'resources',
+        {
+            name: 'strict',
+            type: 'boolean',
+        },
+    ],
+    proxy: {
+        type: 'proxmox',
+        url: '/api2/json/cluster/ha/rules',
+    },
+    idProperty: 'rule',
+});
+Ext.define('pve-ha-rules-memory', {
+    extend: 'pve-ha-rules',
+    proxy: {
+        type: 'memory',
+    },
+});
+
 Ext.define('PVE.ha.RulesBaseView', {
     extend: 'Ext.grid.GridPanel',
+    mixins: ['Proxmox.Mixin.CBind'],
+
+    store: {
+        model: 'pve-ha-rules-memory',
+        cbind: {}, // empty cbind to ensure mixin iterates into filter array.
+        filters: [
+            {
+                property: 'type',
+                cbind: {
+                    value: '{ruleType}',
+                },
+            },
+        ],
+    },
 
     initComponent: function () {
         let me = this;
@@ -8,18 +52,7 @@ Ext.define('PVE.ha.RulesBaseView', {
             throw 'no rule type given';
         }
 
-        let store = new Ext.data.Store({
-            model: 'pve-ha-rules',
-            autoLoad: true,
-            filters: [
-                {
-                    property: 'type',
-                    value: me.ruleType,
-                },
-            ],
-        });
-
-        let reloadStore = () => store.load();
+        let reloadStore = () => me.up('pveHARulesView').store.load();
 
         let sm = Ext.create('Ext.selection.RowModel', {});
 
@@ -49,21 +82,9 @@ Ext.define('PVE.ha.RulesBaseView', {
             createRuleEditWindow(rule);
         };
 
-        let editButton = Ext.create('Proxmox.button.Button', {
-            text: gettext('Edit'),
-            disabled: true,
-            selModel: sm,
-            handler: runEditor,
-        });
-
-        let removeButton = Ext.create('Proxmox.button.StdRemoveButton', {
-            selModel: sm,
-            baseurl: '/cluster/ha/rules/',
-            callback: reloadStore,
-        });
+        let childColumns = me.columns || [];
 
         Ext.apply(me, {
-            store: store,
             selModel: sm,
             viewConfig: {
                 trackOver: false,
@@ -74,8 +95,70 @@ Ext.define('PVE.ha.RulesBaseView', {
                     text: gettext('Add'),
                     handler: () => createRuleEditWindow(),
                 },
-                editButton,
-                removeButton,
+                {
+                    xtype: 'button',
+                    text: gettext('Edit'),
+                    disabled: true,
+                    selModel: sm,
+                    handler: runEditor,
+                },
+                {
+                    xtype: 'proxmoxStdRemoveButton',
+                    selModel: sm,
+                    baseurl: '/cluster/ha/rules/',
+                    callback: reloadStore,
+                },
+            ],
+            columns: [
+                {
+                    header: gettext('ID'),
+                    dataIndex: 'rule',
+                    width: 160,
+                    hidden: true,
+                    sortable: true,
+                },
+                {
+                    header: gettext('Enabled'),
+                    width: 80,
+                    dataIndex: 'disable',
+                    align: 'center',
+                    renderer: (value) => Proxmox.Utils.renderEnabledIcon(!value),
+                    sortable: true,
+                },
+                {
+                    header: gettext('State'),
+                    xtype: 'actioncolumn',
+                    width: 65,
+                    align: 'center',
+                    dataIndex: 'errors',
+                    items: [
+                        {
+                            handler: (table, rowIndex, colIndex, item, event, { data }) => {
+                                if (Object.keys(data.errors ?? {}.length)) {
+                                    Ext.create('PVE.ha.RuleErrorsModal', {
+                                        autoShow: true,
+                                        errors: data.errors,
+                                    });
+                                }
+                            },
+                            getTip: (value) =>
+                                Object.keys(value ?? {}).length
+                                    ? gettext('HA Rule has conflicts and/or errors.')
+                                    : gettext('HA Rule is OK.'),
+                            getClass: (value) =>
+                                Object.keys(value ?? {}).length
+                                    ? 'fa fa-exclamation-triangle'
+                                    : 'fa fa-check',
+                        },
+                    ],
+                },
+                ...childColumns,
+                {
+                    header: gettext('Comment'),
+                    flex: 1,
+                    renderer: Ext.String.htmlEncode,
+                    dataIndex: 'comment',
+                },
             ],
             listeners: {
                 activate: reloadStore,
@@ -83,126 +166,60 @@ Ext.define('PVE.ha.RulesBaseView', {
             },
         });
 
-        me.columns.unshift(
-            {
-                header: gettext('Enabled'),
-                width: 80,
-                dataIndex: 'disable',
-                align: 'center',
-                renderer: function (value) {
-                    return Proxmox.Utils.renderEnabledIcon(!value);
-                },
-                sortable: true,
-            },
-            {
-                header: gettext('State'),
-                xtype: 'actioncolumn',
-                width: 65,
-                align: 'center',
-                dataIndex: 'errors',
-                items: [
-                    {
-                        handler: (table, rowIndex, colIndex, item, event, { data }) => {
-                            let errors = Object.keys(data.errors ?? {});
-                            if (!errors.length) {
-                                return;
-                            }
-
-                            Ext.create('PVE.ha.RuleErrorsModal', {
-                                autoShow: true,
-                                errors: data.errors ?? {},
-                            });
-                        },
-                        getTip: (value) => {
-                            let errors = Object.keys(value ?? {});
-                            if (errors.length) {
-                                return gettext('HA Rule has conflicts and/or errors.');
-                            } else {
-                                return gettext('HA Rule is OK.');
-                            }
-                        },
-                        getClass: (value) => {
-                            let iconName = 'check';
-
-                            let errors = Object.keys(value ?? {});
-                            if (errors.length) {
-                                iconName = 'exclamation-triangle';
-                            }
-
-                            return `fa fa-${iconName}`;
-                        },
-                    },
-                ],
-            },
-        );
-
-        me.columns.push({
-            header: gettext('Comment'),
-            flex: 1,
-            renderer: Ext.String.htmlEncode,
-            dataIndex: 'comment',
-        });
-
         me.callParent();
     },
 });
 
-Ext.define(
-    'PVE.ha.RulesView',
-    {
-        extend: 'Ext.panel.Panel',
-        alias: 'widget.pveHARulesView',
+Ext.define('PVE.ha.RulesView', {
+    extend: 'Ext.panel.Panel',
+    alias: 'widget.pveHARulesView',
 
-        onlineHelp: 'ha_manager_rules',
+    onlineHelp: 'ha_manager_rules',
 
-        layout: {
-            type: 'vbox',
-            align: 'stretch',
+    layout: {
+        type: 'vbox',
+        align: 'stretch',
+    },
+
+    controller: {
+        xclass: 'Ext.app.ViewController',
+
+        init: function (view) {
+            view.store = new Ext.data.Store({
+                model: 'pve-ha-rules',
+                storeId: 'pve-ha-rules',
+                autoLoad: true,
+            });
+            view.store.on('load', this.onStoreLoad, this);
         },
 
-        items: [
-            {
-                title: gettext('HA Node Affinity Rules'),
-                xtype: 'pveHANodeAffinityRulesView',
-                flex: 1,
-                border: 0,
-            },
-            {
-                xtype: 'splitter',
-                collapsible: false,
-                performCollapse: false,
-            },
-            {
-                title: gettext('HA Resource Affinity Rules'),
-                xtype: 'pveHAResourceAffinityRulesView',
-                flex: 1,
-                border: 0,
-            },
-        ],
+        onStoreLoad: function (store, records, success) {
+            let me = this;
+            let view = me.getView();
+
+            for (const grid of view.query('grid[ruleType]')) {
+                grid.getStore().setRecords(records);
+            }
+        },
     },
-    function () {
-        Ext.define('pve-ha-rules', {
-            extend: 'Ext.data.Model',
-            fields: [
-                'rule',
-                'type',
-                'nodes',
-                'digest',
-                'errors',
-                'disable',
-                'comment',
-                'affinity',
-                'resources',
-                {
-                    name: 'strict',
-                    type: 'boolean',
-                },
-            ],
-            proxy: {
-                type: 'proxmox',
-                url: '/api2/json/cluster/ha/rules',
-            },
-            idProperty: 'rule',
-        });
-    },
-);
+
+    items: [
+        {
+            title: gettext('HA Node Affinity Rules'),
+            xtype: 'pveHANodeAffinityRulesView',
+            flex: 2,
+            border: 0,
+        },
+        {
+            xtype: 'splitter',
+            collapsible: false,
+            performCollapse: false,
+        },
+        {
+            title: gettext('HA Resource Affinity Rules'),
+            xtype: 'pveHAResourceAffinityRulesView',
+            flex: 3,
+            border: 0,
+        },
+    ],
+});

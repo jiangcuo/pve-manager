@@ -44,6 +44,8 @@ my $nodename = PVE::INotify::nodename();
 
 my $upgraded = 0; # set in check_pve_packages
 
+my $full_checks = !!0; # set by CLI --full parameter
+
 sub setup_environment {
     PVE::RPCEnvironment->setup_default_cli_env();
 }
@@ -1265,50 +1267,6 @@ sub check_containers_cgroup_compat {
     my $supports_cgroupv2 = sub {
         my ($conf, $rootdir, $ctid) = @_;
 
-        my $get_systemd_version = sub {
-            my ($self) = @_;
-
-            my @dirs = (
-                '/lib/systemd',
-                '/usr/lib/systemd',
-                '/usr/lib/x86_64-linux-gnu/systemd',
-                '/usr/lib64/systemd',
-            );
-            my $libsd;
-            for my $dir (@dirs) {
-                $libsd = PVE::Tools::dir_glob_regex($dir, "libsystemd-shared-.+\.so");
-                last if defined($libsd);
-            }
-            if (
-                defined($libsd) && $libsd =~ /libsystemd-shared-(\d+)(\.\d-\d)?(\.fc\d\d)?\.so/
-            ) {
-                return $1;
-            }
-
-            return undef;
-        };
-
-        my $unified_cgroupv2_support = sub {
-            my ($self) = @_;
-
-            # https://www.freedesktop.org/software/systemd/man/systemd.html
-            # systemd is installed as symlink to /sbin/init
-            my $systemd = CORE::readlink('/sbin/init');
-
-            # assume non-systemd init will run with unified cgroupv2
-            if (!defined($systemd) || $systemd !~ m@/systemd$@) {
-                return 1;
-            }
-
-            # systemd version 232 (e.g. debian stretch) supports the unified hierarchy
-            my $sdver = $get_systemd_version->();
-            if (!defined($sdver) || $sdver < 232) {
-                return 0;
-            }
-
-            return 1;
-        };
-
         my $ostype = $conf->{ostype};
         if (!defined($ostype)) {
             log_warn("Found CT ($ctid) without 'ostype' set!");
@@ -1317,7 +1275,7 @@ sub check_containers_cgroup_compat {
         }
 
         my $lxc_setup = PVE::LXC::Setup->new($conf, $rootdir);
-        return $lxc_setup->protected_call($unified_cgroupv2_support);
+        return $lxc_setup->unified_cgroupv2_support();
     };
 
     my $log_problem = sub {
@@ -1453,7 +1411,7 @@ sub check_apt_repos {
             next if $line !~ m/^deb[[:space:]]/; # is case sensitive
 
             my ($url, $suite, $component);
-            if ($line =~ m|deb\s+(\w+://\S+)\s+(?:(\S+)(?:\s+(\S+))?)?|i) {
+            if ($line =~ m|deb\s+(?:\[[^\]]*\]\s+)?(\w+://\S+)\s+(?:(\S+)(?:\s+(\S+))?)?|i) {
                 ($url, $suite, $component) = ($1, $2, $3);
             } else {
                 next;
@@ -1601,30 +1559,69 @@ sub check_bootloader {
     log_info("Checking bootloader configuration...");
 
     if (!-d '/sys/firmware/efi') {
+        if (-f "/usr/share/doc/systemd-boot/changelog.Debian.gz") {
+            log_info(
+                "systemd-boot package installed on legacy-boot system is not necessary, consider removing it"
+            );
+            return;
+        }
         log_skip("System booted in legacy-mode - no need for additional packages");
         return;
     }
 
+    my $boot_ok = 1;
     if (-f "/etc/kernel/proxmox-boot-uuids") {
         if (!$upgraded) {
-            log_skip("not yet upgraded, no need to check the presence of systemd-boot");
+            log_skip("not yet upgraded, systemd-boot still needed for bootctl");
             return;
         }
         if (-f "/usr/share/doc/systemd-boot/changelog.Debian.gz") {
-            log_pass("bootloader packages installed correctly");
+            log_fail("systemd-boot meta-package installed this will cause issues on upgrades of"
+                . " boot-related packages. Install 'systemd-boot-efi' and 'systemd-boot-tools' explicitly"
+                . " and remove 'systemd-boot'");
             return;
         }
-        log_warn("proxmox-boot-tool is used for bootloader configuration in uefi mode"
-            . " but the separate systemd-boot package is not installed,"
-            . " initializing new ESPs will not work until the package is installed");
-        return;
-    } elsif (!-f "/usr/share/doc/grub-efi-amd64/changelog.Debian.gz") {
-        log_warn("System booted in uefi mode but grub-efi-amd64 meta-package not installed,"
-            . " new grub versions will not be installed to /boot/efi!"
-            . " Install grub-efi-amd64.");
-        return;
     } else {
-        log_pass("bootloader packages installed correctly");
+        if (-f "/usr/share/doc/systemd-boot/changelog.Debian.gz") {
+            log_fail(
+                "systemd-boot meta-package installed. This will cause problems on upgrades of other"
+                    . " boot-related packages. Remove 'systemd-boot' See"
+                    . " https://pve.proxmox.com/wiki/Upgrade_from_8_to_9#sd-boot-warning for more information."
+            );
+            $boot_ok = 0;
+        }
+        if (!-f "/usr/share/doc/grub-efi-amd64/changelog.Debian.gz") {
+            log_warn("System booted in uefi mode but grub-efi-amd64 meta-package not installed,"
+                . " new grub versions will not be installed to /boot/efi! Install grub-efi-amd64."
+            );
+            $boot_ok = 0;
+        }
+        if (-f "/boot/efi/EFI/BOOT/BOOTX64.efi") {
+            my $update_removable_missing = 1;
+            my $exit_code = eval {
+                run_command(
+                    ['debconf-show', '--db', 'configdb', 'grub-efi-amd64', 'grub-pc'],
+                    outfunc => sub {
+                        my ($line) = @_;
+                        if ($line =~ m|grub2/force_efi_extra_removable: +true$|) {
+                            $update_removable_missing = 0;
+                        }
+                    },
+                    noerr => 1,
+                );
+            };
+            if ($update_removable_missing) {
+                log_warn(
+                    "Removable bootloader found at '/boot/efi/EFI/BOOT/BOOTX64.efi', but GRUB packages"
+                        . " not set up to update it!\nRun the following command:\n"
+                        . "echo 'grub-efi-amd64 grub2/force_efi_extra_removable boolean true' | debconf-set-selections -v -u\n"
+                        . "Then reinstall GRUB with 'apt install --reinstall grub-efi-amd64'");
+                $boot_ok = 0;
+            }
+        }
+        if ($boot_ok) {
+            log_pass("bootloader packages installed correctly");
+        }
     }
 }
 
@@ -1803,7 +1800,7 @@ sub check_lvm_autoactivation {
             ? "Some affected volumes are on shared LVM storages, which has known issues (Bugzilla"
             . " #4997). Disabling autoactivation for those is strongly recommended!"
             : "All volumes with autoactivations reside on local storage, where this normally does"
-            . " not causes any issues.";
+            . " not cause any issues.";
         $_log->(
             "Starting with PVE 9, autoactivation will be disabled for new LVM/LVM-thin guest"
                 . " volumes. This system has some volumes that still have autoactivation enabled. "
@@ -1811,9 +1808,37 @@ sub check_lvm_autoactivation {
                 . " LVM/LVM-thin guest volumes:\n\n"
                 . "\t/usr/share/pve-manager/migrations/pve-lvm-disable-autoactivation"
                 . "\n");
+    } else {
+        log_pass("No problematic volumes found.");
     }
 
     return undef;
+}
+
+sub check_lvm_thin_check_options {
+    log_info("Checking lvm config for thin_check_options...");
+
+    my $section;
+    my $detected;
+    my $detect_thin_check_override = sub {
+        my $line = shift;
+        if ($line =~ m/^(\S+) \{/) {
+            $section = $1;
+            return;
+        }
+        if ($line =~ m/thin_check_options/ && $line !~ m/--clear-needs-check-flag/) {
+            $detected = 1;
+            log_fail(
+                "detected override for 'thin_check_options' in '$section' section without"
+                    . " '--clear-needs-check-flag' option - add the option to your override (most"
+                    . " likely in /etc/lvm/lvm.conf)");
+        }
+    };
+    eval {
+        run_command(['lvmconfig'], outfunc => $detect_thin_check_override);
+        log_pass("Check for correct thin_check_options passed") if !$detected;
+    };
+    log_fail("unable to run 'lvmconfig' command - $@") if $@;
 }
 
 sub check_glusterfs_storage_usage {
@@ -1872,60 +1897,88 @@ sub check_bridge_mtu {
 
 sub check_rrd_migration {
     if (-e "/var/lib/rrdcached/db/pve-node-9.0") {
-        log_info("Check post RRD migration situation...");
+        log_info("Check post RRD metrics data format migration situation...");
 
-        my $count = 0;
-        my $count_occurences = sub {
-            $count++;
+        my $old_files = [];
+        my $record_old = sub {
+            my $file = shift;
+            $file =~ s!^/var/lib/rrdcached/db/!!;
+            push @$old_files, $file;
         };
         eval {
             run_command(
-                ['find', '/var/lib/rrdcached/db', '-type', 'f', '!', '-name', '*.old'],
-                outfunc => $count_occurences,
+                [
+                    'find',
+                    '/var/lib/rrdcached/db',
+                    '-path',
+                    '*pve2-*',
+                    '-type',
+                    'f',
+                    '!',
+                    '-name',
+                    '*.old',
+                ],
+                outfunc => $record_old,
                 noerr => 1,
             );
         };
 
-        if ($count) {
-            log_warn("Found '$count' RRD files that have not yet been migrated to the new schema."
-                . " Please run the following command manually:\n"
-                . "/usr/libexec/proxmox/proxmox-rrd-migration-tool --migrate\n");
-        }
+        if (my $count = scalar($old_files->@*)) {
+            my $cutoff = 29; # avoid spamming the check output to much for bigger setups
+            if (!$full_checks && $count > $cutoff + 1) {
+                splice @$old_files, $cutoff + 1;
+                push @$old_files,
+                    '... omitted printing ' . ($count - $cutoff) . ' additional files';
+            }
+            log_warn("Found '$count' RRD files that have not yet been migrated to the new schema.\n"
+                . join("\n\t ", $old_files->@*)
+                . "\n\tPlease run the following command manually:\n"
+                . "\t/usr/libexec/proxmox/proxmox-rrd-migration-tool --migrate\n");
 
+            my $cfg = PVE::Storage::config();
+            my @unhandled_storages = grep { $_ =~ m|\.old$| } sort keys $cfg->{ids}->%*;
+            if (scalar(@unhandled_storages) > 0) {
+                my $storage_list_txt = join(", ", @unhandled_storages);
+                log_warn("RRD data for the following storages cannot be migrated"
+                    . " automatically: $storage_list_txt\nRename the RRD files to a name without '.old'"
+                    . " before migration and re-add that suffix after migration.");
+            }
+        } else {
+            log_pass("No old RRD metric files found, normally this means all have been migrated.");
+        }
     } else {
         log_info("Check space requirements for RRD migration...");
         # multiplier values taken from KiB sizes of old and new RRD files
-        my $rrd_dirs = {
-            nodes => {
-                path => "/var/lib/rrdcached/db/pve2-node",
-                multiplier => 18.1,
-            },
-            guests => {
-                path => "/var/lib/rrdcached/db/pve2-vm",
-                multiplier => 20.2,
-            },
-            storage => {
-                path => "/var/lib/rrdcached/db/pve2-storage",
-                multiplier => 11.14,
-            },
+        my $rrd_usage_multipliers = {
+            'pve2-node' => 18.1,
+            'pve2-vm' => 20.2,
+            'pve2-storage' => 11.14,
         };
 
-        my $size_buffer = 1024 * 1024 * 1024; # at least one GiB of free space should be calculated in
         my $total_size_estimate = 0;
-        for my $type (keys %$rrd_dirs) {
-            my $size = PVE::Tools::du($rrd_dirs->{$type}->{path});
-            $total_size_estimate =
-                $total_size_estimate + ($size * $rrd_dirs->{$type}->{multiplier});
+        for my $dir (sort keys $rrd_usage_multipliers->%*) {
+            my $dir_size = eval { PVE::Tools::du("/var/lib/rrdcached/db/${dir}") };
+            next if !defined($dir_size);
+            $total_size_estimate += $dir_size * $rrd_usage_multipliers->{$dir};
         }
-        my $root_free = PVE::Tools::df('/', 10);
+        my $estimate_gib = $total_size_estimate / 1024. / 1024 / 1024;
+        my $estimate_gib_str = sprintf("%.2f", $estimate_gib);
 
-        if (($total_size_estimate + $size_buffer) >= $root_free->{avail}) {
-            my $estimate_gib = sprintf("%.2f", $total_size_estimate / 1024 / 1024 / 1024);
-            my $free_gib = sprintf("%.2f", $root_free->{avail} / 1024 / 1024 / 1024);
+        my $root_free = PVE::Tools::df('/', 10);
+        if ($total_size_estimate >= $root_free->{avail} - 1 << 30) {
+            my $free_gib = sprintf("%.3f", $root_free->{avail} / 1024 / 1024 / 1024);
 
             log_fail("Not enough free space to migrate existing RRD files to the new format!\n"
-                . "Migrating the current RRD files is expected to consume about ${estimate_gib} GiB plus 1 GiB of safety."
+                . "Migrating the current RRD files is expected to consume about ${estimate_gib_str} GiB plus 1 GiB of safety."
                 . " But there is currently only ${free_gib} GiB space on the root file system available.\n"
+            );
+        } else {
+            my $size_str =
+                $estimate_gib > 1.0
+                ? "$estimate_gib_str GiB"
+                : sprintf("%.2f", $estimate_gib * 1024) . " MiB";
+            log_pass(
+                "Enough free disk space for increased RRD metric granularity requirements, which is roughly $size_str."
             );
         }
     }
@@ -1934,22 +1987,26 @@ sub check_rrd_migration {
 sub check_virtual_guests {
     print_header("VIRTUAL GUEST CHECKS");
 
-    log_info("Checking for running guests..");
-    my $running_guests = 0;
+    if (!$upgraded) {
+        log_info("Checking for running guests..");
+        my $running_guests = 0;
 
-    my $local_vms = eval { PVE::API2::Qemu->vmlist({ node => $nodename }) };
-    log_warn("Failed to retrieve information about this node's VMs - $@") if $@;
-    $running_guests += grep { $_->{status} eq 'running' } @$local_vms if defined($local_vms);
+        my $local_vms = eval { PVE::API2::Qemu->vmlist({ node => $nodename }) };
+        log_warn("Failed to retrieve information about this node's VMs - $@") if $@;
+        $running_guests += grep { $_->{status} eq 'running' } @$local_vms if defined($local_vms);
 
-    my $local_cts = eval { PVE::API2::LXC->vmlist({ node => $nodename }) };
-    log_warn("Failed to retrieve information about this node's CTs - $@") if $@;
-    $running_guests += grep { $_->{status} eq 'running' } @$local_cts if defined($local_cts);
+        my $local_cts = eval { PVE::API2::LXC->vmlist({ node => $nodename }) };
+        log_warn("Failed to retrieve information about this node's CTs - $@") if $@;
+        $running_guests += grep { $_->{status} eq 'running' } @$local_cts if defined($local_cts);
 
-    if ($running_guests > 0) {
-        log_warn(
-            "$running_guests running guest(s) detected - consider migrating or stopping them.");
+        if ($running_guests > 0) {
+            log_warn(
+                "$running_guests running guest(s) detected - consider migrating or stopping them.");
+        } else {
+            log_pass("no running guest detected.");
+        }
     } else {
-        log_pass("no running guest detected.");
+        log_skip("Skipping check for running guests - already upgraded.");
     }
 
     check_lxcfs_fuse_version();
@@ -2006,6 +2063,116 @@ sub check_virtual_guests {
     check_qemu_machine_versions();
 }
 
+my $LEGACY_IPAM_DB = "/etc/pve/priv/ipam.db";
+my $NEW_IPAM_DB = "/etc/pve/sdn/pve-ipam-state.json";
+
+my $LEGACY_MAC_DB = "/etc/pve/priv/macs.db";
+my $NEW_MAC_DB = "/etc/pve/sdn/mac-cache.json";
+
+sub check_legacy_ipam_files {
+    log_info("Checking for IPAM DB files that have not yet been migrated.");
+
+    if (-e $LEGACY_IPAM_DB) {
+        if (-e $NEW_IPAM_DB) {
+            log_notice("Found leftover legacy IPAM DB file in '$LEGACY_IPAM_DB'.\n"
+                . "\tThis file can be deleted AFTER upgrading ALL nodes to PVE 8.4+.");
+        } else {
+            log_fail("Found IPAM DB file in '$LEGACY_IPAM_DB' that has not been migrated!\n"
+                . "\tFile needs to be migrated to '$NEW_IPAM_DB' before upgrading. Updating"
+                . " pve-network to the newest version should take care of that!\n"
+                . "\tIf you do not use SDN or IPAM (anymore), you can move or delete the file."
+            );
+        }
+    } else {
+        log_pass("No legacy IPAM DB found.");
+    }
+
+    if (-e $LEGACY_MAC_DB) {
+        if (-e $NEW_MAC_DB) {
+            log_notice("Found leftover legacy MAC DB file in '$LEGACY_MAC_DB'.\n"
+                . "\tThis file can be deleted AFTER upgrading ALL nodes to PVE 8.4+");
+        } else {
+            log_fail("Found MAC DB file in '$LEGACY_MAC_DB' that has not been migrated!\n"
+                . "\tFile needs to be migrated to '$NEW_MAC_DB' before upgrading. Updating"
+                . " pve-network to the newest version should take care of that!\n"
+                . "\tIf you do not use SDN or IPAM (anymore), you can move or delete the file."
+            );
+        }
+    } else {
+        log_pass("No legacy MAC DB found.");
+    }
+}
+
+sub check_legacy_sysctl_conf {
+    my $fn = "/etc/sysctl.conf";
+    log_info(
+        "Checking if the legacy sysctl file '$fn' needs to be migrated to new '/etc/sysctl.d/' path."
+    );
+    if (!-f $fn) {
+        log_pass("Legacy file '$fn' is not present.");
+        return;
+    } elsif ($upgraded) {
+        log_skip("Legacy file '$fn' is present, but system was already upgraded, ignoring.");
+        return;
+    }
+    my $raw = eval { PVE::Tools::file_get_contents($fn); };
+    if ($@) {
+        log_fail("Failed to read '$fn' - $@");
+        return;
+    }
+
+    my @lines = split(/\n/, $raw);
+    for my $line (@lines) {
+        if ($line !~ /^[\s]*(:?$|[#;].*$)/m) {
+            log_warn(
+                "Deprecated config '$fn' contains settings - move them to a dedicated file in '/etc/sysctl.d/'."
+            );
+            return;
+        }
+    }
+    log_pass("Legacy file '$fn' exists but does not contain any settings.");
+}
+
+sub check_cpu_microcode_package {
+    log_info("Checking if matching CPU microcode package is installed.");
+
+    open(my $CPUINFO_FD, '<', '/proc/cpuinfo') or log_fail("failed to open '/proc/cpuinfo' - $!\n");
+    return if !defined($CPUINFO_FD);
+
+    my $vendor_id;
+    while (my $line = <$CPUINFO_FD>) {
+        if ($line =~ /^vendor_id\s*:\s*(GenuineIntel|AuthenticAMD)/) {
+            $vendor_id = $1;
+        } elsif ($line eq "") {
+            last;
+        }
+    }
+    close($CPUINFO_FD);
+
+    if (!defined($vendor_id)) {
+        log_warn("failed to parse CPU vendor ID from '/proc/cpuinfo'");
+        return;
+    }
+    my $microcode_pkg;
+    if ($vendor_id eq 'AuthenticAMD') {
+        $microcode_pkg = 'amd64-microcode';
+    } elsif ($vendor_id eq 'GenuineIntel') {
+        $microcode_pkg = 'intel-microcode';
+    } else {
+        log_warn("unexpected CPU vendor ID '$vendor_id'");
+        return;
+    }
+
+    if (defined($get_pkg->($microcode_pkg))) {
+        log_pass("Found matching CPU microcode package '$microcode_pkg' installed.");
+    } else {
+        log_warn(
+            "The matching CPU microcode package '$microcode_pkg' could not be found! Consider"
+                . " installing it to receive the latest security and bug fixes for your CPU.\n"
+                . "\tapt install $microcode_pkg");
+    }
+}
+
 sub check_misc {
     print_header("MISCELLANEOUS CHECKS");
     my $ssh_config = eval { PVE::Tools::file_get_contents('/root/.ssh/config') };
@@ -2049,6 +2216,14 @@ sub check_misc {
         } else {
             log_pass("Resolved node IP '$local_ip' configured and active on single interface.");
         }
+    }
+
+    my $udev_rule_file = "/etc/udev/rules.d/70-persistent-net.rules";
+    if (-f $udev_rule_file) {
+        log_warn(
+            "Old udev rules file '$udev_rule_file' for NIC-pinning found - NICs are likely to be"
+                . " renamed with newer systemd version. Replace the file with a custom"
+                . " systemd.link file.");
     }
 
     log_info("Check node certificate's RSA key size");
@@ -2099,7 +2274,11 @@ sub check_misc {
     check_legacy_notification_sections();
     check_legacy_backup_job_options();
     check_lvm_autoactivation();
+    check_lvm_thin_check_options();
     check_rrd_migration();
+    check_legacy_ipam_files();
+    check_legacy_sysctl_conf();
+    check_cpu_microcode_package();
 }
 
 my sub colored_if {
@@ -2126,6 +2305,8 @@ __PACKAGE__->register_method({
     returns => { type => 'null' },
     code => sub {
         my ($param) = @_;
+
+        $full_checks = !!$param->{full};
 
         my $kernel_cli = PVE::Tools::file_get_contents('/proc/cmdline');
         if ($kernel_cli =~ /systemd.unified_cgroup_hierarchy=0/) {
