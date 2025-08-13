@@ -4,16 +4,16 @@ Ext.define('PVE.qemu.MachineInputPanel', {
     onlineHelp: 'qm_machine_type',
 
     viewModel: {
-	data: {
-	    type: '__default__',
-	},
-	formulas: {
-	    q35: get => get('type') === 'q35',
+        data: {
+            type: '__default__',
+        },
+        formulas: {
+            q35: (get) => get('type') === 'q35',
 		pc: get => get('type') === 'pc',
 		virt: get => get('type') === 'virt',
 		pseries: get => get('type') === 'pseries',
 		's390-ccw-virtio': get => get('type') === 's390-ccw-virtio',
-	},
+        },
     },
 
     controller: {
@@ -40,31 +40,31 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 	},
     },
 
-    onGetValues: function(values) {
-	if (values.delete === 'machine' && values.viommu) {
-	    delete values.delete;
-	    values.machine = 'pc';
-	}
-	if (values.version && values.version !== 'latest') {
-	    values.machine = values.version;
-	    delete values.delete;
-	}
-	delete values.version;
-	if (values.delete === 'machine' && !values.viommu) {
-	    return values;
-	}
-	let ret = {};
-	ret.machine = PVE.Parser.printPropertyString(values, 'machine');
-	return ret;
+    onGetValues: function (values) {
+        if (values.delete === 'machine' && values.viommu) {
+            delete values.delete;
+            values.machine = 'pc';
+        }
+        if (values.version && values.version !== 'latest') {
+            values.machine = values.version;
+            delete values.delete;
+        }
+        delete values.version;
+        if (values.delete === 'machine' && !values.viommu) {
+            return values;
+        }
+        let ret = {};
+        ret.machine = PVE.Parser.printPropertyString(values, 'machine');
+        return ret;
     },
 
-    setValues: function(values) {
-	let me = this;
+    setValues: function (values) {
+        let me = this;
 
 	let machineConf = PVE.Parser.parsePropertyString(values.machine, 'type');
 	values.machine = machineConf.type;
 
-	values.viommu = machineConf.viommu || '__default__';
+        values.viommu = machineConf.viommu || '__default__';
 
 	// if (values.machine !== '__default__' && values.machine !== 'q35') {
 	//     values.version = values.machine;
@@ -74,25 +74,25 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 	//     me.setAdvancedVisible(true);
 	// }
 
-	this.callParent(arguments);
+        this.callParent(arguments);
     },
 
     items: {
-	xtype: 'proxmoxKVComboBox',
-	name: 'machine',
-	reference: 'machine',
-	fieldLabel: gettext('Machine'),
-	comboItems: [
-	    ['__default__', PVE.Utils.render_qemu_machine('')],
-	    ['q35', 'q35'],
+        xtype: 'proxmoxKVComboBox',
+        name: 'machine',
+        reference: 'machine',
+        fieldLabel: gettext('Machine'),
+        comboItems: [
+            ['__default__', PVE.Utils.render_qemu_machine('')],
+            ['q35', 'q35'],
 	    ['virt', 'virt'],
 	    ['pc', 'i440fx'],
 		['pseries','pseries'],
 		['s390-ccw-virtio','s390-ccw-virtio']
-	],
-	bind: {
-	    value: '{type}',
-	},
+        ],
+        bind: {
+            value: '{type}',
+        },
     },
 
     advancedItems: [
@@ -170,25 +170,25 @@ Ext.define('PVE.qemu.MachineEdit', {
     subject: gettext('Machine'),
 
     items: {
-	xtype: 'pveMachineInputPanel',
+        xtype: 'pveMachineInputPanel',
     },
 
     width: 400,
 
-    initComponent: function() {
-	let me = this;
+    initComponent: function () {
+        let me = this;
 
-	me.callParent();
+        me.callParent();
 
-	me.load({
-	    success: function(response) {
-		let conf = response.result.data;
-		let values = {
-		    machine: conf.machine || '__default__',
-		};
-		values.isWindows = PVE.Utils.is_windows(conf.ostype);
-		me.setValues(values);
-	    },
-	});
+        me.load({
+            success: function (response) {
+                let conf = response.result.data;
+                let values = {
+                    machine: conf.machine || '__default__',
+                };
+                values.isWindows = PVE.Utils.is_windows(conf.ostype);
+                me.setValues(values);
+            },
+        });
     },
 });

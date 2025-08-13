@@ -3,7 +3,7 @@ Ext.define('PVE.form.VMCPUFlagSelector', {
     alias: 'widget.vmcpuflagselector',
 
     mixins: {
-	field: 'Ext.form.field.Field',
+        field: 'Ext.form.field.Field',
     },
 
     disableSelection: true,
@@ -30,139 +30,145 @@ Ext.define('PVE.form.VMCPUFlagSelector', {
 	},
     },
 
-    getValue: function() {
-	var me = this;
-	var store = me.getStore();
-	var flags = '';
+    getValue: function () {
+        var me = this;
+        var store = me.getStore();
+        var flags = '';
 
-	// ExtJS does not has a nice getAllRecords interface for stores :/
-	store.queryBy(Ext.returnTrue).each(function(rec) {
-	    var s = rec.get('state');
-	    if (s && s !== '=') {
-		var f = rec.get('flag');
-		if (flags === '') {
-		    flags = s + f;
-		} else {
-		    flags += ';' + s + f;
-		}
-	    }
-	});
+        // ExtJS does not has a nice getAllRecords interface for stores :/
+        store.queryBy(Ext.returnTrue).each(function (rec) {
+            var s = rec.get('state');
+            if (s && s !== '=') {
+                let f = rec.get('flag');
+                if (flags === '') {
+                    flags = s + f;
+                } else {
+                    flags += ';' + s + f;
+                }
+            }
+        });
 
-	flags += me.unkownFlags.join(';');
+        flags += me.unkownFlags.join(';');
 
-	return flags;
+        return flags;
     },
 
-    setValue: function(value) {
-	var me = this;
-	var store = me.getStore();
+    setValue: function (value) {
+        var me = this;
+        var store = me.getStore();
 
-	me.value = value || '';
+        me.value = value || '';
 
-	me.unkownFlags = [];
+        me.unkownFlags = [];
 
-	me.getStore().queryBy(Ext.returnTrue).each(function(rec) {
-	    rec.set('state', '=');
-	});
+        me.getStore()
+            .queryBy(Ext.returnTrue)
+            .each(function (rec) {
+                rec.set('state', '=');
+            });
 
-	var flags = value ? value.split(';') : [];
-	flags.forEach(function(flag) {
-	    var sign = flag.substr(0, 1);
-	    flag = flag.substr(1);
+        var flags = value ? value.split(';') : [];
+        flags.forEach(function (flag) {
+            var sign = flag.substr(0, 1);
+            flag = flag.substr(1);
 
-	    var rec = store.findRecord('flag', flag, 0, false, true, true);
-	    if (rec !== null) {
-		rec.set('state', sign);
-	    } else {
-		me.unkownFlags.push(flag);
-	    }
-	});
-	store.reload();
+            var rec = store.findRecord('flag', flag, 0, false, true, true);
+            if (rec !== null) {
+                rec.set('state', sign);
+            } else {
+                me.unkownFlags.push(flag);
+            }
+        });
+        store.reload();
 
-	var res = me.mixins.field.setValue.call(me, value);
+        var res = me.mixins.field.setValue.call(me, value);
 
-	return res;
+        return res;
     },
     columns: [
-	{
-	    dataIndex: 'state',
-	    renderer: function(v) {
-		switch (v) {
-		    case '=': return 'Default';
-		    case '-': return 'Off';
-		    case '+': return 'On';
-		    default: return 'Unknown';
-		}
-	    },
-	    width: 65,
-	},
-	{
-	    xtype: 'widgetcolumn',
-	    dataIndex: 'state',
-	    width: 95,
-	    onWidgetAttach: function(column, widget, record) {
-		var val = record.get('state') || '=';
-		widget.down('[inputValue=' + val + ']').setValue(true);
-		// TODO: disable if selected CPU model and flag are incompatible
-	    },
-	    widget: {
-		xtype: 'radiogroup',
-		hideLabel: true,
-		layout: 'hbox',
-		validateOnChange: false,
-		value: '=',
-		listeners: {
-		    change: function(f, value) {
-			var v = Object.values(value)[0];
-			f.getWidgetRecord().set('state', v);
+        {
+            dataIndex: 'state',
+            renderer: function (v) {
+                switch (v) {
+                    case '=':
+                        return 'Default';
+                    case '-':
+                        return 'Off';
+                    case '+':
+                        return 'On';
+                    default:
+                        return 'Unknown';
+                }
+            },
+            width: 65,
+        },
+        {
+            xtype: 'widgetcolumn',
+            dataIndex: 'state',
+            width: 95,
+            onWidgetAttach: function (column, widget, record) {
+                var val = record.get('state') || '=';
+                widget.down('[inputValue=' + val + ']').setValue(true);
+                // TODO: disable if selected CPU model and flag are incompatible
+            },
+            widget: {
+                xtype: 'radiogroup',
+                hideLabel: true,
+                layout: 'hbox',
+                validateOnChange: false,
+                value: '=',
+                listeners: {
+                    change: function (f, value) {
+                        var v = Object.values(value)[0];
+                        f.getWidgetRecord().set('state', v);
 
-			var view = this.up('grid');
-			view.dirty = view.getValue() !== view.originalValue;
-			view.checkDirty();
-			//view.checkChange();
-		    },
-		},
-		items: [
-		    {
-			boxLabel: '-',
-			boxLabelAlign: 'before',
-			inputValue: '-',
-			isFormField: false,
-		    },
-		    {
-			checked: true,
-			inputValue: '=',
-			isFormField: false,
-		    },
-		    {
-			boxLabel: '+',
-			inputValue: '+',
-			isFormField: false,
-		    },
-		],
-	    },
-	},
-	{
-	    dataIndex: 'flag',
-	    width: 100,
-	},
-	{
-	    dataIndex: 'desc',
-	    cellWrap: true,
-	    flex: 1,
-	},
+                        var view = this.up('grid');
+                        view.dirty = view.getValue() !== view.originalValue;
+                        view.checkDirty();
+                        //view.checkChange();
+                    },
+                },
+                items: [
+                    {
+                        boxLabel: '-',
+                        boxLabelAlign: 'before',
+                        inputValue: '-',
+                        isFormField: false,
+                    },
+                    {
+                        checked: true,
+                        inputValue: '=',
+                        isFormField: false,
+                    },
+                    {
+                        boxLabel: '+',
+                        inputValue: '+',
+                        isFormField: false,
+                    },
+                ],
+            },
+        },
+        {
+            dataIndex: 'flag',
+            width: 100,
+        },
+        {
+            dataIndex: 'desc',
+            cellWrap: true,
+            flex: 1,
+        },
     ],
 
-    initComponent: function() {
-	var me = this;
+    initComponent: function () {
+        var me = this;
 
-	// static class store, thus gets not recreated, so ensure defaults are set!
-	me.getStore().data.forEach(function(v) {
-	    v.state = '=';
-	});
+        // static class store, thus gets not recreated, so ensure defaults are set!
+        me.getStore().data.forEach(function (v) {
+            v.state = '=';
+        });
 
-	me.value = me.originalValue = '';
+        me.value = me.originalValue = '';
 
-	me.callParent(arguments);
+        me.callParent(arguments);
     },
 });

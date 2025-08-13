@@ -5,61 +5,61 @@ Ext.define('PVE.qemu.SystemInputPanel', {
     onlineHelp: 'qm_system_settings',
 
     viewModel: {
-	data: {
-	    efi: false,
-	    addefi: true,
-	},
+        data: {
+            efi: false,
+            addefi: true,
+        },
 
-	formulas: {
-	    efidisk: function(get) {
-		return get('efi') && get('addefi');
-	    },
-	},
+        formulas: {
+            efidisk: function (get) {
+                return get('efi') && get('addefi');
+            },
+        },
     },
 
-    onGetValues: function(values) {
-	if (values.vga && values.vga.substr(0, 6) === 'serial') {
-	    values['serial' + values.vga.substr(6, 1)] = 'socket';
-	}
+    onGetValues: function (values) {
+        if (values.vga && values.vga.substr(0, 6) === 'serial') {
+            values['serial' + values.vga.substr(6, 1)] = 'socket';
+        }
 
-	delete values.hdimage;
-	delete values.hdstorage;
-	delete values.diskformat;
+        delete values.hdimage;
+        delete values.hdstorage;
+        delete values.diskformat;
 
-	delete values.preEnrolledKeys; // efidisk
-	delete values.version; // tpmstate
+        delete values.preEnrolledKeys; // efidisk
+        delete values.version; // tpmstate
 
-	return values;
+        return values;
     },
 
     controller: {
-	xclass: 'Ext.app.ViewController',
+        xclass: 'Ext.app.ViewController',
 
-	scsihwChange: function(field, value) {
-	    var me = this;
-	    if (me.getView().insideWizard) {
-		me.getViewModel().set('current.scsihw', value);
-	    }
-	},
+        scsihwChange: function (field, value) {
+            var me = this;
+            if (me.getView().insideWizard) {
+                me.getViewModel().set('current.scsihw', value);
+            }
+        },
 
-	biosChange: function(field, value) {
-	    var me = this;
-	    if (me.getView().insideWizard) {
-		me.getViewModel().set('efi', value === 'ovmf');
-	    }
-	},
+        biosChange: function (field, value) {
+            var me = this;
+            if (me.getView().insideWizard) {
+                me.getViewModel().set('efi', value === 'ovmf');
+            }
+        },
 
-	control: {
-	    'pveScsiHwSelector': {
-		change: 'scsihwChange',
-	    },
-	    'pveQemuBiosSelector': {
-		change: 'biosChange',
-	    },
-	    '#': {
-		afterrender: 'setMachine',
-	    },
-	},
+        control: {
+            pveScsiHwSelector: {
+                change: 'scsihwChange',
+            },
+            pveQemuBiosSelector: {
+                change: 'biosChange',
+            },
+            '#': {
+                afterrender: 'setMachine',
+            },
+        },
 
 	setMachine: function() {
 	    let me = this;
@@ -84,67 +84,67 @@ Ext.define('PVE.qemu.SystemInputPanel', {
     },
 
     column1: [
-	{
-	    xtype: 'proxmoxKVComboBox',
-	    value: '__default__',
-	    deleteEmpty: false,
-	    fieldLabel: gettext('Graphic card'),
-	    name: 'vga',
-	    comboItems: Object.entries(PVE.Utils.kvm_vga_drivers),
-	},
-	{
-	    xtype: 'proxmoxKVComboBox',
-	    name: 'machine',
-	    reference: 'machine',
-	    value: '__default__',
-	    fieldLabel: gettext('Machine'),
-	    comboItems: [
-		['__default__', PVE.Utils.render_qemu_machine('')],
-		['q35', 'q35'],
+        {
+            xtype: 'proxmoxKVComboBox',
+            value: '__default__',
+            deleteEmpty: false,
+            fieldLabel: gettext('Graphic card'),
+            name: 'vga',
+            comboItems: Object.entries(PVE.Utils.kvm_vga_drivers),
+        },
+        {
+            xtype: 'proxmoxKVComboBox',
+            name: 'machine',
+            reference: 'machine',
+            value: '__default__',
+            fieldLabel: gettext('Machine'),
+            comboItems: [
+                ['__default__', PVE.Utils.render_qemu_machine('')],
+                ['q35', 'q35'],
 		['virt', 'virt'],
 		['pc', 'i440fx'],
 		['pseries','pseries'],
 		['s390-ccw-virtio','s390-ccw-virtio']
-	    ],
-	},
-	{
-	    xtype: 'displayfield',
-	    value: gettext('Firmware'),
-	},
-	{
-	    xtype: 'pveQemuBiosSelector',
-	    name: 'bios',
-	    reference: 'bios',
-	    value: '__default__',
-	    fieldLabel: 'BIOS',
-	},
-	{
-	    xtype: 'proxmoxcheckbox',
-	    bind: {
-		value: '{addefi}',
-		hidden: '{!efi}',
-		disabled: '{!efi}',
-	    },
-	    hidden: true,
-	    submitValue: false,
-	    disabled: true,
-	    fieldLabel: gettext('Add EFI Disk'),
-	},
-	{
-	    xtype: 'pveEFIDiskInputPanel',
-	    name: 'efidisk0',
-	    storageContent: 'images',
-	    bind: {
-		nodename: '{nodename}',
-		hidden: '{!efi}',
-		disabled: '{!efidisk}',
-	    },
-	    autoSelect: false,
-	    disabled: true,
-	    hidden: true,
-	    hideSize: true,
-	    usesEFI: true,
-	},
+            ],
+        },
+        {
+            xtype: 'displayfield',
+            value: gettext('Firmware'),
+        },
+        {
+            xtype: 'pveQemuBiosSelector',
+            name: 'bios',
+            reference: 'bios',
+            value: '__default__',
+            fieldLabel: 'BIOS',
+        },
+        {
+            xtype: 'proxmoxcheckbox',
+            bind: {
+                value: '{addefi}',
+                hidden: '{!efi}',
+                disabled: '{!efi}',
+            },
+            hidden: true,
+            submitValue: false,
+            disabled: true,
+            fieldLabel: gettext('Add EFI Disk'),
+        },
+        {
+            xtype: 'pveEFIDiskInputPanel',
+            name: 'efidisk0',
+            storageContent: 'images',
+            bind: {
+                nodename: '{nodename}',
+                hidden: '{!efi}',
+                disabled: '{!efidisk}',
+            },
+            autoSelect: false,
+            disabled: true,
+            hidden: true,
+            hideSize: true,
+            usesEFI: true,
+        },
     ],
 
     column2: [
@@ -192,5 +192,4 @@ Ext.define('PVE.qemu.SystemInputPanel', {
 	    hidden: true,
 	},
     ],
-
 });

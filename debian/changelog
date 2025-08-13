@@ -1,3 +1,116 @@
+pve-manager (8.4.10) bookworm; urgency=medium
+
+  * 8to9 upgrade checks (pve8to9):
+    - add hint that microcode package needs non-free-firmware component
+    - use check for unified cgroup v2 support via pve-container
+    - rework systemd-boot checks
+    - add check for removable GRUB entry
+    - support single-line repo entries with bracket options
+    - lvm config: check that --clear-needs-check-flag is set if there is a
+      thin_check_options override
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 08 Aug 2025 16:29:04 +0200
+
+pve-manager (8.4.9) bookworm; urgency=medium
+
+  * 8 to 9 upgrade checks (pve8to9): rephrase misleading message.
+
+  * backport pve-network-pinning-tool from Proxmox VE 9.0.
+
+  * support arbirtray physical interface names.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 05 Aug 2025 16:54:01 +0200
+
+pve-manager (8.4.8) bookworm; urgency=medium
+
+  * 8to9 upgrade checks (pve8to9):
+    - check for settings in the legacy '/etc/sysctl.conf' file, they should be
+      migrated to '/etc/sysctl.d'.
+    - rrd migration: report any odd storage name where automatic migration of
+      the RRD metric files doesn't work.
+    - LVM autoactivation: add a pass entry if everything is OK.
+    - rrd metrics space increase: add a pass entry if everything is OK.
+    - detect if matching CPU microcode package is installed.
+    - warn if old udev-mac-pinning still present and recommend switching to
+      using systemd .link files.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 04 Aug 2025 21:04:14 +0200
+
+pve-manager (8.4.7) bookworm; urgency=medium
+
+  * 8to9 upgrade checks (pve8to9):
+    - fix punctuation in message for legacy notification settings.
+    - rework boot-loader suggestions for trixie and the systemd-boot package
+      split and altered behavior.
+    - add checkfs for RRD metrics data migrtion to updated format for PVE 9.
+    - check for left-over legacy ipam db or mac cache files.
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 01 Aug 2025 18:30:49 +0200
+
+pve-manager (8.4.6) bookworm; urgency=medium
+
+  * 8to9 upgrade checks (pve8to9):
+    - machine version: place VMIDs in dedicated line.
+    - lvm: use consistent spelling for autoactivation.
+    - test pvetest -> pve-test transition.
+    - add check to ensure that 'keyring' option for external RBD storages is
+      set Additionally provide a migration-script to help automate this
+      required config migration.
+    - increase severity of having 'maxfiles' setting configured from warning
+      to failure.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 29 Jul 2025 17:45:36 +0200
+
+pve-manager (8.4.5) bookworm; urgency=medium
+
+  * 8to9 upgrade checks: fix duplicate variable name in same scope.
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 18 Jul 2025 15:32:03 +0200
+
+pve-manager (8.4.4) bookworm; urgency=medium
+
+  * 8to9 upgrade checks:
+    - add check for to-be-dropped QEMU machine versions.
+    - check for usage of deprecated native GlusterFS storages.
+    - remove outdated checks for user roles.
+    - check for to-be-dropped VM.Monitor privilege in custom roles.
+    - add dedicated section for virtual guest checks.
+
+  * metrics: handle existence of new pve-{type}-9.0 data to avoid friction on
+    update.
+
+  * metrics: drop old virtual guest RRD schema.
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 17 Jul 2025 22:52:50 +0200
+
+pve-manager (8.4.3) bookworm; urgency=medium
+
+  * pve8to9: fix error from bad log code ref.
+
+  * migrations: LVM autoactivation: setup CLI environment.
+
+  * ui: guest importer: use modern 4MB EFI-type for imported VMs that use EFI
+    as firmware.
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 16 Jul 2025 01:31:04 +0200
+
+pve-manager (8.4.2) bookworm; urgency=medium
+
+  * fix #6311: ui: prevent the login consent text from showing twice for OIDC
+    authentication realms.
+
+  * pve system report: fix assembling relevant SDN configuration files.
+
+  * update shipped aplliance info index
+
+  * pveversion: track the proxmox-backup-restore-image package.
+
+  * add initial `pve8to9` upgrade check list tool to continue preparation for
+    next major release and to put it through the Proxmox internal early
+    release QA.
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 09 Jul 2025 18:17:37 +0200
+
 pve-manager (8.4.1-1) bookworm; urgency=medium
 
   * ui: add spice gstreamer ecoder selector
