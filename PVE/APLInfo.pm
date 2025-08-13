@@ -208,11 +208,11 @@ sub get_apl_sources {
             url => "https://releases.turnkeylinux.org/pve",
             file => 'aplinfo.dat',
         },
-	{
-	    host => "mirrors.apqa.cn",
-	    url => "https://mirrors.apqa.cn/proxmox",
-	    file => 'lxcs/aplinfo.dat',
-	},
+        {
+            host => "mirrors.lierfang.com",
+            url => "https://mirrors.lierfang.com/pxcloud/pxvirt",
+            file => 'lxcs/aplinfo.dat',
+        },
     ];
 
     return $sources;

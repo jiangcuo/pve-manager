@@ -180,7 +180,7 @@ __PACKAGE__->register_method({
         die "unsupported ceph version: $cephver"
             if !exists($available_ceph_releases->{$cephver});
 
-        my $repolist = "deb ${cdn}/debian/ceph-${cephver} bookworm $repo\n";
+        my $repolist = "deb https://mirrors.lierfang.com/pxcloud/pxvirt bookworm ceph-${cephver} \n";
 
         my $rendered_release =
             $available_ceph_releases->{$cephver}->{release} . ' ' . ucfirst($cephver);
