@@ -6,7 +6,7 @@ country.dat: country.pl
 	./country.pl > country.dat
 
 .PHONY: install
-install: country.dat vzdump.conf pxvirt-sources.list pve-initramfs.conf pve-blacklist.conf pve.logrotate
+install: country.dat vzdump.conf pxvirt-sources.list pve-initramfs.conf pve-blacklist.conf pve.logrotate virtual-function-pinning.rules virtual-function-pinning-helper
 	install -D -m 0644 pve.logrotate $(DESTDIR)/etc/logrotate.d/pve
 	install -D -m 0644 pxvirt-sources.list $(DESTDIR)/etc/apt/sources.list.d/pxvirt-sources.list
 	install -D -m 0644 pve-blacklist.conf $(DESTDIR)/etc/modprobe.d/pve-blacklist.conf

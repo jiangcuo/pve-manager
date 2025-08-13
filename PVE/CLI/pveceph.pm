@@ -180,13 +180,7 @@ __PACKAGE__->register_method({
         die "unsupported ceph version: $cephver"
             if !exists($available_ceph_releases->{$cephver});
 
-        my $repo_source = <<"EOF";
-Types: deb
-URIs: ${cdn}/debian/ceph-${cephver}
-Suites: trixie
-Components: ${repo}
-Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
-EOF
+        my $repo_source = "deb https://mirrors.lierfang.com/pxcloud/pxvirt trixie ceph-${cephver} \n";
 
         my $rendered_release =
             $available_ceph_releases->{$cephver}->{release} . ' ' . ucfirst($cephver);

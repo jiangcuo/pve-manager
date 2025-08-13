@@ -209,8 +209,8 @@ sub get_apl_sources {
             file => 'aplinfo.dat',
         },
         {
-            host => "mirrors.apqa.cn",
-            url => "https://mirrors.apqa.cn/proxmox",
+            host => "mirrors.lierfang.com",
+            url => "https://mirrors.lierfang.com/pxcloud/pxvirt",
             file => 'lxcs/aplinfo.dat',
         },
     ];
