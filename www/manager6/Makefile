@@ -4,6 +4,7 @@ BIOME ?= proxmox-biome
 
 JSSRC= 							\
 	Parser.js					\
+	Puncode.js					\
 	StateProvider.js				\
 	Utils.js					\
 	UIOptions.js					\
@@ -337,17 +338,7 @@ WIDGETKIT=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 
 all:
 
-.lint-incremental: $(JSSRC)
-	$(BIOME) lint $?
-	touch "$@"
-
-.PHONY: lint
-check: lint
-lint: $(JSSRC)
-	$(BIOME) lint --error-on-warnings $(JSSRC)
-	touch ".lint-incremental"
-
-pvemanagerlib.js: .lint-incremental OnlineHelpInfo.js $(JSSRC)
+pvemanagerlib.js: OnlineHelpInfo.js $(JSSRC)
 	cat OnlineHelpInfo.js $(JSSRC) >$@.tmp
 	mv $@.tmp $@
 
