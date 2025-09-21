@@ -13,6 +13,24 @@ Ext.onReady(function () {
         }
     };
     
+    // Simple Chinese to punycode encoding function
+    window.encodeToPunycode = function(value) {
+        if (typeof value !== 'string' || !value) {
+            return value;
+        }
+        
+        // Check if contains non-ASCII characters (Chinese)
+        if (!/[^\x00-\x7F]/.test(value)) {
+            return value; // Only ASCII, no need to encode
+        }
+        
+        try {
+            return punycode.toASCII(value);
+        } catch (e) {
+            return value;
+        }
+    };
+    
     // Simple text processing - replace punycode in text
     window.decodeTextWithPunycode = function(text) {
         if (typeof text !== 'string' || !text || text.indexOf('xn--') === -1) {
@@ -78,9 +96,13 @@ Ext.onReady(function () {
 
     // Simple textfield editing support
     function handleTextFields() {
-        Ext.ComponentQuery.query('textfield').forEach(function (field) {
+        // Query multiple types of input fields
+        var selectors = ['textfield', 'textareafield', 'displayfield', 'field'];
+        
+        selectors.forEach(function(selector) {
+            Ext.ComponentQuery.query(selector).forEach(function (field) {
             if (!field._punycodeListenerAdded) {
-                // Immediate check - convert existing punycode values
+                // Immediate conversion - show Chinese when textfield is displayed
                 var currentValue = field.getValue();
                 if (typeof currentValue === 'string' && currentValue.indexOf('xn--') !== -1) {
                     try {
@@ -93,7 +115,7 @@ Ext.onReady(function () {
                     }
                 }
                 
-                // Listen for focus event - convert punycode to Chinese when user starts editing
+                // Listen for focus event - ensure Chinese is displayed when editing
                 field.on('focus', function() {
                     var value = field.getValue();
                     if (typeof value === 'string' && value.indexOf('xn--') !== -1) {
@@ -108,24 +130,54 @@ Ext.onReady(function () {
                     }
                 });
                 
+                // Listen for blur event - convert Chinese back to punycode for backend
+                field.on('blur', function() {
+                    var currentValue = field.getValue();
+                    
+                    if (typeof currentValue === 'string' && currentValue) {
+                        // If contains Chinese characters, encode to punycode
+                        if (/[^\x00-\x7F]/.test(currentValue)) {
+                            try {
+                                var encoded = encodeToPunycode(currentValue);
+                                if (encoded !== currentValue) {
+                                    field.setValue(encoded);
+                                }
+                            } catch (e) {
+                            }
+                        } else if (field.originalPunycodeValue) {
+                            // If original was punycode and current is ASCII, use original
+                            field.setValue(field.originalPunycodeValue);
+                        }
+                    }
+                    
+                    // Clean up
+                    delete field.originalPunycodeValue;
+                });
+                
                 field._punycodeListenerAdded = true;
             }
+            });
         });
     }
 
-    // Simple initialization - immediate and frequent
+    // Aggressive initialization - ensure immediate conversion
     handleGridColumns();
     handleTextFields();
     
-    setTimeout(handleGridColumns, 100);
+    // Multiple quick checks to catch textfields as soon as they appear
+    setTimeout(handleTextFields, 10);
+    setTimeout(handleTextFields, 50);
     setTimeout(handleTextFields, 100);
-    
-    setTimeout(handleGridColumns, 500);
+    setTimeout(handleTextFields, 200);
     setTimeout(handleTextFields, 500);
+    setTimeout(handleTextFields, 1000);
     
-    // Simple periodic check
+    setTimeout(handleGridColumns, 100);
+    setTimeout(handleGridColumns, 500);
+    
+    // Frequent periodic check for textfields
+    setInterval(handleTextFields, 500);
     setInterval(handleGridColumns, 5000);
-    setInterval(handleTextFields, 2000);
 
     // Simple DOM mutation handling
     try {
@@ -159,10 +211,15 @@ Ext.onReady(function () {
             
             // If new content detected, immediately check for new fields
             if (hasNewContent) {
-                setTimeout(function() {
-                    handleGridColumns();
-                    handleTextFields();
-                }, 50);
+                // Immediate check
+                handleTextFields();
+                
+                // Quick follow-ups to catch delayed rendering
+                setTimeout(handleTextFields, 10);
+                setTimeout(handleTextFields, 50);
+                setTimeout(handleTextFields, 100);
+                
+                setTimeout(handleGridColumns, 50);
             }
         });
 
