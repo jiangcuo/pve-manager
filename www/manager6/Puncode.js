@@ -76,34 +76,94 @@ Ext.onReady(function () {
         });
     }
 
-    // Simple initialization
-    setTimeout(handleGridColumns, 1000);
+    // Simple textfield editing support
+    function handleTextFields() {
+        Ext.ComponentQuery.query('textfield').forEach(function (field) {
+            if (!field._punycodeListenerAdded) {
+                // Immediate check - convert existing punycode values
+                var currentValue = field.getValue();
+                if (typeof currentValue === 'string' && currentValue.indexOf('xn--') !== -1) {
+                    try {
+                        var decoded = decodeTextWithPunycode(currentValue);
+                        if (decoded !== currentValue) {
+                            field.originalPunycodeValue = currentValue;
+                            field.setValue(decoded);
+                        }
+                    } catch (e) {
+                    }
+                }
+                
+                // Listen for focus event - convert punycode to Chinese when user starts editing
+                field.on('focus', function() {
+                    var value = field.getValue();
+                    if (typeof value === 'string' && value.indexOf('xn--') !== -1) {
+                        try {
+                            var decoded = decodeTextWithPunycode(value);
+                            if (decoded !== value) {
+                                field.originalPunycodeValue = value;
+                                field.setValue(decoded);
+                            }
+                        } catch (e) {
+                        }
+                    }
+                });
+                
+                field._punycodeListenerAdded = true;
+            }
+        });
+    }
+
+    // Simple initialization - immediate and frequent
+    handleGridColumns();
+    handleTextFields();
+    
+    setTimeout(handleGridColumns, 100);
+    setTimeout(handleTextFields, 100);
+    
+    setTimeout(handleGridColumns, 500);
+    setTimeout(handleTextFields, 500);
     
     // Simple periodic check
     setInterval(handleGridColumns, 5000);
+    setInterval(handleTextFields, 2000);
 
     // Simple DOM mutation handling
     try {
         var observer = new MutationObserver(function (mutations) {
+            var hasNewContent = false;
+            
             mutations.forEach(function (mutation) {
                 if (mutation.type === 'childList') {
                     mutation.addedNodes.forEach(function (node) {
-                        if (node.nodeType === 1 && node.textContent && node.textContent.indexOf('xn--') !== -1) {
-                            var walker = document.createTreeWalker(
-                                node, NodeFilter.SHOW_TEXT, null, false
-                            );
+                        if (node.nodeType === 1) {
+                            hasNewContent = true;
                             
-                            var textNode;
-                            while (textNode = walker.nextNode()) {
-                                var text = textNode.nodeValue;
-                                if (text && text.indexOf('xn--') !== -1) {
-                                    textNode.nodeValue = decodeTextWithPunycode(text);
+                            // Handle text content
+                            if (node.textContent && node.textContent.indexOf('xn--') !== -1) {
+                                var walker = document.createTreeWalker(
+                                    node, NodeFilter.SHOW_TEXT, null, false
+                                );
+                                
+                                var textNode;
+                                while (textNode = walker.nextNode()) {
+                                    var text = textNode.nodeValue;
+                                    if (text && text.indexOf('xn--') !== -1) {
+                                        textNode.nodeValue = decodeTextWithPunycode(text);
+                                    }
                                 }
                             }
                         }
                     });
                 }
             });
+            
+            // If new content detected, immediately check for new fields
+            if (hasNewContent) {
+                setTimeout(function() {
+                    handleGridColumns();
+                    handleTextFields();
+                }, 50);
+            }
         });
 
         observer.observe(document.body, {
