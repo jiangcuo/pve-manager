@@ -348,7 +348,7 @@ lint: $(JSSRC)
 	$(ESLINT) --strict $(JSSRC)
 	touch ".lint-incremental"
 
-pvemanagerlib.js: .lint-incremental OnlineHelpInfo.js $(JSSRC)
+pvemanagerlib.js: OnlineHelpInfo.js $(JSSRC)
 	cat OnlineHelpInfo.js $(JSSRC) >$@.tmp
 	mv $@.tmp $@
 
