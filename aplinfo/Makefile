@@ -5,7 +5,7 @@ TRUSTED_KEYS=				\
 	proxmox-release-bookworm.gpg	\
 	proxmox-release-trixie.gpg	\
 	release@turnkeylinux.com.pubkey \
-	mirrors.apqa.cn.pubkey
+	mirrors.lierfang.com.pubkey
 
 all:
 
