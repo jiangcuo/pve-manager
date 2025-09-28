@@ -377,7 +377,7 @@ __PACKAGE__->register_method({
                 },
                 diskread => {
                     description =>
-                        "The amount of bytes the guest read from its block devices since"
+                        "The number of bytes the guest read from its block devices since"
                         . " the guest was started. This info is not available for all storage types."
                         . " (for types 'qemu' and 'lxc')",
                     type => 'integer',
@@ -386,7 +386,7 @@ __PACKAGE__->register_method({
                 },
                 diskwrite => {
                     description =>
-                        "The amount of bytes the guest wrote to its block devices since"
+                        "The number of bytes the guest wrote to its block devices since"
                         . " the guest was started. This info is not available for all storage types."
                         . " (for types 'qemu' and 'lxc')",
                     type => 'integer',
@@ -419,6 +419,11 @@ __PACKAGE__->register_method({
                 'cgroup-mode' => {
                     description => "The cgroup mode the node operates under (for type 'node').",
                     type => 'integer',
+                    optional => 1,
+                },
+                sdn => {
+                    description => "The name of an SDN entity (for type 'sdn')",
+                    type => "string",
                     optional => 1,
                 },
                 tags => {

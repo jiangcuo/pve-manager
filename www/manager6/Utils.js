@@ -1080,8 +1080,7 @@ Ext.define('PVE.Utils', {
                 return -1;
             }
 
-            var index = PVE.data.ResourceStore.findExact('id', 'node/' + data.node);
-            var node = PVE.data.ResourceStore.getAt(index);
+            let node = PVE.data.ResourceStore.getNodeById(data.node);
             if (!Ext.isDefined(node) || node === null) {
                 return -1;
             }
@@ -1103,8 +1102,7 @@ Ext.define('PVE.Utils', {
                 return '';
             }
 
-            var index = PVE.data.ResourceStore.findExact('id', 'node/' + record.data.node);
-            var node = PVE.data.ResourceStore.getAt(index);
+            let node = PVE.data.ResourceStore.getNodeById(record.data.node);
             if (!Ext.isDefined(node) || node === null) {
                 return '';
             }
@@ -1158,8 +1156,7 @@ Ext.define('PVE.Utils', {
                 return -1;
             }
 
-            var index = PVE.data.ResourceStore.findExact('id', 'node/' + data.node);
-            var node = PVE.data.ResourceStore.getAt(index);
+            let node = PVE.data.ResourceStore.getNodeById(data.node);
 
             if (!Ext.isDefined(node) || node === null) {
                 return -1;
@@ -1209,8 +1206,7 @@ Ext.define('PVE.Utils', {
                 return '';
             }
 
-            var index = PVE.data.ResourceStore.findExact('id', 'node/' + record.data.node);
-            var node = PVE.data.ResourceStore.getAt(index);
+            let node = PVE.data.ResourceStore.getNodeById(record.data.node);
             var maxmem = node.data.maxmem || 0;
 
             if (record.data.mem > 1) {

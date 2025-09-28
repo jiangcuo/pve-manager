@@ -1,3 +1,120 @@
+pve-manager (9.0.10) trixie; urgency=medium
+
+  * ui: datacenter notes: fix visibility of top toolbar to allow editing the
+    notes again.
+
+  * api: node xterm.js and VNC shells: avoid nested login for already logged
+    in root@pam when tunneling to another node. This should avoid a race where
+    the shell hangs on load that seems to very rarely happen in Proxmox VE 9,
+    but currently the fix only covers the root@pam users. While this makes
+    this just a partial fix, as the issue is hard to reproduce it should not
+    only benefit some of the affected users, it will also help in confirming
+    the underlying root cause.
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 12 Sep 2025 18:05:12 +0200
+
+pve-manager (9.0.9) trixie; urgency=medium
+
+  * ui: cluster dashboard: use higher warning thresholds for memory gauge and
+    the memory widget-column in the node overview table.
+
+  * cluster: resources: add sdn property to cluster resources return JSON
+    schema.
+
+  * ui: resource pool: never submit value of filter field when adding guests
+    to a pool.
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 10 Sep 2025 12:52:03 +0200
+
+pve-manager (9.0.8) trixie; urgency=medium
+
+  * api: apt list updates: complete JSON return schema to be used in the API
+    viewer and API clients like PDM.
+
+  * api: cluster resource: fix performance regression causing O(n²) lookups
+    slowing the API response, and thus also the initial load of the web UI,
+    significantly down on setups with more than a few hundred, or even
+    thousands of virtual guests.
+
+  * ui: resource tree: various performance improvement for the main resource
+    tree, making initial load, updates and scrolling significantly more
+    responsive on setups with thousands of virtual guests.
+
+  * ui: VM cpu: recognize kebab-cased properties like while parsing to avoid
+    loosing the value of such a manually set option on edit.
+
+  * api: apt: ensure change log entries are encoded as valid UTF-8.
+
+  * ui: storage summary: set 'bytes' as unit for metrics graph.
+
+  * cli: pveceph: set use bytes renderer when listing a pool's content.
+
+  * ui: SDN: ensure fabrics property gets correctly removed when editing a
+    EVPN controller or a VXLAN zone.
+
+  * ui: pool: add members: make virtual guest window bigger and resizeable.
+
+  * ui: pool members: add filter for name, node or vmid when adding guests.
+
+  * update shipped appliance info index.
+
+  * api: cluster: metric server: increase timeout when fetching other nodes
+    metrics from 5s to 20s.
+
+  * api: cluster metrics export: support requesting the metrics from a
+    specific set of nodes through a new 'node-list' parameter.
+
+  * ui: node and virtual guest status: increase warning/critical threshold
+    percentage for memory usage from 75% to 90% and 90% to 97.5% percent,
+    respectively, as leveraging most of the memory installed is fine and often
+    even wanted.
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 08 Sep 2025 22:57:43 +0200
+
+pve-manager (9.0.7) trixie; urgency=medium
+
+  * pve8to9: rework systemd-boot checks
+
+  * configs: drop unused country.dat file from install
+
+  * fix #6599: ui: use font-awesome hdd icon instead of png
+
+  * ui: icons: use svg versions where possible
+
+  * ui: properly center ceph icon
+
+  * api: ceph: add missing type to api schema
+
+  * fix #6747: ceph: osd: swap vg and lv arguments when creating an OSD
+
+  * fix #6385: ui: pool: members: fix store reload on add/remove
+
+  * ha: rule edit: fix enabling ha rules which are disabled
+
+  * api: use 'number' instead of 'amount' for countable nouns
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 02 Sep 2025 14:26:43 +0200
+
+pve-manager (9.0.6) trixie; urgency=medium
+
+  * fix #6652: ceph: osd: enable autoactivation for OSD LVs on creation
+
+  * pve8to9: only allow systemd-boot when it is actually used before upgrade
+
+  * ui: ha: rules: fix edit button
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 20 Aug 2025 14:22:52 +0200
+
+pve-manager (9.0.5) trixie; urgency=medium
+
+  * fix #6657: pveproxy: detect mobile firefox better
+
+  * ui: storage edit: warn about disabling snapshot-as-volume-chain on LVM
+
+  * ui: make sure more datacenter option renderers are html encoded
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 13 Aug 2025 13:00:02 +0200
+
 pve-manager (9.0.4) trixie; urgency=medium
 
   * 8to9 upgrade checks (pve8to9):

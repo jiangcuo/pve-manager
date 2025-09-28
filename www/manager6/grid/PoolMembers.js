@@ -1,8 +1,10 @@
 Ext.define('PVE.pool.AddVM', {
     extend: 'Proxmox.window.Edit',
 
-    width: 640,
-    height: 480,
+    width: 800,
+    height: 600,
+    resizable: true,
+
     isAdd: true,
     isCreate: true,
 
@@ -27,6 +29,9 @@ Ext.define('PVE.pool.AddVM', {
             allowBlank: false,
         });
 
+        let basicFilter = (data) =>
+            (data.type === 'lxc' || data.type === 'qemu') && data.pool !== me.pool;
+
         var vmStore = Ext.create('Ext.data.Store', {
             model: 'PVEResources',
             sorters: [
@@ -35,20 +40,13 @@ Ext.define('PVE.pool.AddVM', {
                     direction: 'ASC',
                 },
             ],
-            filters: [
-                function (item) {
-                    return (
-                        (item.data.type === 'lxc' || item.data.type === 'qemu') &&
-                        item.data.pool !== me.pool
-                    );
-                },
-            ],
+            filters: [(item) => basicFilter(item.data)],
         });
 
         var vmGrid = Ext.create('widget.grid', {
             store: vmStore,
             border: true,
-            height: 360,
+            height: 480,
             scrollable: true,
             selModel: {
                 selType: 'checkboxmodel',
@@ -63,6 +61,62 @@ Ext.define('PVE.pool.AddVM', {
                     },
                 },
             },
+            tbar: [
+                '->',
+                gettext('Filter') + ':',
+                ' ',
+                {
+                    xtype: 'textfield',
+                    width: 200,
+                    enableKeyEvents: true,
+                    emptyText: gettext('Name, Node, VMID'),
+                    submitValue: false,
+                    listeners: {
+                        keyup: {
+                            buffer: 350,
+                            fn: function (field) {
+                                let needle = field.getValue().toLocaleLowerCase();
+                                if (needle?.length === 0) {
+                                    this.triggers.clear.setVisible(false);
+                                }
+                                let matchesNeedle = (v) => v?.toLocaleLowerCase().includes(needle);
+                                vmStore.clearFilter(true);
+                                vmStore.filter([
+                                    {
+                                        filterFn: ({ data }) =>
+                                            basicFilter(data) &&
+                                            (matchesNeedle(data.vmid.toString()) ||
+                                                matchesNeedle(data.name) ||
+                                                matchesNeedle(data.node)),
+                                    },
+                                ]);
+                            },
+                        },
+                        change: function (field, newValue, oldValue) {
+                            if (newValue !== this.originalValue) {
+                                this.triggers.clear.setVisible(true);
+                            }
+                        },
+                    },
+                    triggers: {
+                        clear: {
+                            cls: 'pmx-clear-trigger',
+                            weight: -1,
+                            hidden: true,
+                            handler: function () {
+                                this.triggers.clear.setVisible(false);
+                                this.setValue(this.originalValue);
+                                vmStore.clearFilter(true);
+                                vmStore.filter([
+                                    {
+                                        filterFn: ({ data }) => basicFilter(data),
+                                    },
+                                ]);
+                            },
+                        },
+                    },
+                },
+            ],
             columns: [
                 {
                     header: 'ID',
@@ -188,8 +242,8 @@ Ext.define('PVE.grid.PoolMembers', {
             (c) => c.dataIndex !== 'tags' && c.dataIndex !== 'lock',
         );
 
-        var reload = function () {
-            store.load();
+        const reload = function () {
+            me.rstore.load();
         };
 
         var sm = Ext.create('Ext.selection.RowModel', {});
@@ -243,7 +297,7 @@ Ext.define('PVE.grid.PoolMembers', {
                         items: [
                             {
                                 text: gettext('Virtual Machine'),
-                                iconCls: 'pve-itype-icon-qemu',
+                                iconCls: 'fa fa-desktop',
                                 handler: function () {
                                     var win = Ext.create('PVE.pool.AddVM', { pool: me.pool });
                                     win.on('destroy', reload);
@@ -252,7 +306,7 @@ Ext.define('PVE.grid.PoolMembers', {
                             },
                             {
                                 text: gettext('Storage'),
-                                iconCls: 'pve-itype-icon-storage',
+                                iconCls: 'fa fa-hdd-o',
                                 handler: function () {
                                     var win = Ext.create('PVE.pool.AddStorage', { pool: me.pool });
                                     win.on('destroy', reload);

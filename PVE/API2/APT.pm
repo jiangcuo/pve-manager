@@ -7,6 +7,7 @@ use POSIX;
 use File::stat ();
 use IO::File;
 use File::Basename;
+use Encode qw(decode);
 
 use LWP::UserAgent;
 
@@ -219,7 +220,51 @@ __PACKAGE__->register_method({
         type => "array",
         items => {
             type => "object",
-            properties => {},
+            properties => {
+                'Arch' => {
+                    type => 'string',
+                    description => 'Package Architecture.',
+                },
+                'Description' => {
+                    type => 'string',
+                    description => 'Human-readable package description.',
+                },
+                'NotifyStatus' => {
+                    type => 'string',
+                    description =>
+                        'Version for which PVE has already sent an update notification for.',
+                    optional => 1,
+                },
+                'OldVersion' => {
+                    type => 'string',
+                    description => 'Old version currently installed.',
+                    optional => 1,
+                },
+                'Origin' => {
+                    type => 'string',
+                    description => 'Package origin.',
+                },
+                'Package' => {
+                    type => 'string',
+                    description => 'Package name.',
+                },
+                'Priority' => {
+                    type => 'string',
+                    description => 'Package priority in human-readable form.',
+                },
+                'Section' => {
+                    type => 'string',
+                    description => 'Package section.',
+                },
+                'Title' => {
+                    type => 'string',
+                    description => 'Package title.',
+                },
+                'Version' => {
+                    type => 'string',
+                    description => 'New version to be updated to.',
+                },
+            },
         },
     },
     code => sub {
@@ -418,7 +463,7 @@ __PACKAGE__->register_method({
             timeout => 10,
             logfunc => sub {
                 my $line = shift;
-                $output .= "$line\n";
+                $output .= decode('UTF-8', $line) . "\n";
             },
             noerr => 1,
         );
