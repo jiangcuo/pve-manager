@@ -1,3 +1,9 @@
+pve-manager (9.0.10-1) trixie; urgency=medium
+
+  * fix pxvirt patch
+
+ -- Lierfang Support Team <support@lierfang.com>  Sun, 28 Sep 2025 05:23:28 +0000
+
 pve-manager (9.0.10) trixie; urgency=medium
 
   * ui: datacenter notes: fix visibility of top toolbar to allow editing the
