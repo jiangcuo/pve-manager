@@ -26,7 +26,7 @@
     [%- ELSE %]
     <script type='text/javascript'>
         function gettext(message) { return message; }
-        function gettext(singular, plural, count) { return count === 1 ? singular : plural; }
+        function ngettext(singular, plural, count) { return count === 1 ? singular : plural; }
     </script>
     [% END %]
     [%- IF debug %]
