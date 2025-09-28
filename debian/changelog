@@ -1,3 +1,9 @@
+pve-manager (9.0.10-2) trixie; urgency=medium
+
+  * fix js error  
+
+ -- Lierfang Support Team <support@lierfang.com>  Sun, 28 Sep 2025 07:04:09 +0000
+
 pve-manager (9.0.10-1) trixie; urgency=medium
 
   * fix pxvirt patch
