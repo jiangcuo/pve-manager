@@ -9,10 +9,10 @@ Ext.define('PVE.qemu.MachineInputPanel', {
         },
         formulas: {
             q35: (get) => get('type') === 'q35',
-		pc: get => get('type') === 'pc',
-		virt: get => get('type') === 'virt',
-		pseries: get => get('type') === 'pseries',
-		's390-ccw-virtio': get => get('type') === 's390-ccw-virtio',
+            pc: (get) => get('type') === 'pc',
+            virt: (get) => get('type') === 'virt',
+            pseries: (get) => get('type') === 'pseries',
+            's390-ccw-virtio': (get) => get('type') === 's390-ccw-virtio',
         },
     },
 
@@ -31,7 +31,6 @@ Ext.define('PVE.qemu.MachineInputPanel', {
 		    value = 'i440fx';
 		}
 		store.clearFilter();
-		console.log('value is '+ value)
 		if (value === null || value === '__default__') {
 			store.addFilter(val => val.data.id === 'latest');
 		}else{
@@ -65,27 +64,46 @@ Ext.define('PVE.qemu.MachineInputPanel', {
         values.machine = machineConf.type;
 
         _me.isWindows = values.isWindows;
+
+        let singleMachineArch = {
+            'loongarch64': 'virt',
+            'riscv64': 'virt',
+            'ppc64': 'pseries',
+            's390x': 's390-ccw-virtio',
+        };
+        let arch = values.arch;
+        delete values.arch;
+
         if (values.machine === 'pc') {
             values.machine = '__default__';
         }
 
-        if (_me.isWindows) {
-            if (values.machine === '__default__') {
-                values.version = 'virt';
-            } else if (values.machine === 'q35') {
-                values.version = 'pc-q35-5.1';
+        let lockedType = singleMachineArch[arch];
+        if (lockedType) {
+            let machineCombo = _me.down('combobox[name=machine]');
+            if (machineCombo) {
+                machineCombo.setReadOnly(true);
             }
-	    }
+        }
+
+        let knownTypes = ['__default__', 'q35', 'virt', 'pseries', 's390-ccw-virtio'];
+        if (!knownTypes.includes(values.machine)) {
+            values.version = values.machine;
+            if (values.machine.match(/q35/)) {
+                values.machine = 'q35';
+            } else if (values.machine.match(/virt/)) {
+                values.machine = 'virt';
+            } else if (values.machine.match(/pseries/)) {
+                values.machine = 'pseries';
+            } else if (values.machine.match(/s390/)) {
+                values.machine = 's390-ccw-virtio';
+            } else {
+                values.machine = '__default__';
+            }
+            _me.setAdvancedVisible(true);
+        }
 
         values.viommu = machineConf.viommu || '__default__';
-
-	// if (values.machine !== '__default__' && values.machine !== 'q35') {
-	//     values.version = values.machine;
-	//     values.machine = values.version.match(/q35/) ? 'q35' : '__default__';
-
-	//     // avoid hiding a pinned version
-	//     me.setAdvancedVisible(true);
-	// }
 
         this.callParent(arguments);
     },
@@ -98,10 +116,10 @@ Ext.define('PVE.qemu.MachineInputPanel', {
         comboItems: [
             ['__default__', PVE.Utils.render_qemu_machine('')],
             ['q35', 'q35'],
-	    ['virt', 'virt'],
-	    ['pc', 'i440fx'],
-		['pseries','pseries'],
-		['s390-ccw-virtio','s390-ccw-virtio']
+            ['virt', 'virt'],
+            ['pc', 'i440fx'],
+            ['pseries','pseries'],
+            ['s390-ccw-virtio','s390-ccw-virtio']
         ],
         bind: {
             value: '{type}',
@@ -206,6 +224,7 @@ Ext.define('PVE.qemu.MachineEdit', {
                     machine: conf.machine || '__default__',
                 };
                 values.isWindows = PVE.Utils.is_windows(conf.ostype);
+                values.arch = conf.arch;
                 me.setValues(values);
             },
         });
