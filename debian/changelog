@@ -1,3 +1,12 @@
+pve-manager (8.4.18-pxvirt1) bookworm; urgency=medium
+
+  * ui: Optimize the logic for selecting a machine on the UI.
+  * LXC: Add lierfang lxc key and lxc images
+  * APT: change pxvirt sources to mirrors.lierfang.com
+  * Ceph: Simplify the Ceph creation process on the UI.
+
+ -- Lierfang Support Team <itsupport@lierfang.com>  Sun, 12 Apr 2026 11:03:43 +0000
+
 pve-manager (8.4.18) bookworm; urgency=medium
 
   * fix #6985: ui: qemu: hardware: efidisk: add 'Enroll Updated Certificates'
