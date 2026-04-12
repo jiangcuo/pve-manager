@@ -156,6 +156,12 @@ case "$1" in
         pveam update || true
     fi
 
+    if test ! -e /var/lib/pve-manager/apl-info/mirrors.lierfang.com; then
+        mkdir -p /var/lib/pve-manager/apl-info
+        cp /usr/share/doc/pve-manager/aplinfo-lierfang.dat /var/lib/pve-manager/apl-info/mirrors.lierfang.com
+        pveam update || true
+    fi
+
     # Always try to clean old entry, even when proxmox-mail-forward entry is already present.
     # This ensures it will still be cleaned after an upgrade following a downgrade.
     if test -f /root/.forward; then
