@@ -110,12 +110,6 @@ __PACKAGE__->register_method({
     },
 });
 
-my sub has_valid_subscription {
-    my $info = eval { Proxmox::RS::Subscription::read_subscription('/etc/subscription') } // {};
-    warn "couldn't check subscription info - $@" if $@;
-    return $info->{status} && $info->{status} eq 'active'; # age check?
-}
-
 my $available_ceph_release_codenames = PVE::Ceph::Releases::get_available_ceph_release_codenames(1);
 my $default_ceph_version = PVE::Ceph::Releases::get_default_ceph_release_codename();
 
@@ -134,13 +128,6 @@ __PACKAGE__->register_method({
                 description => "Ceph version to install.",
                 optional => 1,
             },
-            repository => {
-                type => 'string',
-                enum => ['enterprise', 'no-subscription', 'test'],
-                default => 'enterprise',
-                description => "Ceph repository to use.",
-                optional => 1,
-            },
             'allow-experimental' => {
                 type => 'boolean',
                 default => 0,
@@ -154,27 +141,6 @@ __PACKAGE__->register_method({
         my ($param) = @_;
 
         my $cephver = $param->{version} || $default_ceph_version;
-
-        my $repo = $param->{'repository'} // 'enterprise';
-        my $enterprise_repo = $repo eq 'enterprise';
-        my $cdn =
-            $enterprise_repo ? 'https://enterprise.proxmox.com' : 'http://download.proxmox.com';
-
-        if (has_valid_subscription()) {
-            warn
-                "\nNOTE: The node has an active subscription but a non-production Ceph repository selected.\n\n"
-                if !$enterprise_repo;
-        } elsif ($enterprise_repo) {
-            warn "\nWARN: Enterprise repository selected, but no active subscription!\n\n";
-        } elsif ($repo eq 'no-subscription') {
-            warn
-                "\nHINT: The no-subscription repository is not the best choice for production setups.\n"
-                . "Proxmox recommends using the enterprise repository with a valid subscription.\n";
-        } else {
-            warn
-                "\nWARN: The test repository should only be used for test setups or after consulting"
-                . " the official Proxmox support!\n\n";
-        }
 
         my $available_ceph_releases = PVE::Ceph::Releases::get_all_available_ceph_releases();
         die "unsupported ceph version: $cephver"

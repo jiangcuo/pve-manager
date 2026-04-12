@@ -147,45 +147,9 @@ Ext.define('PVE.ceph.CephInstallWizard', {
         data: {
             nodename: '',
             cephRelease: 'reef', // default
-            cephRepo: 'enterprise',
             configuration: true,
             isInstalled: false,
-            nodeHasSubscription: true, // avoid warning hint until fully loaded
-            allHaveSubscription: true, // avoid warning hint until fully loaded
             selectedReleaseIsTechPreview: false, // avoid warning hint until fully loaded
-        },
-        formulas: {
-            repoHintHidden: (get) => get('allHaveSubscription') && get('cephRepo') === 'enterprise',
-            repoHint: function (get) {
-                let repo = get('cephRepo');
-                let nodeSub = get('nodeHasSubscription'),
-                    allSub = get('allHaveSubscription');
-
-                if (repo === 'enterprise') {
-                    if (!nodeSub) {
-                        return gettext(
-                            'The enterprise repository is enabled, but there is no active subscription!',
-                        );
-                    } else if (!allSub) {
-                        return gettext(
-                            'Not all nodes have an active subscription, which is required for cluster-wide enterprise repo access',
-                        );
-                    }
-                    return ''; // should be hidden
-                } else if (repo === 'no-subscription') {
-                    return allSub
-                        ? gettext(
-                              'Cluster has active subscriptions and would be eligible for using the enterprise repository.',
-                          )
-                        : gettext(
-                              'The no-subscription repository is not the best choice for production setups.',
-                          );
-                } else {
-                    return gettext(
-                        'The test repository should only be used for test setups or after consulting the official Proxmox support!',
-                    );
-                }
-            },
         },
     },
     cbindData: {
@@ -218,13 +182,6 @@ Ext.define('PVE.ceph.CephInstallWizard', {
             viewModel.set('configuration', false);
             this.setInitialTab(2);
         }
-
-        PVE.Utils.getClusterSubscriptionLevel().then((subcriptionMap) => {
-            viewModel.set('nodeHasSubscription', !!subcriptionMap[this.nodename]);
-
-            let allHaveSubscription = Object.values(subcriptionMap).every((level) => !!level);
-            viewModel.set('allHaveSubscription', allHaveSubscription);
-        });
     },
     items: [
         {
@@ -248,17 +205,6 @@ Ext.define('PVE.ceph.CephInstallWizard', {
                 },
                 {
                     flex: 1,
-                },
-                {
-                    xtype: 'displayfield',
-                    fieldLabel: gettext('Hint'),
-                    labelClsExtra: 'pmx-hint',
-                    submitValue: false,
-                    labelWidth: 50,
-                    bind: {
-                        value: '{repoHint}',
-                        hidden: '{repoHintHidden}',
-                    },
                 },
                 {
                     xtype: 'displayfield',
@@ -288,77 +234,39 @@ Ext.define('PVE.ceph.CephInstallWizard', {
                     },
                 },
                 {
-                    xtype: 'container',
-                    layout: 'hbox',
-                    defaults: {
-                        border: false,
-                        layout: 'anchor',
-                        flex: 1,
+                    xtype: 'pveCephVersionSelector',
+                    labelWidth: 150,
+                    submitValue: false,
+                    bind: {
+                        value: '{cephRelease}',
                     },
-                    items: [
-                        {
-                            xtype: 'pveCephVersionSelector',
-                            labelWidth: 150,
-                            padding: '0 10 0 0',
-                            submitValue: false,
-                            bind: {
-                                value: '{cephRelease}',
-                            },
-                            listeners: {
-                                change: function (field, release) {
-                                    let me = this;
-                                    let wizard = this.up('pveCephInstallWizard');
-                                    wizard
-                                        .down('#next')
-                                        .setText(
-                                            Ext.String.format(
-                                                gettext('Start {0} installation'),
-                                                release,
-                                            ),
-                                        );
-
-                                    let record = me.store.findRecord(
-                                        'release',
+                    listeners: {
+                        change: function (field, release) {
+                            let me = this;
+                            let wizard = this.up('pveCephInstallWizard');
+                            wizard
+                                .down('#next')
+                                .setText(
+                                    Ext.String.format(
+                                        gettext('Start {0} installation'),
                                         release,
-                                        0,
-                                        false,
-                                        true,
-                                        true,
-                                    );
-                                    let releaseIsTechPreview = !!record.data.preview;
-                                    wizard
-                                        .getViewModel()
-                                        .set('selectedReleaseIsTechPreview', releaseIsTechPreview);
+                                    ),
+                                );
 
-                                    let repoSelector = wizard.down('#repoSelector');
-                                    if (releaseIsTechPreview) {
-                                        repoSelector.store.filterBy(
-                                            (entry) => entry.get('key') !== 'enterprise',
-                                        );
-                                    } else {
-                                        repoSelector.store.clearFilter();
-                                    }
-                                },
-                            },
+                            let record = me.store.findRecord(
+                                'release',
+                                release,
+                                0,
+                                false,
+                                true,
+                                true,
+                            );
+                            let releaseIsTechPreview = !!record.data.preview;
+                            wizard
+                                .getViewModel()
+                                .set('selectedReleaseIsTechPreview', releaseIsTechPreview);
                         },
-                        {
-                            xtype: 'proxmoxKVComboBox',
-                            id: 'repoSelector', // TODO: use name or reference (how to lookup that here?)
-                            fieldLabel: gettext('Repository'),
-                            padding: '0 0 0 10',
-                            comboItems: [
-                                ['enterprise', gettext('Enterprise (recommended)')],
-                                ['no-subscription', gettext('No-Subscription')],
-                                ['test', gettext('Test')],
-                            ],
-                            labelWidth: 150,
-                            submitValue: false,
-                            value: 'enterprise',
-                            bind: {
-                                value: '{cephRepo}',
-                            },
-                        },
-                    ],
+                    },
                 },
             ],
             listeners: {
@@ -464,8 +372,7 @@ Ext.define('PVE.ceph.CephInstallWizard', {
                         let me = this;
                         let wizard = me.up('pveCephInstallWizard');
                         let release = wizard.getViewModel().get('cephRelease');
-                        let repo = wizard.getViewModel().get('cephRepo');
-                        me.cmdOpts = `--version\0${release}\0--repository\0${repo}`;
+                        me.cmdOpts = `--version\0${release}`;
                     },
                     cmd: 'ceph_install',
                 },
