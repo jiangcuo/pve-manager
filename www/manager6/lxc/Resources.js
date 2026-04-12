@@ -104,7 +104,6 @@ Ext.define('PVE.lxc.RessourceView', {
                 iconCls: 'hdd-o',
                 group: 4,
                 renderer: Ext.htmlEncode,
-		renderer: Ext.htmlEncode,
             },
             cpulimit: {
                 visible: false,
@@ -133,7 +132,6 @@ Ext.define('PVE.lxc.RessourceView', {
                 editor: mpeditor,
                 header: header,
                 renderer: Ext.htmlEncode,
-		renderer: Ext.htmlEncode,
             };
         }, true);
 
@@ -147,7 +145,6 @@ Ext.define('PVE.lxc.RessourceView', {
                 editor: deveditor,
                 header: gettext('Device') + ' (' + confid + ')',
                 renderer: Ext.htmlEncode,
-		renderer: Ext.htmlEncode,
             };
         });
 

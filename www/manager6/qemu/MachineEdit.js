@@ -64,18 +64,18 @@ Ext.define('PVE.qemu.MachineInputPanel', {
         let machineConf = PVE.Parser.parsePropertyString(values.machine, 'type');
         values.machine = machineConf.type;
 
-        me.isWindows = values.isWindows;
+        _me.isWindows = values.isWindows;
         if (values.machine === 'pc') {
             values.machine = '__default__';
         }
 
-	if (me.isWindows) {
-	    if (values.machine === '__default__') {
-		values.version = 'virt';
-	    } else if (values.machine === 'q35') {
-		values.version = 'pc-q35-5.1';
+        if (_me.isWindows) {
+            if (values.machine === '__default__') {
+                values.version = 'virt';
+            } else if (values.machine === 'q35') {
+                values.version = 'pc-q35-5.1';
+            }
 	    }
-	}
 
         values.viommu = machineConf.viommu || '__default__';
 
