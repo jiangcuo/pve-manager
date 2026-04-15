@@ -151,24 +151,4 @@ Ext.define('PVE.node.StatusView', {
         me.setTitle(me.pveSelNode.data.node + ' (' + gettext('Uptime') + ': ' + uptime + ')');
     },
 
-    initComponent: function() {
-	let me = this;
-
-	let stateProvider = Ext.state.Manager.getProvider();
-	let repoLink = stateProvider.encodeHToken({
-	    view: "server",
-	    rid: `node/${me.pveSelNode.data.node}`,
-	    ltab: "tasks",
-	    nodetab: "aptrepositories",
-	});
-
-	me.items.push({
-	    xtype: 'pmxNodeInfoRepoStatus',
-	    itemId: 'repositoryStatus',
-	    product: 'Proxmox VE',
-	    repoLink: `#${repoLink}`,
-	});
-
-	me.callParent();
-    },
 });
