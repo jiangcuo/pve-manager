@@ -28,7 +28,6 @@ SCRIPTS =  			\
 	pveupdate		\
 	pveperf			\
 	pvereport		\
-	query-machine-info \
 	pvessh
 
 HELPERS =			\
@@ -106,6 +105,9 @@ pve8to9.1:
 	printf ".SH SYNOPSIS\npve8to9 [--full]\n" >> $@.tmp
 	mv $@.tmp $@
 
+.PHONY: query-machine-info
+query-machine-info: query-machine-info.c
+	gcc -o $@ $<
 
 pveversion.1.pod: pveversion
 pveupgrade.1.pod: pveupgrade
@@ -120,7 +122,7 @@ check: $(addsuffix .service-api-verified, $(SERVICES)) $(addsuffix .api-verified
 	rm -f *.service-api-verified *.api-verified
 
 .PHONY: install
-install: $(SCRIPTS) $(LIBEXECCLITOOLS) $(CLI_MANS) $(SERVICE_MANS) $(BASH_COMPLETIONS) $(ZSH_COMPLETIONS)
+install: $(SCRIPTS) $(LIBEXECCLITOOLS) $(CLI_MANS) $(SERVICE_MANS) $(BASH_COMPLETIONS) $(ZSH_COMPLETIONS) query-machine-info
 	install -d $(BINDIR)
 	install -m 0755 $(SCRIPTS) $(BINDIR)
 	install -d $(LIBEXECDIR)
@@ -133,6 +135,7 @@ install: $(SCRIPTS) $(LIBEXECCLITOOLS) $(CLI_MANS) $(SERVICE_MANS) $(BASH_COMPLE
 	install -m 0644 $(CLI_MANS) $(MAN1DIR)
 	install -d $(MAN8DIR)
 	install -m 0644 $(SERVICE_MANS) $(MAN8DIR)
+	install -m 0755 query-machine-info $(BINDIR)
 	for i in $(CLITOOLS); do install -m 0644 -D $$i.bash-completion $(BASHCOMPLDIR)/$$i; done
 	for i in $(LIBEXECCLITOOLS); do install -m 0644 -D $$i.bash-completion $(BASHCOMPLDIR)/$$i; done
 	for i in $(SERVICES); do install -m 0644 -D $$i.service-bash-completion $(BASHCOMPLDIR)/$$i; done
