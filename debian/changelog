@@ -1,3 +1,11 @@
+pve-manager (8.4.18-pxvirt2) bookworm; urgency=medium
+ 
+  * UI: Remove repository status from the node view
+  * APL: Exclude lierfang's  lxc dat files from automatic compression
+  * BIN: Rewrite query-machine-info in C
+
+ -- Lierfang Support Team <itsupport@lierfang.com>  Thu, 16 Apr 2026 01:09:16 +0000
+
 pve-manager (8.4.18-pxvirt1) bookworm; urgency=medium
 
   * ui: Optimize the logic for selecting a machine on the UI.
