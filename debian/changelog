@@ -1,3 +1,17 @@
+pve-manager (8.4.19) bookworm; urgency=medium
+
+  * api: vnc/termproxy: bind VNC and SPICE tickets to the listen port to
+    harden authentication for interactive console sessions.
+
+  * api: vncproxy: always use a freshly generated password when
+    authenticating via the VNC protocol, improving entropy compared to
+    the previous ticket-derived scheme.
+
+  * api: termproxy: pin the accepted ticket in the spawned termproxy
+    process as an additional defense-in-depth measure.
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 21 Apr 2026 22:24:17 +0200
+
 pve-manager (8.4.18-pxvirt2) bookworm; urgency=medium
  
   * UI: Remove repository status from the node view
@@ -8587,4 +8601,3 @@ pve-manager (0.9-1) unstable; urgency=low
   * initial import
 
  -- Proxmox Support Team <support@proxmox.com>  Fri, 23 Nov 2007 13:15:54 +0100
-
