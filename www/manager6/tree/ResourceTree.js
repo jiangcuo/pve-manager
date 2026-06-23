@@ -66,7 +66,8 @@ Ext.define('PVE.tree.ResourceTree', {
                 }
                 if (Ext.isNumeric(info.vmid) && info.vmid > 0) {
                     if (PVE.UIOptions.getTreeSortingValue('sort-field') !== 'vmid') {
-                        text = `${info.name} (${String(info.vmid)})`;
+                        let displayName = PVE.Utils.vm_name_to_display(info.name);
+                        text = `${displayName} (${String(info.vmid)})`;
                     }
                 }
                 text = `<span>${status}${text}</span>`;

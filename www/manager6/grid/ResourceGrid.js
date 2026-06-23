@@ -28,6 +28,18 @@ Ext.define('PVE.grid.ResourceGrid', {
                 if (v && v.toLowerCase().indexOf(textfilter) >= 0) {
                     return true;
                 }
+                // For 'name' also match the decoded (Unicode) form so users
+                // can search by the displayed Chinese/IDN name as well as
+                // the raw punycode value.
+                if (field === 'name' && v) {
+                    let decoded = PVE.Utils.vm_name_to_display(v);
+                    if (
+                        decoded !== v &&
+                        decoded.toLowerCase().indexOf(textfilter) >= 0
+                    ) {
+                        return true;
+                    }
+                }
             }
             return false;
         };

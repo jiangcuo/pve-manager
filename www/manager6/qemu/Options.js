@@ -24,6 +24,12 @@ Ext.define('PVE.qemu.Options', {
                 required: true,
                 defaultValue: me.pveSelNode.data.name,
                 header: gettext('Name'),
+                renderer: function (value) {
+                    if (value === undefined || value === null || value === '') {
+                        return value;
+                    }
+                    return Ext.htmlEncode(PVE.Utils.vm_name_to_display(value));
+                },
                 editor: caps.vms['VM.Config.Options']
                     ? {
                           xtype: 'proxmoxWindowEdit',
@@ -37,6 +43,19 @@ Ext.define('PVE.qemu.Options', {
                                   value: '',
                                   fieldLabel: gettext('Name'),
                                   allowBlank: true,
+                                  // Show the Unicode form when the value
+                                  // already is a punycode-encoded IDN.
+                                  // onGetValues below converts whatever the
+                                  // user typed (Unicode or ASCII) back to
+                                  // punycode for submission, so the backend
+                                  // always receives the ASCII form and
+                                  // validation runs on it.
+                                  setValue: function (value) {
+                                      let display = PVE.Utils.vm_name_to_display(value);
+                                      return Ext.form.field.Text.prototype.setValue.call(
+                                          this, display,
+                                      );
+                                  },
                               },
                               onGetValues: function (values) {
                                   var params = values;
@@ -46,6 +65,13 @@ Ext.define('PVE.qemu.Options', {
                                       values.name === ''
                                   ) {
                                       params = { delete: 'name' };
+                                  } else {
+                                      // Convert Unicode IDN to punycode
+                                      // before sending to the backend.
+                                      // ASCII input is returned unchanged.
+                                      params.name = PVE.Utils.vm_name_to_ascii(
+                                          values.name,
+                                      );
                                   }
                                   return params;
                               },
