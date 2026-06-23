@@ -1,5 +1,17 @@
 pve-manager (8.4.18-pxvirt4) bookworm; urgency=medium
 
+  * vzdump: notes-template: decode punycode/IDN guest names before
+    interpolating {{guestname}}. The on-disk VM/CT name is kept in its
+    ASCII (xn--...) form so that the backend, qm/pct CLI and the
+    DnsName-vtype-validated forms keep working, but the user-visible
+    notes attached to each backup archive now show the Unicode form
+    the user originally typed -- without changing what gets stored or
+    sent to PBS. A small inline RFC 3492 implementation handles the
+    decode (no new runtime dependency); any decode failure falls back
+    to the original ASCII value. The "name" column of the backup log
+    table that feeds the post-backup notification mail is decoded the
+    same way.
+
   * ui: storage: backup view: enable Upload + Download buttons.
 
     The Backups tab of a file-based storage now exposes the same

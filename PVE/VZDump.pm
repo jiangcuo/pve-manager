@@ -96,6 +96,120 @@ sub run_command {
     PVE::Tools::run_command($cmdstr, %param, logfunc => $logfunc);
 }
 
+# Decode a single internationalised-domain-name (IDN) label from its
+# punycode/ASCII form ('xn--...') to the original Unicode string. Implemented
+# inline (~30 lines) to avoid pulling in Net::IDN::Encode as a runtime
+# dependency of pve-manager. Algorithm is RFC 3492; see also the matching
+# JavaScript implementation that the web UI loads as punycode.min.js.
+#
+# Returns the decoded Unicode string on success, or the original input
+# verbatim if the input doesn't start with the 'xn--' ACE prefix, contains
+# non-basic characters, or fails any of the bounds checks the RFC mandates.
+# That fallback path is the whole point: callers (vzdump notes, the backup
+# log table, ...) just want IDN values rendered as Unicode and non-IDN values
+# left alone, never an exception.
+sub decode_punycode_label {
+    my ($input) = @_;
+    return $input if !defined($input);
+    return $input if $input !~ /^xn--(.*)$/i;
+
+    my $encoded = $1;
+    return $input if $encoded eq '';
+
+    # RFC 3492 parameters (Bootstring for IDN, aka punycode).
+    my $base = 36;
+    my $tmin = 1;
+    my $tmax = 26;
+    my $skew = 38;
+    my $damp = 700;
+    my $initial_bias = 72;
+    my $initial_n = 128;
+
+    # Split off the basic-code-point prefix (the part before the last '-').
+    my @output;
+    my $extended_start = 0;
+    if ((my $delim = rindex($encoded, '-')) >= 0) {
+        my $basic = substr($encoded, 0, $delim);
+        # Basic code points must all be ASCII.
+        return $input if $basic =~ /[^\x00-\x7f]/;
+        @output = split(//, $basic);
+        $extended_start = $delim + 1;
+    }
+
+    my $decode_digit = sub {
+        my ($c) = @_;
+        return ord($c) - ord('0') + 26 if $c =~ /[0-9]/;
+        return ord(lc($c)) - ord('a') if $c =~ /[A-Za-z]/;
+        return $base; # signals failure
+    };
+
+    my $adapt = sub {
+        my ($delta, $numpoints, $firsttime) = @_;
+        $delta = $firsttime ? int($delta / $damp) : ($delta >> 1);
+        $delta += int($delta / $numpoints);
+        my $k = 0;
+        while ($delta > int((($base - $tmin) * $tmax) / 2)) {
+            $delta = int($delta / ($base - $tmin));
+            $k += $base;
+        }
+        return $k + int((($base - $tmin + 1) * $delta) / ($delta + $skew));
+    };
+
+    my $n = $initial_n;
+    my $i = 0;
+    my $bias = $initial_bias;
+    my $pos = $extended_start;
+    my $enc_len = length($encoded);
+
+    while ($pos < $enc_len) {
+        my $old_i = $i;
+        my $w = 1;
+        my $k = $base;
+        while (1) {
+            return $input if $pos >= $enc_len; # truncated
+            my $digit = $decode_digit->(substr($encoded, $pos, 1));
+            $pos++;
+            return $input if $digit >= $base; # bad digit
+            return $input if $digit > int((0x7fffffff - $i) / $w); # overflow
+            $i += $digit * $w;
+            my $t = $k <= $bias ? $tmin : ($k >= $bias + $tmax ? $tmax : $k - $bias);
+            last if $digit < $t;
+            return $input if $w > int(0x7fffffff / ($base - $t)); # overflow
+            $w *= ($base - $t);
+            $k += $base;
+        }
+        my $out_len = scalar(@output) + 1;
+        $bias = $adapt->($i - $old_i, $out_len, $old_i == 0);
+        return $input if int($i / $out_len) > 0x7fffffff - $n; # overflow
+        $n += int($i / $out_len);
+        $i = $i % $out_len;
+        # Reject surrogates / non-characters to keep the output well-formed.
+        return $input if $n >= 0xd800 && $n <= 0xdfff;
+        return $input if $n > 0x10ffff;
+        splice(@output, $i, 0, chr($n));
+        $i++;
+    }
+
+    my $result = join('', @output);
+    # Reject results that contain control characters or other non-printable
+    # code points: 'xn--fake' is technically a valid punycode string, but it
+    # decodes to a handful of C1 control characters that no user ever typed
+    # as a hostname. Returning the original ACE form is the friendlier
+    # behaviour here.
+    return $input if $result =~ /[\p{Cc}\p{Cn}\p{Cs}\p{Co}]/;
+    return $result;
+}
+
+# Render a VM/CT name for display: decode IDN/punycode if present, return the
+# original value otherwise. Wraps decode_punycode_label() with the usual
+# 'undef in -> undef out' convenience so callers can keep using the // 'fallback'
+# pattern they already have.
+sub decode_guest_name {
+    my ($name) = @_;
+    return $name if !defined($name) || $name eq '';
+    return decode_punycode_label($name);
+}
+
 my $verify_notes_template = sub {
     my ($template) = @_;
 
@@ -124,7 +238,7 @@ my $generate_notes = sub {
 
     my $info = {
         cluster => PVE::Cluster::get_clinfo()->{cluster}->{name} // 'standalone node',
-        guestname => $task->{hostname} // "VM $task->{vmid}", # is always set for CTs
+        guestname => decode_guest_name($task->{hostname}) // "VM $task->{vmid}", # is always set for CTs
         node => PVE::INotify::nodename(),
         vmid => $task->{vmid},
     };
@@ -451,7 +565,7 @@ my sub build_guest_table {
         push @{ $table->{data} },
             {
                 "vmid" => int($task->{vmid}),
-                "name" => $task->{hostname},
+                "name" => decode_guest_name($task->{hostname}),
                 "status" => $task->{state},
                 "time" => int($task->{backuptime}),
                 "size" => int($size),
