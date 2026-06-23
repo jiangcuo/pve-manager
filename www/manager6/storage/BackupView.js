@@ -108,28 +108,6 @@ Ext.define('PVE.storage.BackupView', {
                 },
             },
         ];
-        if (!isPBS) {
-            // File-based storages serve the archive directly via the storage
-            // 'download' API endpoint. For PBS we already have 'File Restore'
-            // below, which is the proper way to retrieve data from a chunked
-            // datastore -- a raw blob download wouldn't be meaningful.
-            me.tbar.push({
-                xtype: 'proxmoxButton',
-                text: gettext('Download'),
-                selModel: sm,
-                disabled: true,
-                handler: function (b, e, rec) {
-                    let volid = rec.data.volid;
-                    // 'storeid:backup/file.vma.zst' -> 'file.vma.zst'
-                    let filename = volid.replace(/^[^:]+:backup\//, '');
-                    let url =
-                        `/api2/json/nodes/${nodename}/storage/${me.storage}/download` +
-                        '?volume=' +
-                        encodeURIComponent(volid);
-                    Proxmox.Utils.downloadAsFile(url, filename);
-                },
-            });
-        }
         if (isPBS) {
             me.tbar.push({
                 xtype: 'proxmoxButton',

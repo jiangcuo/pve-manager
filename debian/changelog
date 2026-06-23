@@ -6,10 +6,15 @@ pve-manager (8.4.18-pxvirt4) bookworm; urgency=medium
     Upload / Download-from-URL pair that the ISO and CT-template tabs
     already have (gated by enableUpload / enableDownloadUrl in
     Browser.js), and the per-row toolbar gains a Download button that
-    streams the selected vzdump archive to the browser via the new
-    /nodes/{node}/storage/{storage}/download API. The Download button
-    is hidden for PBS storages, where File Restore is the correct
-    retrieval path.
+    streams the selected volume to the browser via the new
+    /nodes/{node}/storage/{storage}/download API.
+
+    The per-row Download button is implemented generically inside
+    ContentView under a new useDownloadButton flag, so it works on
+    every file-based content tab: backup, ISO Images and CT Templates
+    now all expose a Download button (PBS is intentionally excluded —
+    its chunked datastore has no single-file artifact to ship, and the
+    existing File Restore entry point is the correct path there).
 
     UploadToStorage.js learns a 'backup' content type that allow-lists
     .vma[.gz|lzo|zst], .tar[.gz|lzo|zst] and .tgz extensions so the
@@ -18,7 +23,7 @@ pve-manager (8.4.18-pxvirt4) bookworm; urgency=medium
 
     Depends on libpve-storage-perl 8.3.8+pxvirt2 which adds the
     'backup' content type to the upload endpoint and the new download
-    endpoint.
+    endpoint (generalised to backup, iso, vztmpl and import).
 
  -- liyanglrf <liyang@lierfang.com>  Tue, 23 Jun 2026 17:01:40 +0000
 
