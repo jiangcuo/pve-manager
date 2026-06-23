@@ -66,15 +66,21 @@ Ext.define('PVE.storage.Browser', {
                     !!caps.nodes['Sys.AccessNetwork']); // new explicit priv for querying (local) networks
 
             if (contents.includes('backup')) {
+                // PBS storages cannot accept uploads (no $scfg->{path}, so the
+                // backend upload handler rejects them with "can't upload to
+                // storage type 'pbs'"). Suppress the Upload / Download from
+                // URL buttons on PBS, the same way isEsxi suppresses them for
+                // the import tab below.
+                let isPBS = plugin === 'pbs';
                 me.items.push({
                     xtype: 'pveStorageBackupView',
                     title: gettext('Backups'),
                     iconCls: 'fa fa-floppy-o',
                     itemId: 'contentBackup',
                     pluginType: plugin,
-                    enableUploadButton: enableUpload,
-                    enableDownloadUrlButton: enableDownloadUrl,
-                    useUploadButton: true,
+                    enableUploadButton: enableUpload && !isPBS,
+                    enableDownloadUrlButton: enableDownloadUrl && !isPBS,
+                    useUploadButton: !isPBS,
                 });
             }
             if (contents.includes('images')) {
