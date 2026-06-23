@@ -12,6 +12,21 @@ Ext.define('PVE.window.UploadToStorage', {
         import: ['.ova', '.qcow2', '.raw', '.vmdk'],
         iso: ['.img', '.iso'],
         vztmpl: ['.tar.gz', '.tar.xz', '.tar.zst'],
+        // vzdump archives: '.vma[.{gz,lzo,zst}]', '.tar[.{gz,lzo,zst}]', '.tgz'.
+        // The backend (PVE::API2::Storage::Status::upload, BACKUP_EXT_RE_2)
+        // enforces the 'vzdump-(lxc|openvz|qemu)-VMID-YYYY_MM_DD-HH_MM_SS' name
+        // shape, so we only need to filter the extension client-side.
+        backup: [
+            '.vma',
+            '.vma.gz',
+            '.vma.lzo',
+            '.vma.zst',
+            '.tar',
+            '.tar.gz',
+            '.tar.lzo',
+            '.tar.zst',
+            '.tgz',
+        ],
     },
 
     // accepted for file selection, will be renamed to real extension

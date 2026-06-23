@@ -1,3 +1,27 @@
+pve-manager (8.4.18-pxvirt4) bookworm; urgency=medium
+
+  * ui: storage: backup view: enable Upload + Download buttons.
+
+    The Backups tab of a file-based storage now exposes the same
+    Upload / Download-from-URL pair that the ISO and CT-template tabs
+    already have (gated by enableUpload / enableDownloadUrl in
+    Browser.js), and the per-row toolbar gains a Download button that
+    streams the selected vzdump archive to the browser via the new
+    /nodes/{node}/storage/{storage}/download API. The Download button
+    is hidden for PBS storages, where File Restore is the correct
+    retrieval path.
+
+    UploadToStorage.js learns a 'backup' content type that allow-lists
+    .vma[.gz|lzo|zst], .tar[.gz|lzo|zst] and .tgz extensions so the
+    file picker filters appropriately. The backend enforces the full
+    vzdump-(lxc|openvz|qemu)-VMID-... naming scheme.
+
+    Depends on libpve-storage-perl 8.3.8+pxvirt2 which adds the
+    'backup' content type to the upload endpoint and the new download
+    endpoint.
+
+ -- liyanglrf <liyang@lierfang.com>  Tue, 23 Jun 2026 17:01:40 +0000
+
 pve-manager (8.4.18-pxvirt3) bookworm; urgency=medium
 
   * ui: support punycode (IDN) virtual machine names. Decode xn--...
