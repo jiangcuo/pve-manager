@@ -12,6 +12,51 @@ Ext.define('PVE.Utils', {
 
         toolkit: undefined, // (extjs|touch), set inside Toolkit.js
 
+        // Convert a VM name to its display form. If the name is a valid
+        // punycode (xn--) encoded string we decode it to Unicode, otherwise we
+        // return the original value untouched. Any error during decoding also
+        // falls back to the original value.
+        vm_name_to_display: function (name) {
+            if (typeof name !== 'string' || !name) {
+                return name;
+            }
+            if (name.indexOf('xn--') === -1) {
+                return name;
+            }
+            if (typeof window.punycode === 'undefined') {
+                return name;
+            }
+            try {
+                let decoded = window.punycode.toUnicode(name);
+                return decoded || name;
+            } catch (_e) {
+                return name;
+            }
+        },
+
+        // Convert a (possibly Unicode) VM name to its ASCII/punycode form for
+        // backend submission. ASCII-only input is returned unchanged. Errors
+        // fall back to the original value so submission still goes through and
+        // backend-side validation can surface a clear error.
+        vm_name_to_ascii: function (name) {
+            if (typeof name !== 'string' || !name) {
+                return name;
+            }
+            // eslint-disable-next-line no-control-regex
+            if (!/[^\x00-\x7F]/.test(name)) {
+                return name;
+            }
+            if (typeof window.punycode === 'undefined') {
+                return name;
+            }
+            try {
+                let ascii = window.punycode.toASCII(name);
+                return ascii || name;
+            } catch (_e) {
+                return name;
+            }
+        },
+
         bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
 
         log_severity_hash: {

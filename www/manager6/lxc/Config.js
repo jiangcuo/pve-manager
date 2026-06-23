@@ -223,7 +223,7 @@ Ext.define('PVE.lxc.Config', {
             },
         });
 
-        let vm_text = `${vm.vmid} (${vm.name})`;
+        let vm_text = `${vm.vmid} (${PVE.Utils.vm_name_to_display(vm.name)})`;
 
         Ext.apply(me, {
             title: Ext.String.format(gettext("Container {0} on node '{1}'"), vm_text, nodename),
