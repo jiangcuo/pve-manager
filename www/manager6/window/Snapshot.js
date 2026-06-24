@@ -142,11 +142,14 @@ Ext.define('PVE.window.Snapshot', {
         let subject;
         if (me.isCreate) {
             let guestTypeStr = me.type === 'qemu' ? 'VM' : 'CT';
+            // getFormattedGuestIdentifier decodes any embedded punycode
+            // (xn--...) tokens in the name, so the snapshot dialog title
+            // matches the rest of the UI.
             let formattedGuestIdentifier = PVE.Utils.getFormattedGuestIdentifier(
                 me.vmid,
                 me.vmname,
             );
-            subject = `${guestTypeStr} ${formattedGuestIdentifier} ${gettext('Snapshot')}}`;
+            subject = `${guestTypeStr} ${formattedGuestIdentifier} ${gettext('Snapshot')}`;
             me.method = 'POST';
             me.showTaskViewer = true;
         } else {

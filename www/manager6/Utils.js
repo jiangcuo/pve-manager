@@ -23,11 +23,17 @@ Ext.define('PVE.Utils', {
             if (name.indexOf('xn--') === -1) {
                 return name;
             }
-            if (typeof window.punycode === 'undefined') {
-                return name;
-            }
+            // Delegate to the toolkit's decodePunycodeText, which decodes
+            // every 'xn--...' token in place rather than trying to interpret
+            // the whole string as a single IDN label. This matters for names
+            // like 'Copy-of-VM-xn--winssssws--ys5qt78h7rtmv2f' that the qemu
+            // 'clone' API produces by prefixing the source name -- the result
+            // is no longer a single label, so punycode.toUnicode() on the
+            // whole string would either throw or return the input unchanged.
+            // decodePunycodeText handles that by token. Plain ASCII input
+            // and missing window.punycode both fall back to the original.
             try {
-                let decoded = window.punycode.toUnicode(name);
+                let decoded = Proxmox.Utils.decodePunycodeText(name);
                 return decoded || name;
             } catch (_e) {
                 return name;
@@ -2092,10 +2098,17 @@ Ext.define('PVE.Utils', {
         },
 
         getFormattedGuestIdentifier: function (vmid, guestName) {
+            // Decode any embedded punycode (xn--...) tokens so the user-visible
+            // identifier consistently shows the Unicode form. This is the
+            // single chokepoint used by the Migrate / Backup / Clone window
+            // titles and by formatGuestTaskConfirmation() below (which feeds
+            // every per-guest confirmation dialog in CmdMenu / qemu-Config /
+            // lxc-Config), so fixing it here covers all of those at once.
+            let displayName = this.vm_name_to_display(guestName);
             if (PVE.UIOptions.getTreeSortingValue('sort-field') === 'vmid') {
-                return guestName ? `${vmid} (${guestName})` : vmid;
+                return displayName ? `${vmid} (${displayName})` : vmid;
             } else {
-                return guestName ? `${guestName} (${vmid})` : vmid;
+                return displayName ? `${displayName} (${vmid})` : vmid;
             }
         },
 
