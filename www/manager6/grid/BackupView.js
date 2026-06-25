@@ -287,7 +287,6 @@ Ext.define('PVE.grid.BackupView', {
                     backup_btn,
                     '-',
                     restore_btn,
-                    download_btn,
                     file_restore_btn,
                     config_btn,
                     {
@@ -346,6 +345,7 @@ Ext.define('PVE.grid.BackupView', {
                     },
                     '-',
                     delete_btn,
+                    download_btn,
                     '->',
                     storagesel,
                     '-',
