@@ -23,21 +23,32 @@ Ext.define('PVE.Utils', {
             if (name.indexOf('xn--') === -1) {
                 return name;
             }
-            // Delegate to the toolkit's decodePunycodeText, which decodes
-            // every 'xn--...' token in place rather than trying to interpret
-            // the whole string as a single IDN label. This matters for names
-            // like 'Copy-of-VM-xn--winssssws--ys5qt78h7rtmv2f' that the qemu
-            // 'clone' API produces by prefixing the source name -- the result
-            // is no longer a single label, so punycode.toUnicode() on the
-            // whole string would either throw or return the input unchanged.
-            // decodePunycodeText handles that by token. Plain ASCII input
-            // and missing window.punycode both fall back to the original.
-            try {
-                let decoded = Proxmox.Utils.decodePunycodeText(name);
-                return decoded || name;
-            } catch (_e) {
+            // Prefer the toolkit helper if available: it decodes every
+            // 'xn--...' token in place rather than trying to interpret the
+            // whole string as a single IDN label. This matters for names like
+            // 'Copy-of-VM-xn--winssssws--ys5qt78h7rtmv2f'. Keep a local
+            // token-based fallback so pve-manager still renders correctly if
+            // it is upgraded before proxmox-widget-toolkit.
+            if (Proxmox.Utils.decodePunycodeText) {
+                try {
+                    let decoded = Proxmox.Utils.decodePunycodeText(name);
+                    return decoded || name;
+                } catch (_e) {
+                    // fall through to the local fallback below
+                }
+            }
+            let puny = window.punycode;
+            if (!puny) {
                 return name;
             }
+            return name.replace(/xn--[A-Za-z0-9-]+/g, function (match) {
+                try {
+                    let decoded = puny.toUnicode(match);
+                    return decoded || match;
+                } catch (_e) {
+                    return match;
+                }
+            });
         },
 
         // Convert a (possibly Unicode) VM name to its ASCII/punycode form for
