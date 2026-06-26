@@ -95,6 +95,7 @@ Ext.define('PVE.grid.BackupView', {
         };
 
         let file_restore_btn;
+        let download_btn;
 
         var storagesel = Ext.create('PVE.form.StorageSelector', {
             nodename: nodename,
@@ -119,6 +120,9 @@ Ext.define('PVE.grid.BackupView', {
                     setStorage(value);
                     if (file_restore_btn) {
                         file_restore_btn.setHidden(!isPBS);
+                    }
+                    if (download_btn) {
+                        download_btn.setHidden(isPBS);
                     }
                 },
             },
@@ -192,6 +196,27 @@ Ext.define('PVE.grid.BackupView', {
                 });
                 win.show();
                 win.on('destroy', reload);
+            },
+        });
+
+        download_btn = Ext.create('Proxmox.button.Button', {
+            text: gettext('Download'),
+            disabled: true,
+            selModel: sm,
+            hidden: isPBS,
+            enableFn: (rec) => !!rec && !isPBS,
+            handler: function (button, event, rec) {
+                let storage = storagesel.getValue();
+                if (!storage) {
+                    return;
+                }
+                let volid = rec.data.volid;
+                let filename = volid.replace(/^[^:]+:[^/]+\//, '');
+                let url =
+                    `/api2/json/nodes/${nodename}/storage/${storage}/download` +
+                    '?volume=' +
+                    encodeURIComponent(volid);
+                Proxmox.Utils.downloadAsFile(url, filename);
             },
         });
 
@@ -319,6 +344,7 @@ Ext.define('PVE.grid.BackupView', {
                     },
                     '-',
                     delete_btn,
+                    download_btn,
                     '->',
                     storagesel,
                     '-',
