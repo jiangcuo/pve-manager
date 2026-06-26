@@ -57,16 +57,16 @@ delete $confdesc_for_defaults->{$_}->{requires} for qw(notes-template protected)
 # Load available plugins
 my @pve_vzdump_classes = qw(PVE::VZDump::QemuServer PVE::VZDump::LXC);
 foreach my $plug (@pve_vzdump_classes) {
-    my $filename = "/usr/share/perl5/$plug.pm";
-    $filename =~ s!::!/!g;
-    if (-f $filename) {
-        eval { require $filename; };
-        if (!$@) {
-            $plug->import();
-            push @plugins, $plug;
-        } else {
-            die $@;
-        }
+    (my $filename = "$plug.pm") =~ s!::!/!g;
+
+    eval { require $filename; };
+    if (!$@) {
+        $plug->import();
+        push @plugins, $plug;
+    } elsif ($@ =~ /^Can't locate \Q$filename\E in \@INC/) {
+        next;
+    } else {
+        die $@;
     }
 }
 
