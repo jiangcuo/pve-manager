@@ -106,6 +106,31 @@ Ext.define(
                     baseurl: baseurl + '/',
                 });
             }
+            // Per-row Download button. Hits the storage 'download' endpoint
+            // (PVE::API2::Storage::Status::download) which streams the file
+            // back as application/octet-stream so the browser saves it under
+            // its original filename. The endpoint covers backup, iso, vztmpl
+            // and import volumes on file-based storages; it explicitly rejects
+            // PBS-backed and block-device-backed storages, hence the gate here
+            // is purely an opt-in flag set by Browser.js.
+            if (me.useDownloadButton) {
+                tbar.push({
+                    xtype: 'proxmoxButton',
+                    text: gettext('Download'),
+                    selModel: sm,
+                    disabled: true,
+                    handler: function (b, e, rec) {
+                        let volid = rec.data.volid;
+                        // 'storeid:type/file.ext' -> 'file.ext'
+                        let filename = volid.replace(/^[^:]+:[^/]+\//, '');
+                        let url =
+                            `/api2/json/nodes/${nodename}/storage/${storage}/download` +
+                            '?volume=' +
+                            encodeURIComponent(volid);
+                        Proxmox.Utils.downloadAsFile(url, filename);
+                    },
+                });
+            }
             tbar.push('->', gettext('Search') + ':', ' ', {
                 xtype: 'textfield',
                 width: 200,

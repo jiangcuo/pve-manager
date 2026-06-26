@@ -1,3 +1,40 @@
+pve-manager (8.4.18-pxvirt3) bookworm; urgency=medium
+
+  * ui: support punycode (IDN) virtual machine names. Decode xn--...
+    encoded names to Unicode for display while keeping the ASCII form as
+    the value stored by the backend.
+
+    Display sites updated to decode the VM name:
+      - left-hand resource tree node (tree/ResourceTree.js)
+      - VM / CT top-of-page tab title (qemu/Config.js, lxc/Config.js)
+      - VM / CT Summary first card title (panel/GuestStatusView.js)
+      - VM Options Name row value (qemu/Options.js)
+      - Datacenter Search Name column and the underlying ResourceStore
+        text convert / name renderer / guestName() helper, plus the
+        search text filter now matches both raw punycode and decoded
+        Unicode forms (data/ResourceStore.js, grid/ResourceGrid.js)
+      - Datacenter Cluster log Message column (dc/Log.js, via the new
+        Proxmox.Utils.decodePunycodeText() helper from widget-toolkit)
+
+    Edit site (qemu/Options.js):
+      - the Name editor pre-fills the Unicode form (setValue) and on
+        submit (onGetValues) converts whatever the user typed (Unicode
+        or ASCII) back to punycode, so the backend always receives the
+        ASCII form. Validation continues to use the DnsName vtype, which
+        accepts the Unicode form via the toolkit's domainToAscii().
+
+    Infrastructure:
+      - PVE/Service/pveproxy.pm: expose /punycode.min.js from the
+        widget-toolkit assets
+      - www/index.html.tpl: load /punycode.min.js before pvemanagerlib.js
+        so window.punycode is available everywhere it is needed
+
+    All decode / encode paths fail safe: missing window.punycode or a
+    thrown conversion returns the original value, so existing ASCII-only
+    deployments are unaffected.
+
+ -- liyanglrf <liyang@lierfang.com>  Tue, 23 Jun 2026 12:16:14 +0000
+
 pve-manager (8.4.18-pxvirt2) bookworm; urgency=medium
  
   * UI: Remove repository status from the node view

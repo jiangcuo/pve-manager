@@ -78,7 +78,11 @@ Ext.define('PVE.dc.Log', {
                 {
                     header: gettext('Message'),
                     dataIndex: 'msg',
-                    renderer: Ext.String.htmlEncode,
+                    renderer: function (value) {
+                        return Ext.String.htmlEncode(
+                            Proxmox.Utils.decodePunycodeText(value),
+                        );
+                    },
                     flex: 1,
                 },
             ],

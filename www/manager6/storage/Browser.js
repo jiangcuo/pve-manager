@@ -66,12 +66,25 @@ Ext.define('PVE.storage.Browser', {
                     !!caps.nodes['Sys.AccessNetwork']); // new explicit priv for querying (local) networks
 
             if (contents.includes('backup')) {
+                // PBS storages cannot accept uploads (no $scfg->{path}, so the
+                // backend upload handler rejects them with "can't upload to
+                // storage type 'pbs'"). Suppress the Upload / Download from
+                // URL buttons on PBS, the same way isEsxi suppresses them for
+                // the import tab below. The per-row Download button (which
+                // streams the on-disk vzdump archive) is similarly only
+                // meaningful on file-based storages — PBS has its own File
+                // Restore entry point inside BackupView.
+                let isPBS = plugin === 'pbs';
                 me.items.push({
                     xtype: 'pveStorageBackupView',
                     title: gettext('Backups'),
                     iconCls: 'fa fa-floppy-o',
                     itemId: 'contentBackup',
                     pluginType: plugin,
+                    enableUploadButton: enableUpload && !isPBS,
+                    enableDownloadUrlButton: enableDownloadUrl && !isPBS,
+                    useUploadButton: !isPBS,
+                    useDownloadButton: !isPBS,
                 });
             }
             if (contents.includes('images')) {
@@ -105,6 +118,7 @@ Ext.define('PVE.storage.Browser', {
                     enableUploadButton: enableUpload,
                     enableDownloadUrlButton: enableDownloadUrl,
                     useUploadButton: true,
+                    useDownloadButton: true,
                 });
             }
             if (contents.includes('vztmpl')) {
@@ -117,6 +131,7 @@ Ext.define('PVE.storage.Browser', {
                     enableUploadButton: enableUpload,
                     enableDownloadUrlButton: enableDownloadUrl,
                     useUploadButton: true,
+                    useDownloadButton: true,
                 });
             }
             if (contents.includes('snippets')) {

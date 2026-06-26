@@ -34,6 +34,7 @@
     <script type="text/javascript" src="/pve2/ext6/charts.js?ver=7.0.0"></script>
     [% END %]
     <script type="text/javascript" src="/pve2/js/u2f-api.js"></script>
+    <script type="text/javascript" src="/punycode.min.js"></script>
     <script type="text/javascript" src="/qrcode.min.js"></script>
     <script type="text/javascript">
     Proxmox = {

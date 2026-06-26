@@ -12,6 +12,25 @@ Ext.define('PVE.window.UploadToStorage', {
         import: ['.ova', '.qcow2', '.raw', '.vmdk'],
         iso: ['.img', '.iso'],
         vztmpl: ['.tar.gz', '.tar.xz', '.tar.zst'],
+        // vzdump archives accepted by PVE::Storage::BACKUP_EXT_RE_2.
+        // Keep this list only for the text-field validator below. The native
+        // file picker deliberately gets no 'accept' filter for backups: some
+        // browsers do not handle multi-part / uncommon suffixes like
+        // '.vma.zst' reliably and grey out otherwise valid backup archives.
+        // The backend still enforces the full vzdump filename pattern.
+        backup: [
+            '.vma',
+            '.vma.gz',
+            '.vma.lzo',
+            '.vma.zst',
+            '.vma.bz2',
+            '.tar',
+            '.tar.gz',
+            '.tar.lzo',
+            '.tar.zst',
+            '.tar.bz2',
+            '.tgz',
+        ],
     },
 
     // accepted for file selection, will be renamed to real extension
@@ -28,10 +47,16 @@ Ext.define('PVE.window.UploadToStorage', {
         me.url = `/nodes/${me.nodename}/storage/${me.storage}/upload`;
 
         let fileSelectorExt = ext.concat(Object.keys(me.extensionAliases[me.content] ?? {}));
+        // Do not set the native file-picker accept filter for backups. Some
+        // browsers fail to match multi-part / uncommon suffixes such as
+        // '.vma.zst', making valid archives unselectable. The filename field
+        // validator below (and the backend) still enforce the allowed suffixes.
+        let extensions = me.content === 'backup' ? '' : fileSelectorExt.join(', ');
+        let regexExt = ext.map((extension) => extension.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
         return {
-            extensions: fileSelectorExt.join(', '),
-            filenameRegex: new RegExp('^.*(?:' + ext.join('|').replaceAll('.', '\\.') + ')$', 'i'),
+            extensions,
+            filenameRegex: new RegExp('^.*(?:' + regexExt.join('|') + ')$', 'i'),
         };
     },
 
