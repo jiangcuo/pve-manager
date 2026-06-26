@@ -54,6 +54,10 @@ Ext.define('PVE.window.Restore', {
                 }
             });
 
+            if (params.name) {
+                params.name = PVE.Utils.guestNameToAscii(params.name);
+            }
+
             if (params.name && view.vmtype === 'lxc') {
                 params.hostname = params.name;
                 delete params.name;
@@ -140,7 +144,9 @@ Ext.define('PVE.window.Restore', {
                                     `storage/${view.nodename}/${match[3]}`,
                                 );
                         } else if (key === 'name' || key === 'hostname') {
-                            view.lookupReference('nameField').setEmptyText(value);
+                            view.lookupReference('nameField').setEmptyText(
+                                PVE.Utils.guestNameToDisplay(value),
+                            );
                         } else if (key === 'memory' || key === 'cores' || key === 'sockets') {
                             view.lookupReference(`${key}Field`).setEmptyText(value);
                         }

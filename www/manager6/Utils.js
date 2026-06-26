@@ -12,6 +12,24 @@ Ext.define('PVE.Utils', {
 
         toolkit: undefined, // (extjs|touch), set inside Toolkit.js
 
+        guestNameToDisplay: function (name) {
+            if (typeof name !== 'string' || !name) {
+                return name;
+            }
+
+            return Proxmox.Utils.decodePunycodeText
+                ? Proxmox.Utils.decodePunycodeText(name)
+                : name;
+        },
+
+        guestNameToAscii: function (name) {
+            if (typeof name !== 'string' || !name) {
+                return name;
+            }
+
+            return Proxmox.Utils.domainToAscii ? Proxmox.Utils.domainToAscii(name) : name;
+        },
+
         bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
 
         log_severity_hash: {
@@ -2047,10 +2065,11 @@ Ext.define('PVE.Utils', {
         },
 
         getFormattedGuestIdentifier: function (vmid, guestName) {
+            let displayName = this.guestNameToDisplay(guestName);
             if (PVE.UIOptions.getTreeSortingValue('sort-field') === 'vmid') {
-                return guestName ? `${vmid} (${guestName})` : vmid;
+                return displayName ? `${vmid} (${displayName})` : vmid;
             } else {
-                return guestName ? `${guestName} (${vmid})` : vmid;
+                return displayName ? `${displayName} (${vmid})` : vmid;
             }
         },
 

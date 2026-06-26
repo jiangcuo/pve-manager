@@ -471,6 +471,10 @@ Ext.define('PVE.window.GuestImport', {
                             delete config['import-working-storage'];
                         }
 
+                        if (config.name) {
+                            config.name = PVE.Utils.guestNameToAscii(config.name);
+                        }
+
                         return config;
                     },
 

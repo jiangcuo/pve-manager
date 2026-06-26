@@ -168,7 +168,8 @@ Ext.define('PVE.panel.GuestStatusView', {
                 ' (' + gettext('Uptime') + ': ' + Proxmox.Utils.format_duration_long(uptime) + ')';
         }
 
-        let title = `<div class="left-aligned">${me.getRecordValue('name') + text}</div>`;
+        let name = PVE.Utils.guestNameToDisplay(me.getRecordValue('name'));
+        let title = `<div class="left-aligned">${name + text}</div>`;
 
         if (me.pveSelNode.data.type === 'lxc' && me.ostype && me.ostype !== 'unmanaged') {
             // Manual mappings for distros with special casing

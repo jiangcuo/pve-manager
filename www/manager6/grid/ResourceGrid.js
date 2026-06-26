@@ -28,6 +28,15 @@ Ext.define('PVE.grid.ResourceGrid', {
                 if (v && v.toLowerCase().indexOf(textfilter) >= 0) {
                     return true;
                 }
+                if (field === 'name' && v) {
+                    let displayName = PVE.Utils.guestNameToDisplay(v);
+                    if (
+                        displayName !== v &&
+                        displayName.toLowerCase().indexOf(textfilter) >= 0
+                    ) {
+                        return true;
+                    }
+                }
             }
             return false;
         };

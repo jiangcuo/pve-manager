@@ -66,7 +66,7 @@ Ext.define('PVE.data.ResourceStore', {
         }
         let rec = me.getAt(index).data;
         if ('name' in rec) {
-            return rec.name;
+            return PVE.Utils.guestNameToDisplay(rec.name);
         }
         return '';
     },
@@ -126,7 +126,7 @@ Ext.define('PVE.data.ResourceStore', {
                     if (Ext.isNumeric(info.vmid) && info.vmid > 0) {
                         text = String(info.vmid);
                         if (info.name) {
-                            text += ' (' + info.name + ')';
+                            text += ' (' + PVE.Utils.guestNameToDisplay(info.name) + ')';
                         }
                     } else {
                         // node, pool, storage
@@ -151,6 +151,9 @@ Ext.define('PVE.data.ResourceStore', {
                 hidden: true,
                 sortable: true,
                 type: 'string',
+                renderer: function (value) {
+                    return Ext.htmlEncode(PVE.Utils.guestNameToDisplay(value));
+                },
             },
             disk: {
                 header: gettext('Disk usage'),

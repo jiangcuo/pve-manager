@@ -316,6 +316,10 @@ Ext.define('PVE.lxc.CreateWizard', {
                 delete kv.nodename;
                 delete kv.tmplstorage;
 
+                if (kv.hostname) {
+                    kv.hostname = PVE.Utils.guestNameToAscii(kv.hostname);
+                }
+
                 if (!kv.pool.length) {
                     delete kv.pool;
                 }

@@ -316,6 +316,10 @@ Ext.define('PVE.qemu.CreateWizard', {
                 var nodename = kv.nodename;
                 delete kv.nodename;
 
+                if (kv.name) {
+                    kv.name = PVE.Utils.guestNameToAscii(kv.name);
+                }
+
                 let boot = wizard.calculateBootOrder(kv);
                 if (boot) {
                     kv.boot = boot;

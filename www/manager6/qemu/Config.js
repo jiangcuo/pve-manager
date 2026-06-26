@@ -270,7 +270,7 @@ Ext.define('PVE.qemu.Config', {
             },
         });
 
-        let vm_text = `${vm.vmid} (${vm.name})`;
+        let vm_text = `${vm.vmid} (${PVE.Utils.guestNameToDisplay(vm.name)})`;
 
         Ext.apply(me, {
             title: Ext.String.format(

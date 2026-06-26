@@ -24,6 +24,9 @@ Ext.define('PVE.qemu.Options', {
                 required: true,
                 defaultValue: me.pveSelNode.data.name,
                 header: gettext('Name'),
+                renderer: function (value) {
+                    return Ext.htmlEncode(PVE.Utils.guestNameToDisplay(value));
+                },
                 editor: caps.vms['VM.Config.Options']
                     ? {
                           xtype: 'proxmoxWindowEdit',
@@ -37,6 +40,12 @@ Ext.define('PVE.qemu.Options', {
                                   value: '',
                                   fieldLabel: gettext('Name'),
                                   allowBlank: true,
+                                  setValue: function (value) {
+                                      return Ext.form.field.Text.prototype.setValue.call(
+                                          this,
+                                          PVE.Utils.guestNameToDisplay(value),
+                                      );
+                                  },
                               },
                               onGetValues: function (values) {
                                   var params = values;
@@ -46,6 +55,8 @@ Ext.define('PVE.qemu.Options', {
                                       values.name === ''
                                   ) {
                                       params = { delete: 'name' };
+                                  } else {
+                                      params.name = PVE.Utils.guestNameToAscii(values.name);
                                   }
                                   return params;
                               },

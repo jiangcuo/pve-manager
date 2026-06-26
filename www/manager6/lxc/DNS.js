@@ -117,6 +117,9 @@ Ext.define('PVE.lxc.DNS', {
                 required: true,
                 defaultValue: me.pveSelNode.data.name,
                 header: gettext('Hostname'),
+                renderer: function (value) {
+                    return Ext.htmlEncode(PVE.Utils.guestNameToDisplay(value));
+                },
                 editor: caps.vms['VM.Config.Network']
                     ? {
                           xtype: 'proxmoxWindowEdit',
@@ -130,6 +133,12 @@ Ext.define('PVE.lxc.DNS', {
                                   vtype: 'DnsName',
                                   allowBlank: true,
                                   emptyText: 'CT' + vmid.toString(),
+                                  setValue: function (value) {
+                                      return Ext.form.field.Text.prototype.setValue.call(
+                                          this,
+                                          PVE.Utils.guestNameToDisplay(value),
+                                      );
+                                  },
                               },
                               onGetValues: function (values) {
                                   var params = values;
@@ -139,6 +148,10 @@ Ext.define('PVE.lxc.DNS', {
                                       values.hostname === ''
                                   ) {
                                       params = { hostname: 'CT' + vmid.toString() };
+                                  } else {
+                                      params.hostname = PVE.Utils.guestNameToAscii(
+                                          values.hostname,
+                                      );
                                   }
                                   return params;
                               },

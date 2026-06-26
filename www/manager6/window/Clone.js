@@ -60,10 +60,11 @@ Ext.define('PVE.window.Clone', {
         }
 
         if (values.name) {
+            let name = PVE.Utils.guestNameToAscii(values.name);
             if (me.guestType === 'lxc') {
-                params.hostname = values.name;
+                params.hostname = name;
             } else {
-                params.name = values.name;
+                params.name = name;
             }
         }
 
