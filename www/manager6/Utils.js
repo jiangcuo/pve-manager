@@ -12,6 +12,68 @@ Ext.define('PVE.Utils', {
 
         toolkit: undefined, // (extjs|touch), set inside Toolkit.js
 
+        // Convert a VM name to its display form. If the name is a valid
+        // punycode (xn--) encoded string we decode it to Unicode, otherwise we
+        // return the original value untouched. Any error during decoding also
+        // falls back to the original value.
+        vm_name_to_display: function (name) {
+            if (typeof name !== 'string' || !name) {
+                return name;
+            }
+            if (name.indexOf('xn--') === -1) {
+                return name;
+            }
+            // Prefer the toolkit helper if available: it decodes every
+            // 'xn--...' token in place rather than trying to interpret the
+            // whole string as a single IDN label. This matters for names like
+            // 'Copy-of-VM-xn--winssssws--ys5qt78h7rtmv2f'. Keep a local
+            // token-based fallback so pve-manager still renders correctly if
+            // it is upgraded before proxmox-widget-toolkit.
+            if (Proxmox.Utils.decodePunycodeText) {
+                try {
+                    let decoded = Proxmox.Utils.decodePunycodeText(name);
+                    return decoded || name;
+                } catch (_e) {
+                    // fall through to the local fallback below
+                }
+            }
+            let puny = window.punycode;
+            if (!puny) {
+                return name;
+            }
+            return name.replace(/xn--[A-Za-z0-9-]+/g, function (match) {
+                try {
+                    let decoded = puny.toUnicode(match);
+                    return decoded || match;
+                } catch (_e) {
+                    return match;
+                }
+            });
+        },
+
+        // Convert a (possibly Unicode) VM name to its ASCII/punycode form for
+        // backend submission. ASCII-only input is returned unchanged. Errors
+        // fall back to the original value so submission still goes through and
+        // backend-side validation can surface a clear error.
+        vm_name_to_ascii: function (name) {
+            if (typeof name !== 'string' || !name) {
+                return name;
+            }
+            // eslint-disable-next-line no-control-regex
+            if (!/[^\x00-\x7F]/.test(name)) {
+                return name;
+            }
+            if (typeof window.punycode === 'undefined') {
+                return name;
+            }
+            try {
+                let ascii = window.punycode.toASCII(name);
+                return ascii || name;
+            } catch (_e) {
+                return name;
+            }
+        },
+
         bus_match: /^(ide|sata|virtio|scsi|nvme|spdk)(\d+)$/,
 
         log_severity_hash: {
@@ -2047,10 +2109,17 @@ Ext.define('PVE.Utils', {
         },
 
         getFormattedGuestIdentifier: function (vmid, guestName) {
+            // Decode any embedded punycode (xn--...) tokens so the user-visible
+            // identifier consistently shows the Unicode form. This is the
+            // single chokepoint used by the Migrate / Backup / Clone window
+            // titles and by formatGuestTaskConfirmation() below (which feeds
+            // every per-guest confirmation dialog in CmdMenu / qemu-Config /
+            // lxc-Config), so fixing it here covers all of those at once.
+            let displayName = this.vm_name_to_display(guestName);
             if (PVE.UIOptions.getTreeSortingValue('sort-field') === 'vmid') {
-                return guestName ? `${vmid} (${guestName})` : vmid;
+                return displayName ? `${vmid} (${displayName})` : vmid;
             } else {
-                return guestName ? `${guestName} (${vmid})` : vmid;
+                return displayName ? `${displayName} (${vmid})` : vmid;
             }
         },
 

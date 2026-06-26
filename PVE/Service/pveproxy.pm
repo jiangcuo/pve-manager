@@ -130,6 +130,9 @@ sub init {
             '/qrcode.min.js' => {
                 file => '/usr/share/javascript/qrcodejs/qrcode.min.js',
             },
+            '/punycode.min.js' => {
+                file => "$basedirs->{widgettoolkit}/punycode.min.js",
+            },
         },
         dirs => $dirs,
     };

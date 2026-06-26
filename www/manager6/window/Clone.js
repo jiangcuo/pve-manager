@@ -60,10 +60,14 @@ Ext.define('PVE.window.Clone', {
         }
 
         if (values.name) {
+            // Convert any Unicode the user typed in the name override field
+            // to punycode (ASCII) before submission so the backend always
+            // stores the canonical IDN form. ASCII input is unchanged.
+            let nameAscii = PVE.Utils.vm_name_to_ascii(values.name);
             if (me.guestType === 'lxc') {
-                params.hostname = values.name;
+                params.hostname = nameAscii;
             } else {
-                params.name = values.name;
+                params.name = nameAscii;
             }
         }
 

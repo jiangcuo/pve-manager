@@ -54,6 +54,13 @@ Ext.define('PVE.window.Restore', {
                 }
             });
 
+            // If the user typed a Unicode name in the override field, convert
+            // it to punycode (ASCII) before submission so the backend always
+            // receives the canonical IDN form. ASCII input is unchanged.
+            if (params.name !== undefined) {
+                params.name = PVE.Utils.vm_name_to_ascii(params.name);
+            }
+
             if (params.name && view.vmtype === 'lxc') {
                 params.hostname = params.name;
                 delete params.name;
@@ -140,7 +147,13 @@ Ext.define('PVE.window.Restore', {
                                     `storage/${view.nodename}/${match[3]}`,
                                 );
                         } else if (key === 'name' || key === 'hostname') {
-                            view.lookupReference('nameField').setEmptyText(value);
+                            // The value read from the backup's stored config is
+                            // the raw ASCII (punycode) form. Decode it so the
+                            // placeholder matches what the user sees elsewhere
+                            // in the UI.
+                            view.lookupReference('nameField').setEmptyText(
+                                PVE.Utils.vm_name_to_display(value),
+                            );
                         } else if (key === 'memory' || key === 'cores' || key === 'sockets') {
                             view.lookupReference(`${key}Field`).setEmptyText(value);
                         }
