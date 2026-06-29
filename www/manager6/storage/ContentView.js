@@ -106,6 +106,23 @@ Ext.define(
                     baseurl: baseurl + '/',
                 });
             }
+            if (me.useDownloadButton) {
+                tbar.push({
+                    xtype: 'proxmoxButton',
+                    text: gettext('Download'),
+                    selModel: sm,
+                    disabled: true,
+                    handler: function (button, event, rec) {
+                        let volid = rec.data.volid;
+                        let filename = volid.replace(/^[^:]+:[^/]+\//, '');
+                        let url =
+                            `/api2/json/nodes/${nodename}/storage/${storage}/download` +
+                            '?volume=' +
+                            encodeURIComponent(volid);
+                        Proxmox.Utils.downloadAsFile(url, filename);
+                    },
+                });
+            }
             tbar.push('->', gettext('Search') + ':', ' ', {
                 xtype: 'textfield',
                 width: 200,

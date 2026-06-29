@@ -9,6 +9,19 @@ Ext.define('PVE.window.UploadToStorage', {
     title: gettext('Upload'),
 
     acceptedExtensions: {
+        backup: [
+            '.vma',
+            '.vma.gz',
+            '.vma.lzo',
+            '.vma.zst',
+            '.vma.bz2',
+            '.tar',
+            '.tar.gz',
+            '.tar.lzo',
+            '.tar.zst',
+            '.tar.bz2',
+            '.tgz',
+        ],
         import: ['.ova', '.qcow2', '.raw', '.vmdk'],
         iso: ['.img', '.iso'],
         vztmpl: ['.tar.gz', '.tar.xz', '.tar.zst'],
@@ -28,10 +41,13 @@ Ext.define('PVE.window.UploadToStorage', {
         me.url = `/nodes/${me.nodename}/storage/${me.storage}/upload`;
 
         let fileSelectorExt = ext.concat(Object.keys(me.extensionAliases[me.content] ?? {}));
+        let filenameRegexExt = ext.map((extension) =>
+            extension.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        );
 
         return {
-            extensions: fileSelectorExt.join(', '),
-            filenameRegex: new RegExp('^.*(?:' + ext.join('|').replaceAll('.', '\\.') + ')$', 'i'),
+            extensions: me.content === 'backup' ? '' : fileSelectorExt.join(', '),
+            filenameRegex: new RegExp('^.*(?:' + filenameRegexExt.join('|') + ')$', 'i'),
         };
     },
 

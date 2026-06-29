@@ -66,12 +66,17 @@ Ext.define('PVE.storage.Browser', {
                     !!caps.nodes['Sys.AccessNetwork']); // new explicit priv for querying (local) networks
 
             if (contents.includes('backup')) {
+                let isPBS = plugin === 'pbs';
                 me.items.push({
                     xtype: 'pveStorageBackupView',
                     title: gettext('Backups'),
                     iconCls: 'fa fa-floppy-o',
                     itemId: 'contentBackup',
                     pluginType: plugin,
+                    enableUploadButton: enableUpload && !isPBS,
+                    enableDownloadUrlButton: enableDownloadUrl && !isPBS,
+                    useUploadButton: !isPBS,
+                    useDownloadButton: !isPBS,
                 });
             }
             if (contents.includes('images')) {
@@ -105,6 +110,7 @@ Ext.define('PVE.storage.Browser', {
                     enableUploadButton: enableUpload,
                     enableDownloadUrlButton: enableDownloadUrl,
                     useUploadButton: true,
+                    useDownloadButton: true,
                 });
             }
             if (contents.includes('vztmpl')) {
@@ -117,6 +123,7 @@ Ext.define('PVE.storage.Browser', {
                     enableUploadButton: enableUpload,
                     enableDownloadUrlButton: enableDownloadUrl,
                     useUploadButton: true,
+                    useDownloadButton: true,
                 });
             }
             if (contents.includes('snippets')) {
