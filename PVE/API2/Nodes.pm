@@ -1880,7 +1880,38 @@ __PACKAGE__->register_method({
         check => ['perm', '/nodes/{node}', ['Sys.Audit']],
     },
     protected => 1,
-    description => "Gather various systems information about a node",
+    download_allowed => 1,
+    description => "Download a previously generated sos report archive.",
+    proxyto => 'node',
+    parameters => {
+        additionalProperties => 0,
+        properties => {
+            node => get_standard_option('pve-node'),
+            upid => {
+                type => 'string',
+                description => "The sos report task's unique ID.",
+            },
+        },
+    },
+    returns => {
+        type => 'any', # download
+    },
+    code => sub {
+        my ($param) = @_;
+
+        return PVE::Report::sos_archive_download_from_task($param->{upid}, $param->{node});
+    },
+});
+
+__PACKAGE__->register_method({
+    name => 'report_start',
+    path => 'report',
+    method => 'POST',
+    permissions => {
+        check => ['perm', '/nodes/{node}', ['Sys.Audit']],
+    },
+    protected => 1,
+    description => "Generate a node diagnostic report using sos report.",
     proxyto => 'node',
     parameters => {
         additionalProperties => 0,
@@ -1892,7 +1923,16 @@ __PACKAGE__->register_method({
         type => 'string',
     },
     code => sub {
-        return PVE::Report::generate();
+        my ($param) = @_;
+
+        my $rpcenv = PVE::RPCEnvironment::get();
+        my $authuser = $rpcenv->get_user();
+
+        my $worker = sub {
+            PVE::Report::generate_sos_archive(print_output => 1);
+        };
+
+        return $rpcenv->fork_worker('sosreport', undef, $authuser, $worker);
     },
 });
 

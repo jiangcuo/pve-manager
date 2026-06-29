@@ -38,69 +38,26 @@ Ext.define('PVE.node.Subscription', {
     showReport: function () {
         var me = this;
 
-        var getReportFileName = function () {
-            var now = Ext.Date.format(new Date(), 'D-d-F-Y-G-i');
-            return `${me.nodename}-pve-report-${now}.txt`;
-        };
-
-        var view = Ext.createWidget('component', {
-            itemId: 'system-report-view',
-            scrollable: true,
-            style: {
-                'white-space': 'pre',
-                'font-family': 'monospace',
-                padding: '5px',
-            },
-        });
-
-        var reportWindow = Ext.create('Ext.window.Window', {
-            title: gettext('System Report'),
-            width: 1024,
-            height: 600,
-            layout: 'fit',
-            modal: true,
-            buttons: [
-                '->',
-                {
-                    text: gettext('Download'),
-                    handler: function () {
-                        var fileContent = Ext.String.htmlDecode(
-                            reportWindow.getComponent('system-report-view').html,
-                        );
-                        var fileName = getReportFileName();
-
-                        // Internet Explorer
-                        if (window.navigator.msSaveOrOpenBlob) {
-                            navigator.msSaveOrOpenBlob(new Blob([fileContent]), fileName);
-                        } else {
-                            let element = document.createElement('a');
-                            element.setAttribute(
-                                'href',
-                                'data:text/plain;charset=utf-8,' + encodeURIComponent(fileContent),
-                            );
-                            element.setAttribute('download', fileName);
-                            element.style.display = 'none';
-                            document.body.appendChild(element);
-                            element.click();
-                            document.body.removeChild(element);
-                        }
-                    },
-                },
-            ],
-            items: view,
-        });
-
         Proxmox.Utils.API2Request({
-            url: '/api2/extjs/nodes/' + me.nodename + '/report',
-            method: 'GET',
+            url: '/nodes/' + me.nodename + '/report',
+            method: 'POST',
             waitMsgTarget: me,
             failure: function (response) {
                 Ext.Msg.alert(gettext('Error'), response.htmlStatus);
             },
             success: function (response) {
-                var report = Ext.htmlEncode(response.result.data);
-                reportWindow.show();
-                view.update(report);
+                let upid = response.result.data;
+                Ext.create('Proxmox.window.TaskProgress', {
+                    autoShow: true,
+                    upid: upid,
+                    taskDone: function (success) {
+                        if (success) {
+                            Proxmox.Utils.downloadAsFile(
+                                `/api2/json/nodes/${me.nodename}/report?upid=${encodeURIComponent(upid)}`,
+                            );
+                        }
+                    },
+                });
             },
         });
     },
