@@ -16,6 +16,8 @@ ExecStart=/usr/bin/pveproxy start
 ExecStop=/usr/bin/pveproxy stop
 ExecReload=/usr/bin/pveproxy restart
 PIDFile=/run/pveproxy/pveproxy.pid
+RuntimeDirectory=pveproxy
+RuntimeDirectoryMode=0777
 Type=forking
 Restart=on-failure
 
