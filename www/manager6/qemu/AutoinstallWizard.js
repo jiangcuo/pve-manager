@@ -42,9 +42,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             }
             wizard.down('field[name=arch]')?.on('change', me.updateArchWarning, me);
 
-            if (iso.getValue()) {
-                me.onIsoChange(iso, iso.getValue());
-            }
+            me.onIsoChange(iso, iso.getValue());
             me.update();
         },
 
@@ -56,9 +54,18 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             return this.wizard.down('pveQemuOSTypePanel field[name=ostype]').getValue();
         },
 
-        onIsoChange: function (field, volid) {
+        onIsoChange: function (field, value) {
             let me = this;
             let view = me.getView();
+
+            // the file selector may return an array, which is empty without selection
+            let volid = Ext.isArray(value) ? value[0] : value;
+            if (typeof volid !== 'string' || !volid.includes(':')) {
+                volid = undefined;
+            }
+            if (volid === me.isoVolid && me.isoVolid !== undefined) {
+                return;
+            }
 
             me.isoInfo = undefined;
             me.isoVolid = volid;
