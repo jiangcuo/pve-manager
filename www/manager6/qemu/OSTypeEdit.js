@@ -99,8 +99,9 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                     me.isoInfo = response.result.data;
                     me.applyIsoInfo();
                 },
-                // detection is optional, e.g. pxvirt-isoinfo is not installed
-                failure: () => {},
+                failure: () => {
+                    // detection is optional, e.g. pxvirt-isoinfo is not installed
+                },
             });
         },
         applyIsoInfo: function () {
