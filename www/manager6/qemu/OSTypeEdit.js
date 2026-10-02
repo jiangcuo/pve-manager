@@ -29,7 +29,51 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                 'pveQemuCDInputPanel pveIsoSelector': {
                     change: 'onIsoChange',
                 },
+                'pveQemuCreateWizard field[name=arch]': {
+                    change: 'updateArchWarning',
+                },
             },
+        },
+        // warn if the ISO cannot boot natively, emulating another architecture is still possible
+        updateArchWarning: function () {
+            let me = this;
+            let view = me.getView();
+            if (!view.insideWizard) {
+                return;
+            }
+            let wizard = view.up('window');
+            let isoArch = me.isoInfo?.arch;
+            let vmArch = wizard?.down('field[name=arch]')?.getValue();
+            if (!vmArch || vmArch === '__default__') {
+                let node = PVE.data.ResourceStore.getNodeById(view.nodename);
+                vmArch = node?.data?.arch;
+            }
+            let compatible = {
+                x86_64: ['x86_64', 'i686'],
+            };
+            let mismatch =
+                isoArch &&
+                vmArch &&
+                isoArch !== vmArch &&
+                !(compatible[vmArch] ?? []).includes(isoArch);
+
+            me.archWarning = mismatch
+                ? Ext.String.format(
+                      gettext(
+                          'ISO architecture ({0}) does not match the VM architecture ({1}), the VM may not boot.',
+                      ),
+                      isoArch,
+                      vmArch,
+                  )
+                : undefined;
+
+            let field = me.lookup('archWarning');
+            field.setValue(
+                mismatch
+                    ? `<i class="fa fa-exclamation-triangle warning"></i> ${Ext.htmlEncode(me.archWarning)}`
+                    : '',
+            );
+            field.setHidden(!mismatch);
         },
         onIsoChange: function (field, volid) {
             let me = this;
@@ -166,6 +210,8 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                 enableSecondCD.setValue(false);
             }
             enableSecondCD.setHidden(enabled || !isWindows);
+
+            me.updateArchWarning();
         },
         setWidget: function (widget, newValue) {
             // changing a widget is safe only if ComponentQuery.query returns us
@@ -298,6 +344,11 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
 
         if (me.insideWizard) {
             me.items.push(
+                {
+                    xtype: 'displayfield',
+                    reference: 'archWarning',
+                    hidden: true,
+                },
                 {
                     xtype: 'proxmoxcheckbox',
                     reference: 'enableSecondCD',

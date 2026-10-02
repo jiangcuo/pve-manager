@@ -330,6 +330,12 @@ Ext.define('PVE.qemu.CreateWizard', {
             ],
             dockedItems: [
                 {
+                    xtype: 'displayfield',
+                    reference: 'archWarning',
+                    dock: 'bottom',
+                    hidden: true,
+                },
+                {
                     xtype: 'proxmoxcheckbox',
                     name: 'start',
                     dock: 'bottom',
@@ -351,6 +357,15 @@ Ext.define('PVE.qemu.CreateWizard', {
                     if (kv.autoinstall) {
                         panel.down('field[name=start]').setValue(true);
                     }
+
+                    let warning = wizard.down('pveQemuOSTypePanel').getController().archWarning;
+                    let archWarning = panel.down('displayfield[reference=archWarning]');
+                    archWarning.setValue(
+                        warning
+                            ? `<i class="fa fa-exclamation-triangle warning"></i> ${Ext.htmlEncode(warning)}`
+                            : '',
+                    );
+                    archWarning.setHidden(!warning);
 
                     Ext.Object.each(kv, function (key, value) {
                         if (key === 'delete') {
