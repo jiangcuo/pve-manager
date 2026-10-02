@@ -61,28 +61,25 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         {
             xtype: 'proxmoxcheckbox',
             name: 'enabled',
-            fieldLabel: gettext('Enable'),
+            fieldLabel: gettext('Enabled'),
             uncheckedValue: 0,
         },
         {
             xtype: 'proxmoxKVComboBox',
             name: 'type',
-            fieldLabel: gettext('Installer'),
+            fieldLabel: gettext('Type'),
             value: '__default__',
             comboItems: [
-                ['__default__', Proxmox.Utils.defaultText + ' (' + gettext('by OS type') + ')'],
-                ['windows', 'Windows (autounattend.xml)'],
-                ['kickstart', 'Kickstart (RHEL/Rocky/Alma/Fedora)'],
-                ['ubuntu', 'Ubuntu autoinstall'],
+                ['__default__', Proxmox.Utils.defaultText],
+                ['windows', 'Windows'],
+                ['kickstart', 'Kickstart'],
+                ['ubuntu', 'Ubuntu'],
             ],
         },
         {
             xtype: 'proxmoxcheckbox',
             name: 'useCustom',
-            reference: 'useCustom',
-            fieldLabel: gettext('Custom file'),
-            boxLabel: gettext('Use a snippet instead of generating the file'),
-            submitValue: true,
+            fieldLabel: gettext('Custom File'),
             listeners: {
                 change: function (field, value) {
                     let panel = field.up('inputpanel');
@@ -127,19 +124,19 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             xtype: 'proxmoxtextfield',
             name: 'locale',
             fieldLabel: gettext('Locale'),
-            emptyText: 'en_US.UTF-8 / en-US',
+            emptyText: Proxmox.Utils.defaultText,
         },
         {
             xtype: 'proxmoxtextfield',
             name: 'keyboard',
-            fieldLabel: gettext('Keyboard'),
-            emptyText: 'us / en-US',
+            fieldLabel: gettext('Keyboard Layout'),
+            emptyText: Proxmox.Utils.defaultText,
         },
         {
             xtype: 'proxmoxtextfield',
             name: 'disk',
-            fieldLabel: gettext('Target disk'),
-            emptyText: gettext('auto (boot disk)'),
+            fieldLabel: gettext('Disk'),
+            emptyText: Proxmox.Utils.defaultText,
         },
     ],
 
@@ -147,33 +144,15 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         {
             xtype: 'proxmoxtextfield',
             name: 'edition',
-            fieldLabel: gettext('Windows edition'),
-            emptyText: '1 / Windows 11 Pro',
+            fieldLabel: gettext('Edition'),
+            emptyText: Proxmox.Utils.defaultText,
         },
         {
             xtype: 'proxmoxtextfield',
             name: 'productkey',
-            fieldLabel: gettext('Product key'),
-            emptyText: 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX',
+            fieldLabel: gettext('Product Key'),
+            emptyText: Proxmox.Utils.noneText,
             regex: /^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){4}$/,
-        },
-    ],
-
-    columnB: [
-        {
-            xtype: 'displayfield',
-            userCls: 'pmx-hint',
-            value:
-                gettext(
-                    'The installation file replaces the regular cloud-init data on the cloud-init drive. User, password, SSH keys, DNS and IP config are taken from the cloud-init settings.',
-                ) +
-                '<br>' +
-                gettext(
-                    'Attach the installation ISO and boot from disk first, then CD-ROM. VirtIO drivers and the guest agent are added automatically for Windows 10/11 and Server 2016-2025 if the pxvirt-virtio-win package is installed, otherwise attach the VirtIO driver ISO. The Windows locale must match the ISO language. Ubuntu asks once to confirm the autoinstall.',
-                ) +
-                '<br>' +
-                gettext('Placeholders in custom files') +
-                ': {{hostname}}, {{fqdn}}, {{username}}, {{password}}, {{password_hash}}, {{sshkeys}}, {{ip}}, {{netmask}}, {{gw}}, {{nameserver}}, {{disk}}, {{timezone}} (host), {{net0_mac}}, ...',
         },
     ],
 });
@@ -181,15 +160,11 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
 Ext.define('PVE.qemu.AutoinstallEdit', {
     extend: 'Proxmox.window.Edit',
 
-    width: 800,
-
     initComponent: function () {
         let me = this;
 
-        let nodename = me.pveSelNode.data.node;
-
         let ipanel = Ext.create('PVE.qemu.AutoinstallInputPanel', {
-            nodename,
+            nodename: me.pveSelNode.data.node,
         });
 
         Ext.apply(me, {
@@ -209,38 +184,50 @@ Ext.define('PVE.qemu.AutoinstallEdit', {
 
 Ext.define('PVE.qemu.AutoinstallPreview', {
     extend: 'Ext.window.Window',
-
-    title: gettext('Autoinstall') + ' - ' + gettext('Preview'),
+    title: gettext('Autoinstall'),
     width: 800,
     height: 600,
-    modal: true,
     layout: 'fit',
-
-    items: [
-        {
-            xtype: 'textarea',
-            readOnly: true,
-            fieldStyle: {
-                'font-family': 'monospace',
-                'white-space': 'pre',
-            },
+    modal: true,
+    items: {
+        xtype: 'component',
+        itemId: 'configtext',
+        autoScroll: true,
+        style: {
+            'white-space': 'pre',
+            'font-family': 'monospace',
+            padding: '5px',
         },
-    ],
+    },
 
     initComponent: function () {
-        let me = this;
+        var me = this;
+
+        var nodename = me.pveSelNode.data.node;
+        if (!nodename) {
+            throw 'no node name specified';
+        }
+
+        var vmid = me.pveSelNode.data.vmid;
+        if (!vmid) {
+            throw 'no VM ID specified';
+        }
 
         me.callParent();
 
-        let textarea = me.down('textarea');
         Proxmox.Utils.API2Request({
-            url: `/nodes/${me.nodename}/qemu/${me.vmid}/cloudinit/dump`,
-            params: { type: 'autoinstall' },
+            url: '/nodes/' + nodename + '/qemu/' + vmid + '/cloudinit/dump',
             method: 'GET',
-            waitMsgTarget: me,
-            failure: (response) => Ext.Msg.alert(gettext('Error'), response.htmlStatus),
-            success: function (response) {
-                textarea.setValue(response.result.data || gettext('Autoinstall is not enabled'));
+            params: {
+                type: 'autoinstall',
+            },
+            failure: function (response, opts) {
+                me.close();
+                Ext.Msg.alert('Error', response.htmlStatus);
+            },
+            success: function (response, options) {
+                me.show();
+                me.down('#configtext').update(Ext.htmlEncode(response.result.data));
             },
         });
     },

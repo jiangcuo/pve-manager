@@ -134,7 +134,6 @@ Ext.define('PVE.storage.Browser', {
                     itemId: 'contentSnippets',
                     content: 'snippets',
                     pluginType: plugin,
-                    // snippets can be used as hook scripts, uploading needs full allocation privs
                     enableUploadButton: !!caps.storage['Datastore.Allocate'],
                     useUploadButton: true,
                     useDownloadUrlButton: false,

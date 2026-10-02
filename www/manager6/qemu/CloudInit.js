@@ -76,14 +76,12 @@ Ext.define('PVE.qemu.CloudInit', {
         {
             xtype: 'button',
             itemId: 'previewbtn',
-            text: gettext('Preview Autoinstall'),
+            text: gettext('Show Autoinstall'),
             disabled: true,
             handler: function () {
                 let view = this.up('grid');
                 Ext.create('PVE.qemu.AutoinstallPreview', {
-                    nodename: view.pveSelNode.data.node,
-                    vmid: view.pveSelNode.data.vmid,
-                    autoShow: true,
+                    pveSelNode: view.pveSelNode,
                 });
             },
         },
