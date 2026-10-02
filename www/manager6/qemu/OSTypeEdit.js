@@ -24,6 +24,59 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                 change: 'updateAutoinstall',
             },
         },
+        listen: {
+            component: {
+                'pveQemuCDInputPanel pveIsoSelector': {
+                    change: 'onIsoChange',
+                },
+            },
+        },
+        onIsoChange: function (field, volid) {
+            let me = this;
+            let view = me.getView();
+            if (!view.insideWizard || field.up('window') !== view.up('window')) {
+                return;
+            }
+            me.isoInfo = undefined;
+            me.isoVolid = volid;
+            if (!volid) {
+                me.updateAutoinstall();
+                return;
+            }
+            let storage = volid.split(':')[0];
+            Proxmox.Utils.API2Request({
+                url: `/nodes/${view.nodename}/storage/${storage}/iso-info`,
+                method: 'GET',
+                params: { volume: volid },
+                success: function (response) {
+                    if (me.isoVolid !== volid || view.destroyed) {
+                        return;
+                    }
+                    me.isoInfo = response.result.data;
+                    me.applyIsoInfo();
+                },
+                // detection is optional, e.g. pxvirt-isoinfo is not installed
+                failure: () => {},
+            });
+        },
+        applyIsoInfo: function () {
+            let me = this;
+            let info = me.isoInfo;
+            let ostype = info.ostype;
+            if (ostype) {
+                let osbase = Object.keys(PVE.Utils.kvm_ostypes).find((base) =>
+                    PVE.Utils.kvm_ostypes[base].some((t) => t.val === ostype),
+                );
+                if (osbase) {
+                    me.lookup('osbase').setValue(osbase);
+                    me.lookup('ostype').setValue(ostype);
+                }
+            }
+            if (info.installer === 'kickstart' || info.installer === 'ubuntu') {
+                me.lookup('autoinstallType').setValue(info.installer);
+            }
+            me.updateAutoinstall();
+        },
         onOSBaseChange: function (field, value) {
             let me = this;
             me.lookup('ostype').getStore().setData(PVE.Utils.kvm_ostypes[value]);
@@ -61,6 +114,10 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             let ostype = me.lookup('ostype').getValue();
             let isWindows = PVE.Utils.is_windows(ostype);
             let supported = /^(?:l26|win7|win8|win10|win11)$/.test(ostype);
+            let info = me.isoInfo;
+            if (info && info.type !== 'unknown' && !info.installer) {
+                supported = false; // detected an OS without unattended installation support
+            }
 
             let autoinstall = me.lookup('autoinstall');
             if (!supported) {
@@ -89,8 +146,19 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             show('autoinstallDomainPassword', join);
             show('autoinstallDomainOU', join);
 
-            // only offer the editions matching the selected Windows version
-            me.lookup('autoinstallEdition').setStore(PVE.Utils.windows_editions(ostype));
+            // offer the images of the ISO, or the editions matching the selected Windows version
+            let edition = me.lookup('autoinstallEdition');
+            let images = info?.images ?? [];
+            if (images.length) {
+                // the property string cannot hold ',' or '=', select those by index
+                edition.setStore(
+                    images.map((image) =>
+                        /[,=]/.test(image.name) ? `${image.index}` : image.name,
+                    ),
+                );
+            } else {
+                edition.setStore(PVE.Utils.windows_editions(ostype));
+            }
 
             // the VirtIO drivers are added to the unattended installation
             let enableSecondCD = me.lookup('enableSecondCD');
@@ -139,6 +207,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
 
     setNodename: function (nodename) {
         var me = this;
+        me.nodename = nodename;
         me.lookup('isoSelector').setNodename(nodename);
     },
 
@@ -191,6 +260,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                 xtype: 'combobox',
                 submitValue: false,
                 name: 'osbase',
+                reference: 'osbase',
                 fieldLabel: gettext('Type'),
                 editable: false,
                 queryMode: 'local',

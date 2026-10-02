@@ -84,6 +84,8 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             me.down('field[name=cidomainpassword]').setEmptyText(gettext('unchanged'));
         }
 
+        me.loadIsoEditions(values);
+
         if (ai.file) {
             let storage = ai.file.split(':')[0];
             me.lookup('storage').setValue(storage);
@@ -92,6 +94,49 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         }
 
         me.callParent([data]);
+    },
+
+    // offer the images of the attached Windows installation ISO as editions
+    loadIsoEditions: function (values) {
+        let me = this;
+
+        let isos = [];
+        for (const [key, value] of Object.entries(values)) {
+            if (!/^(?:ide|sata|scsi)\d+$/.test(key)) {
+                continue;
+            }
+            let drive = PVE.Parser.parseQemuDrive(key, value);
+            if (drive?.media === 'cdrom' && /^[^:]+:iso\/.+\.iso$/i.test(drive.file)) {
+                isos.push(drive.file);
+            }
+        }
+
+        let next = function () {
+            let volid = isos.shift();
+            if (!volid || me.destroyed) {
+                return;
+            }
+            Proxmox.Utils.API2Request({
+                url: `/nodes/${me.nodename}/storage/${volid.split(':')[0]}/iso-info`,
+                method: 'GET',
+                params: { volume: volid },
+                success: function (response) {
+                    let images = response.result.data.images ?? [];
+                    if (!images.length) {
+                        next();
+                    } else if (!me.destroyed) {
+                        // the property string cannot hold ',' or '=', select those by index
+                        me.down('field[name=edition]').setStore(
+                            images.map((image) =>
+                                /[,=]/.test(image.name) ? `${image.index}` : image.name,
+                            ),
+                        );
+                    }
+                },
+                failure: () => next(),
+            });
+        };
+        next();
     },
 
     column1: [
