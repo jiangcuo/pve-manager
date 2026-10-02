@@ -53,7 +53,9 @@ Ext.define('PVE.qemu.CreateWizard', {
                 return undefined;
             }
             if (values[confId].match(/media=cdrom/)) {
-                cdrom ??= confId;
+                if (confId !== 'ide0') {
+                    cdrom ??= confId;
+                }
             } else {
                 disk ??= confId;
             }
@@ -82,24 +84,30 @@ Ext.define('PVE.qemu.CreateWizard', {
     calculateBootOrder: function (values) {
         // user selected windows + second cdrom
         if (values.ide0 && values.ide0.match(/media=cdrom/)) {
-            let disk;
-            PVE.Utils.forEachBus(['ide', 'scsi', 'virtio', 'sata','nvme'], (type, id) => {
+            let disk, cdrom;
+            PVE.Utils.forEachBus(['ide', 'scsi', 'virtio', 'sata', 'nvme'], (type, id) => {
                 let confId = type + id;
                 if (!values[confId]) {
                     return undefined;
                 }
                 if (values[confId].match(/media=cdrom/)) {
-                    return undefined;
+                    if (confId !== 'ide0') {
+                        cdrom ??= confId;
+                    }
+                } else {
+                    disk ??= confId;
                 }
-                disk = confId;
-                return false; // abort loop
+                return undefined;
             });
 
             let order = [];
             if (disk) {
                 order.push(disk);
             }
-            order.push('ide2', 'ide0'); // ide2 is the install ISO and should be first
+            if (cdrom) {
+                order.push(cdrom); // the install ISO, should be before the driver ISO
+            }
+            order.push('ide0');
             if (values.net0) {
                 order.push('net0');
             }
