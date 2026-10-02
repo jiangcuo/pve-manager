@@ -357,7 +357,7 @@ Ext.define('PVE.qemu.CreateWizard', {
                             // ignore
                             return;
                         }
-                        if (key === 'cipassword') {
+                        if (key === 'cipassword' || key === 'cidomainpassword') {
                             value = '**********';
                         }
                         data.push({ key: key, value: value });

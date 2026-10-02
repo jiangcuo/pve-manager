@@ -20,6 +20,9 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             'checkbox[reference=autoinstall]': {
                 change: 'updateAutoinstall',
             },
+            'checkbox[reference=autoinstallJoin]': {
+                change: 'updateAutoinstall',
+            },
         },
         onOSBaseChange: function (field, value) {
             let me = this;
@@ -79,6 +82,15 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             show('autoinstallEdition', enabled && isWindows);
             show('autoinstallProductKey', enabled && isWindows);
             show('autoinstallRdp', enabled && isWindows);
+            show('autoinstallJoin', enabled && isWindows);
+            let join = enabled && isWindows && !!me.lookup('autoinstallJoin').getValue();
+            show('autoinstallDomain', join);
+            show('autoinstallDomainUser', join);
+            show('autoinstallDomainPassword', join);
+            show('autoinstallDomainOU', join);
+
+            // only offer the editions matching the selected Windows version
+            me.lookup('autoinstallEdition').setStore(PVE.Utils.windows_editions(ostype));
 
             // the VirtIO drivers are added to the unattended installation
             let enableSecondCD = me.lookup('enableSecondCD');
@@ -314,10 +326,15 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                     disabled: true,
                 },
                 {
-                    xtype: 'textfield',
+                    xtype: 'combobox',
                     reference: 'autoinstallEdition',
                     name: 'autoinstall_edition',
                     fieldLabel: gettext('Edition'),
+                    queryMode: 'local',
+                    store: PVE.Utils.windows_editions(),
+                    editable: true,
+                    forceSelection: false,
+                    anyMatch: true,
                     emptyText: Proxmox.Utils.defaultText,
                     hidden: true,
                     disabled: true,
@@ -337,6 +354,51 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                     reference: 'autoinstallRdp',
                     name: 'autoinstall_rdp',
                     fieldLabel: gettext('Remote Desktop'),
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'proxmoxcheckbox',
+                    reference: 'autoinstallJoin',
+                    isFormField: false,
+                    fieldLabel: gettext('Join Domain'),
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallDomain',
+                    name: 'cidomain',
+                    fieldLabel: gettext('Domain'),
+                    allowBlank: false,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallDomainUser',
+                    name: 'cidomainuser',
+                    fieldLabel: gettext('Domain User'),
+                    allowBlank: false,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallDomainPassword',
+                    name: 'cidomainpassword',
+                    inputType: 'password',
+                    fieldLabel: gettext('Domain Password'),
+                    allowBlank: false,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallDomainOU',
+                    name: 'cidomainou',
+                    fieldLabel: 'OU',
+                    emptyText: Proxmox.Utils.defaultText,
                     hidden: true,
                     disabled: true,
                 },

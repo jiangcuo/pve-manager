@@ -91,6 +91,34 @@ Ext.define('PVE.Utils', {
             return false;
         },
 
+        // image names on the Windows installation media, for the unattended installation
+        windows_editions: function (ostype) {
+            let editions = [];
+            let add = function (versions, names) {
+                for (const version of versions) {
+                    for (const name of names) {
+                        editions.push(`Windows ${version} ${name}`);
+                    }
+                }
+            };
+            let client = ['Pro', 'Home', 'Education', 'Enterprise'];
+            let server = [
+                'Standard',
+                'Standard (Desktop Experience)',
+                'Datacenter',
+                'Datacenter (Desktop Experience)',
+            ];
+            if (!ostype || ostype === 'win11') {
+                add(['11'], client);
+                add(['Server 2025', 'Server 2022'], server);
+            }
+            if (!ostype || ostype === 'win10') {
+                add(['10'], client);
+                add(['Server 2019', 'Server 2016'], server);
+            }
+            return editions;
+        },
+
         get_health_icon: function (state, circle) {
             if (circle === undefined) {
                 circle = false;

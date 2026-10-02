@@ -31,14 +31,40 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             }
         }
 
+        let params = {};
+        let deletes = [];
         if (!ai.enabled && Object.keys(ai).length === 1) {
-            return { delete: 'autoinstall' };
+            deletes.push('autoinstall');
+        } else {
+            params.autoinstall = PVE.Parser.printPropertyString(ai, 'enabled');
         }
-        return { autoinstall: PVE.Parser.printPropertyString(ai, 'enabled') };
+
+        // domain join, separate options as the password must not be readable
+        let loaded = me.loadedValues ?? {};
+        for (const key of ['cidomain', 'cidomainuser', 'cidomainou']) {
+            let value = values[key]?.trim();
+            if (value) {
+                params[key] = value;
+            } else if (loaded[key] !== undefined) {
+                deletes.push(key);
+            }
+        }
+        if (values.cidomainpassword) {
+            params.cidomainpassword = values.cidomainpassword;
+        } else if (!params.cidomain && loaded.cidomainpassword !== undefined) {
+            deletes.push('cidomainpassword');
+        }
+
+        if (deletes.length) {
+            params.delete = deletes.join(',');
+        }
+        return params;
     },
 
     setValues: function (values) {
         let me = this;
+
+        me.loadedValues = values;
 
         let ai = PVE.Parser.parsePropertyString(values.autoinstall ?? '', 'enabled') ?? {};
         let data = {
@@ -49,6 +75,13 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         };
         for (const key of me.textKeys) {
             data[key] = ai[key] ?? '';
+        }
+
+        for (const key of ['cidomain', 'cidomainuser', 'cidomainou']) {
+            data[key] = values[key] ?? '';
+        }
+        if (values.cidomainpassword !== undefined) {
+            me.down('field[name=cidomainpassword]').setEmptyText(gettext('unchanged'));
         }
 
         if (ai.file) {
@@ -139,9 +172,14 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             emptyText: Proxmox.Utils.defaultText,
         },
         {
-            xtype: 'proxmoxtextfield',
+            xtype: 'combobox',
             name: 'edition',
             fieldLabel: gettext('Edition'),
+            queryMode: 'local',
+            store: PVE.Utils.windows_editions(),
+            editable: true,
+            forceSelection: false,
+            anyMatch: true,
             emptyText: Proxmox.Utils.defaultText,
         },
         {
@@ -156,6 +194,35 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             name: 'rdp',
             fieldLabel: gettext('Remote Desktop'),
             uncheckedValue: 0,
+        },
+    ],
+
+    advancedColumn1: [
+        {
+            xtype: 'textfield',
+            name: 'cidomain',
+            fieldLabel: gettext('Domain'),
+            emptyText: Proxmox.Utils.noneText,
+        },
+        {
+            xtype: 'textfield',
+            name: 'cidomainuser',
+            fieldLabel: gettext('Domain User'),
+        },
+    ],
+
+    advancedColumn2: [
+        {
+            xtype: 'textfield',
+            name: 'cidomainpassword',
+            inputType: 'password',
+            fieldLabel: gettext('Domain Password'),
+        },
+        {
+            xtype: 'textfield',
+            name: 'cidomainou',
+            fieldLabel: 'OU',
+            emptyText: Proxmox.Utils.defaultText,
         },
     ],
 });

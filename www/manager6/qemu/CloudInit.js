@@ -304,6 +304,24 @@ Ext.define('PVE.qemu.CloudInit', {
                     return Ext.String.htmlEncode(text.join(', '));
                 },
             },
+            cidomain: {
+                header: gettext('Domain'),
+                iconCls: 'fa fa-sitemap',
+                defaultValue: '',
+                editor: caps_ci ? 'PVE.qemu.AutoinstallEdit' : undefined,
+                renderer: function (value) {
+                    return Ext.String.htmlEncode(value || Proxmox.Utils.noneText);
+                },
+            },
+            cidomainuser: {
+                visible: false,
+            },
+            cidomainpassword: {
+                visible: false,
+            },
+            cidomainou: {
+                visible: false,
+            },
             ciupgrade: {
                 header: gettext('Upgrade packages'),
                 iconCls: 'fa fa-archive',
