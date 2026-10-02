@@ -7,7 +7,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
 
     onlineHelp: 'qm_cloud_init',
 
-    textKeys: ['disk', 'locale', 'keyboard', 'edition', 'productkey'],
+    textKeys: ['edition', 'productkey'],
 
     onGetValues: function (values) {
         let me = this;
@@ -120,27 +120,6 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
     ],
 
     column2: [
-        {
-            xtype: 'proxmoxtextfield',
-            name: 'locale',
-            fieldLabel: gettext('Locale'),
-            emptyText: Proxmox.Utils.defaultText,
-        },
-        {
-            xtype: 'proxmoxtextfield',
-            name: 'keyboard',
-            fieldLabel: gettext('Keyboard Layout'),
-            emptyText: Proxmox.Utils.defaultText,
-        },
-        {
-            xtype: 'proxmoxtextfield',
-            name: 'disk',
-            fieldLabel: gettext('Disk'),
-            emptyText: Proxmox.Utils.defaultText,
-        },
-    ],
-
-    advancedColumn1: [
         {
             xtype: 'proxmoxtextfield',
             name: 'edition',
