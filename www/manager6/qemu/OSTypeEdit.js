@@ -75,6 +75,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             show('autoinstallUser', enabled);
             show('autoinstallPassword', enabled);
             show('autoinstallPasswordConfirm', enabled);
+            show('autoinstallTimezone', enabled);
             show('autoinstallEdition', enabled && isWindows);
             show('autoinstallProductKey', enabled && isWindows);
 
@@ -141,6 +142,9 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             if (values.autoinstall_type) {
                 autoinstall.type = values.autoinstall_type;
             }
+            if (values.autoinstall_timezone) {
+                autoinstall.timezone = values.autoinstall_timezone;
+            }
             if (values.autoinstall_edition) {
                 autoinstall.edition = values.autoinstall_edition.trim();
             }
@@ -151,6 +155,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
         }
         delete values.autoinstall_enabled;
         delete values.autoinstall_type;
+        delete values.autoinstall_timezone;
         delete values.autoinstall_edition;
         delete values.autoinstall_productkey;
         return values;
@@ -285,6 +290,23 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                         let password = me.lookup('autoinstallPassword').getValue();
                         return value === password ? true : gettext('Passwords do not match');
                     },
+                },
+                {
+                    xtype: 'combo',
+                    name: 'autoinstall_timezone',
+                    reference: 'autoinstallTimezone',
+                    fieldLabel: gettext('Time zone'),
+                    queryMode: 'local',
+                    store: Ext.create('Proxmox.data.TimezoneStore'),
+                    displayField: 'zone',
+                    valueField: 'zone',
+                    editable: true,
+                    anyMatch: true,
+                    forceSelection: true,
+                    allowBlank: true,
+                    emptyText: Proxmox.Utils.defaultText,
+                    hidden: true,
+                    disabled: true,
                 },
                 {
                     xtype: 'textfield',

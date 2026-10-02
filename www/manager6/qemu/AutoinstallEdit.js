@@ -7,7 +7,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
 
     onlineHelp: 'qm_cloud_init',
 
-    textKeys: ['edition', 'productkey'],
+    textKeys: ['timezone', 'edition', 'productkey'],
 
     onGetValues: function (values) {
         let me = this;
@@ -120,6 +120,20 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
     ],
 
     column2: [
+        {
+            xtype: 'combo',
+            name: 'timezone',
+            fieldLabel: gettext('Time zone'),
+            queryMode: 'local',
+            store: Ext.create('Proxmox.data.TimezoneStore'),
+            displayField: 'zone',
+            valueField: 'zone',
+            editable: true,
+            anyMatch: true,
+            forceSelection: true,
+            allowBlank: true,
+            emptyText: Proxmox.Utils.defaultText,
+        },
         {
             xtype: 'proxmoxtextfield',
             name: 'edition',
