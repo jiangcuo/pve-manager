@@ -7,7 +7,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
 
     onlineHelp: 'qm_cloud_init',
 
-    textKeys: ['disk', 'locale', 'keyboard', 'timezone', 'edition', 'productkey'],
+    textKeys: ['disk', 'locale', 'keyboard', 'edition', 'productkey'],
 
     onGetValues: function (values) {
         let me = this;
@@ -137,12 +137,6 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         },
         {
             xtype: 'proxmoxtextfield',
-            name: 'timezone',
-            fieldLabel: gettext('Time zone'),
-            emptyText: 'UTC',
-        },
-        {
-            xtype: 'proxmoxtextfield',
             name: 'disk',
             fieldLabel: gettext('Target disk'),
             emptyText: gettext('auto (boot disk)'),
@@ -179,7 +173,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
                 ) +
                 '<br>' +
                 gettext('Placeholders in custom files') +
-                ': {{hostname}}, {{fqdn}}, {{username}}, {{password}}, {{password_hash}}, {{sshkeys}}, {{ip}}, {{netmask}}, {{gw}}, {{nameserver}}, {{disk}}, {{timezone}}, {{net0_mac}}, ...',
+                ': {{hostname}}, {{fqdn}}, {{username}}, {{password}}, {{password_hash}}, {{sshkeys}}, {{ip}}, {{netmask}}, {{gw}}, {{nameserver}}, {{disk}}, {{timezone}} (host), {{net0_mac}}, ...',
         },
     ],
 });
