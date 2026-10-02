@@ -240,6 +240,7 @@ JSSRC= 							\
 	qemu/BootOrderEdit.js				\
 	qemu/CDEdit.js					\
 	qemu/CIDriveEdit.js				\
+	qemu/AutoinstallEdit.js			\
 	qemu/CloudInit.js				\
 	qemu/CmdMenu.js					\
 	qemu/Config.js					\
