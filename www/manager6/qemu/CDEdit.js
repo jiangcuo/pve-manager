@@ -101,6 +101,23 @@ Ext.define('PVE.qemu.CDInputPanel', {
 
         items.push(me.isosel);
 
+        if (me.insideWizard) {
+            items.push(
+                {
+                    xtype: 'displayfield',
+                    name: 'archWarning',
+                    submitValue: false,
+                    hidden: true,
+                },
+                {
+                    xtype: 'proxmoxcheckbox',
+                    name: 'autoinstall_enabled',
+                    submitValue: false,
+                    boxLabel: gettext('Unattended installation'),
+                },
+            );
+        }
+
         items.push({
             xtype: 'radiofield',
             name: 'mediaType',

@@ -252,24 +252,39 @@ Ext.define('PVE.qemu.CreateWizard', {
         },
         {
             xtype: 'container',
-            layout: 'hbox',
-            defaults: {
-                flex: 1,
-                padding: '0 10',
-            },
+            layout: 'anchor',
+            // the unattended installation options do not fit without scrolling
+            scrollable: 'y',
             title: gettext('OS'),
             items: [
                 {
-                    xtype: 'pveQemuCDInputPanel',
-                    bind: {
-                        nodename: '{nodename}',
+                    xtype: 'container',
+                    layout: 'hbox',
+                    defaults: {
+                        flex: 1,
+                        padding: '0 10',
                     },
-                    confid: 'scsi2',
-                    insideWizard: true,
+                    items: [
+                        {
+                            xtype: 'pveQemuCDInputPanel',
+                            bind: {
+                                nodename: '{nodename}',
+                            },
+                            confid: 'scsi2',
+                            insideWizard: true,
+                        },
+                        {
+                            xtype: 'pveQemuOSTypePanel',
+                            insideWizard: true,
+                            bind: {
+                                nodename: '{nodename}',
+                            },
+                        },
+                    ],
                 },
                 {
-                    xtype: 'pveQemuOSTypePanel',
-                    insideWizard: true,
+                    xtype: 'pveQemuAutoinstallWizardPanel',
+                    padding: '0 10',
                     bind: {
                         nodename: '{nodename}',
                     },
@@ -358,7 +373,9 @@ Ext.define('PVE.qemu.CreateWizard', {
                         panel.down('field[name=start]').setValue(true);
                     }
 
-                    let warning = wizard.down('pveQemuOSTypePanel').getController().archWarning;
+                    let warning = wizard
+                        .down('pveQemuAutoinstallWizardPanel')
+                        .getController().archWarning;
                     let archWarning = panel.down('displayfield[reference=archWarning]');
                     archWarning.setValue(
                         warning
