@@ -169,7 +169,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
                 ) +
                 '<br>' +
                 gettext(
-                    'Attach the installation ISO and boot from disk first, then CD-ROM. Windows needs the VirtIO driver ISO for VirtIO disks and NICs, and the locale must match the ISO language. Ubuntu asks once to confirm the autoinstall.',
+                    'Attach the installation ISO and boot from disk first, then CD-ROM. VirtIO drivers and the guest agent are added automatically for Windows 10/11 and Server 2016-2025 if the pxvirt-virtio-win package is installed, otherwise attach the VirtIO driver ISO. The Windows locale must match the ISO language. Ubuntu asks once to confirm the autoinstall.',
                 ) +
                 '<br>' +
                 gettext('Placeholders in custom files') +
