@@ -26,6 +26,55 @@ Ext.define('PVE.qemu.CreateWizard', {
 
     subject: gettext('Virtual Machine'),
 
+    // unattended installation: add the cloud-init drive that carries the installation file and
+    // boot from disk first, so the installer does not start again after the installation.
+    // Linux uses SCSI, Windows SATA, as Windows Setup has no VirtIO SCSI driver.
+    setupAutoinstall: function (values) {
+        if (!values.autoinstall) {
+            return;
+        }
+        let bus = PVE.Utils.is_windows(values.ostype) ? 'sata' : 'scsi';
+        let freeSlot = function () {
+            let slot;
+            PVE.Utils.forEachBus([bus], (type, id) => {
+                if (!values[type + id]) {
+                    slot = type + id;
+                    return false; // abort loop
+                }
+                return undefined;
+            });
+            return slot;
+        };
+
+        let disk, cdrom;
+        PVE.Utils.forEachBus(['ide', 'scsi', 'virtio', 'sata', 'nvme'], (type, id) => {
+            let confId = type + id;
+            if (!values[confId]) {
+                return undefined;
+            }
+            if (values[confId].match(/media=cdrom/)) {
+                cdrom ??= confId;
+            } else {
+                disk ??= confId;
+            }
+            return undefined;
+        });
+
+        if (cdrom && !cdrom.startsWith(bus)) {
+            let slot = freeSlot();
+            values[slot] = values[cdrom];
+            delete values[cdrom];
+            cdrom = slot;
+        }
+
+        if (disk) {
+            let storage = values[disk].split(':')[0];
+            values[freeSlot()] = `${storage}:cloudinit`;
+        }
+
+        values.boot = `order=${[disk, cdrom].filter((id) => id).join(';')}`;
+    },
+
     // fot the special case that we have 2 cdrom drives
     //
     // emulates part of the backend bootorder logic, but includes all cdrom drives since the backend
@@ -286,15 +335,22 @@ Ext.define('PVE.qemu.CreateWizard', {
                     var kv = wizard.getValues();
                     var data = [];
 
+                    wizard.setupAutoinstall(kv);
                     let boot = wizard.calculateBootOrder(kv);
                     if (boot) {
                         kv.boot = boot;
+                    }
+                    if (kv.autoinstall) {
+                        panel.down('field[name=start]').setValue(true);
                     }
 
                     Ext.Object.each(kv, function (key, value) {
                         if (key === 'delete') {
                             // ignore
                             return;
+                        }
+                        if (key === 'cipassword') {
+                            value = '**********';
                         }
                         data.push({ key: key, value: value });
                     });
@@ -320,6 +376,7 @@ Ext.define('PVE.qemu.CreateWizard', {
                     kv.name = PVE.Utils.guestNameToAscii(kv.name);
                 }
 
+                wizard.setupAutoinstall(kv);
                 let boot = wizard.calculateBootOrder(kv);
                 if (boot) {
                     kv.boot = boot;

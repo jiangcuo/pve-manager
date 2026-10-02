@@ -17,6 +17,9 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             'checkbox[reference=enableSecondCD]': {
                 change: 'onSecondCDChange',
             },
+            'checkbox[reference=autoinstall]': {
+                change: 'updateAutoinstall',
+            },
         },
         onOSBaseChange: function (field, value) {
             let me = this;
@@ -29,6 +32,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                     enableSecondCD.setValue(false);
                 }
             }
+            me.updateAutoinstall();
         },
         onOSTypeChange: function (field) {
             var me = this,
@@ -44,6 +48,42 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             var scsihw = targetValues.scsihw || '__default__';
             this.getViewModel().set('current.scsihw', scsihw);
             this.getViewModel().set('current.ostype', ostype);
+            me.updateAutoinstall();
+        },
+        updateAutoinstall: function () {
+            let me = this;
+            if (!me.getView().insideWizard) {
+                return;
+            }
+            let ostype = me.lookup('ostype').getValue();
+            let isWindows = PVE.Utils.is_windows(ostype);
+            let supported = /^(?:l26|win7|win8|win10|win11)$/.test(ostype);
+
+            let autoinstall = me.lookup('autoinstall');
+            if (!supported) {
+                autoinstall.setValue(false);
+            }
+            autoinstall.setHidden(!supported);
+
+            let enabled = supported && !!autoinstall.getValue();
+            let show = (reference, visible) => {
+                let field = me.lookup(reference);
+                field.setHidden(!visible);
+                field.setDisabled(!visible);
+            };
+            show('autoinstallType', enabled && !isWindows);
+            show('autoinstallUser', enabled);
+            show('autoinstallPassword', enabled);
+            show('autoinstallPasswordConfirm', enabled);
+            show('autoinstallEdition', enabled && isWindows);
+            show('autoinstallProductKey', enabled && isWindows);
+
+            // the VirtIO drivers are added to the unattended installation
+            let enableSecondCD = me.lookup('enableSecondCD');
+            if (enabled) {
+                enableSecondCD.setValue(false);
+            }
+            enableSecondCD.setHidden(enabled || !isWindows);
         },
         setWidget: function (widget, newValue) {
             // changing a widget is safe only if ComponentQuery.query returns us
@@ -96,6 +136,23 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             };
             values.ide0 = PVE.Parser.printQemuDrive(drive);
         }
+        if (values.autoinstall_enabled) {
+            let autoinstall = { enabled: 1 };
+            if (values.autoinstall_type) {
+                autoinstall.type = values.autoinstall_type;
+            }
+            if (values.autoinstall_edition) {
+                autoinstall.edition = values.autoinstall_edition.trim();
+            }
+            if (values.autoinstall_productkey) {
+                autoinstall.productkey = values.autoinstall_productkey.trim();
+            }
+            values.autoinstall = PVE.Parser.printPropertyString(autoinstall, 'enabled');
+        }
+        delete values.autoinstall_enabled;
+        delete values.autoinstall_type;
+        delete values.autoinstall_edition;
+        delete values.autoinstall_productkey;
         return values;
     },
 
@@ -169,6 +226,82 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                     name: 'ide0',
                     nodename: me.nodename,
                     insideWizard: true,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'proxmoxcheckbox',
+                    reference: 'autoinstall',
+                    name: 'autoinstall_enabled',
+                    checked: false,
+                    boxLabel: gettext('Unattended installation'),
+                },
+                {
+                    xtype: 'proxmoxKVComboBox',
+                    reference: 'autoinstallType',
+                    name: 'autoinstall_type',
+                    fieldLabel: gettext('Installer'),
+                    value: 'kickstart',
+                    comboItems: [
+                        ['kickstart', 'Kickstart'],
+                        ['ubuntu', 'Ubuntu'],
+                    ],
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallUser',
+                    name: 'ciuser',
+                    fieldLabel: gettext('User'),
+                    allowBlank: false,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallPassword',
+                    name: 'cipassword',
+                    inputType: 'password',
+                    value: '',
+                    fieldLabel: gettext('Password'),
+                    allowBlank: false,
+                    minLength: 5,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallPasswordConfirm',
+                    name: 'autoinstall_password_confirm',
+                    inputType: 'password',
+                    value: '',
+                    fieldLabel: gettext('Confirm password'),
+                    allowBlank: true,
+                    submitValue: false,
+                    hidden: true,
+                    disabled: true,
+                    validator: function (value) {
+                        let password = me.lookup('autoinstallPassword').getValue();
+                        return value === password ? true : gettext('Passwords do not match');
+                    },
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallEdition',
+                    name: 'autoinstall_edition',
+                    fieldLabel: gettext('Edition'),
+                    emptyText: Proxmox.Utils.defaultText,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'textfield',
+                    reference: 'autoinstallProductKey',
+                    name: 'autoinstall_productkey',
+                    fieldLabel: gettext('Product Key'),
+                    emptyText: Proxmox.Utils.noneText,
+                    regex: /^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){4}$/,
                     hidden: true,
                     disabled: true,
                 },
