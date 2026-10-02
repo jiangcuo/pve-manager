@@ -251,6 +251,10 @@ __PACKAGE__->register_method({
             { name => 'sendmail' },
             { name => 'smtp' },
             { name => 'webhook' },
+            { name => 'dingtalk' },
+            { name => 'feishu' },
+            { name => 'wecom' },
+            { name => 'sms' },
         ];
 
         return $result;
@@ -288,7 +292,7 @@ __PACKAGE__->register_method({
                 'type' => {
                     description => 'Type of the target.',
                     type => 'string',
-                    enum => [qw(sendmail gotify smtp webhook)],
+                    enum => [qw(sendmail gotify smtp webhook dingtalk feishu wecom sms)],
                 },
                 'comment' => {
                     description => 'Comment',
@@ -916,6 +920,365 @@ __PACKAGE__->register_method({
         return;
     },
 });
+
+# Endpoints of chat robots and SMS providers. Their URLs contain tokens or they need secrets,
+# which are stored in the private configuration.
+
+my $robot_url_property = {
+    description => 'Webhook URL of the robot, including its token.',
+    type => 'string',
+};
+
+my $robot_secret_property = {
+    description => 'Secret for signing requests.',
+    type => 'string',
+    optional => 1,
+};
+
+my $sms_text_property = {
+    type => 'string',
+    maxLength => 128,
+};
+
+my $robot_endpoint_types = {
+    dingtalk => {
+        label => 'DingTalk robot',
+        properties => {
+            url => $robot_url_property,
+            secret => $robot_secret_property,
+        },
+        private => [qw(url secret)],
+    },
+    feishu => {
+        label => 'Feishu bot',
+        properties => {
+            url => $robot_url_property,
+            secret => $robot_secret_property,
+        },
+        private => [qw(url secret)],
+    },
+    wecom => {
+        label => 'WeCom robot',
+        properties => {
+            url => $robot_url_property,
+        },
+        private => [qw(url)],
+    },
+    sms => {
+        label => 'SMS',
+        properties => {
+            provider => {
+                description => 'SMS provider.',
+                type => 'string',
+                enum => [qw(aliyun tencent huawei)],
+            },
+            phone => {
+                description => 'Phone numbers, numbers outside of China with country code.',
+                type => 'array',
+                items => {
+                    type => 'string',
+                    pattern => '\+?[0-9]{5,20}',
+                },
+            },
+            'sign-name' => {
+                %$sms_text_property,
+                description => 'Signature name registered at the provider.',
+            },
+            'template-id' => {
+                %$sms_text_property,
+                description => 'ID of the message template registered at the provider.',
+            },
+            'template-param' => {
+                description => 'Template parameters, by name for Alibaba Cloud, in order for'
+                    . ' Tencent and Huawei Cloud.',
+                type => 'array',
+                items => {
+                    type => 'string',
+                    enum => [qw(title severity hostname type time)],
+                },
+                optional => 1,
+            },
+            'app-id' => {
+                %$sms_text_property,
+                description => 'SMS application ID (Tencent Cloud) or sender channel number'
+                    . ' (Huawei Cloud).',
+                optional => 1,
+            },
+            region => {
+                %$sms_text_property,
+                description => 'Region of the provider.',
+                optional => 1,
+            },
+            'access-key' => {
+                %$sms_text_property,
+                description => 'Access key ID, SecretId or application key.',
+            },
+            'secret-key' => {
+                %$sms_text_property,
+                description => 'Access key secret, SecretKey or application secret.',
+            },
+        },
+        private => [qw(access-key secret-key)],
+    },
+};
+
+# split the parameters into the public and the private configuration
+my $split_private_params = sub {
+    my ($param, $private_keys, $name) = @_;
+
+    my $private = {};
+    for my $key (@$private_keys) {
+        my $value = extract_param($param, $key);
+        $private->{$key} = $value if defined($value);
+    }
+    $private->{name} = $name if defined($name);
+
+    return $private;
+};
+
+for my $type (sort keys %$robot_endpoint_types) {
+    my $info = $robot_endpoint_types->{$type};
+    my $label = $info->{label};
+
+    my $properties = {
+        name => {
+            description => 'The name of the endpoint.',
+            type => 'string',
+            format => 'pve-configid',
+        },
+        %{ $info->{properties} },
+        comment => {
+            description => 'Comment',
+            type => 'string',
+            optional => 1,
+        },
+        disable => {
+            description => 'Disable this target',
+            type => 'boolean',
+            optional => 1,
+            default => 0,
+        },
+    };
+    my $public_properties = remove_protected_properties($properties, $info->{private});
+
+    my $modify_permissions = {
+        check => [
+            'and',
+            ['perm', '/mapping/notifications', ['Mapping.Modify']],
+            [
+                'or',
+                ['perm', '/', ['Sys.Audit', 'Sys.Modify']],
+                ['perm', '/', ['Sys.AccessNetwork']],
+            ],
+        ],
+    };
+
+    __PACKAGE__->register_method({
+        name => "get_${type}_endpoints",
+        path => "endpoints/$type",
+        method => 'GET',
+        description => "Returns a list of all $label endpoints",
+        protected => 1,
+        permissions => {
+            check => [
+                'or',
+                ['perm', '/mapping/notifications', ['Mapping.Modify']],
+                ['perm', '/mapping/notifications', ['Mapping.Audit']],
+            ],
+        },
+        parameters => {
+            additionalProperties => 0,
+            properties => {},
+        },
+        returns => {
+            type => 'array',
+            items => {
+                type => 'object',
+                properties => {
+                    %$public_properties,
+                    origin => {
+                        description => 'Show if this entry was created by a user or was built-in',
+                        type => 'string',
+                        enum => [qw(user-created builtin modified-builtin)],
+                    },
+                },
+            },
+            links => [{ rel => 'child', href => '{name}' }],
+        },
+        code => sub {
+            my $config = PVE::Notify::read_config();
+            my $method = "get_${type}_endpoints";
+
+            my $entities = eval { $config->$method() };
+            raise_api_error($@) if $@;
+
+            return $entities;
+        },
+    });
+
+    __PACKAGE__->register_method({
+        name => "get_${type}_endpoint",
+        path => "endpoints/$type/{name}",
+        method => 'GET',
+        description => "Return a specific $label endpoint",
+        protected => 1,
+        permissions => {
+            check => [
+                'or',
+                ['perm', '/mapping/notifications', ['Mapping.Modify']],
+                ['perm', '/mapping/notifications', ['Mapping.Audit']],
+            ],
+        },
+        parameters => {
+            additionalProperties => 0,
+            properties => {
+                name => {
+                    type => 'string',
+                    format => 'pve-configid',
+                    description => 'Name of the endpoint.',
+                },
+            },
+        },
+        returns => {
+            type => 'object',
+            properties => {
+                %$public_properties,
+                digest => get_standard_option('pve-config-digest'),
+            },
+        },
+        code => sub {
+            my ($param) = @_;
+            my $name = extract_param($param, 'name');
+
+            my $config = PVE::Notify::read_config();
+            my $method = "get_${type}_endpoint";
+            my $endpoint = eval { $config->$method($name) };
+
+            raise_api_error($@) if $@;
+            $endpoint->{digest} = $config->digest();
+
+            return $endpoint;
+        },
+    });
+
+    __PACKAGE__->register_method({
+        name => "create_${type}_endpoint",
+        path => "endpoints/$type",
+        protected => 1,
+        method => 'POST',
+        description => "Create a new $label endpoint",
+        permissions => $modify_permissions,
+        parameters => {
+            additionalProperties => 0,
+            properties => $properties,
+        },
+        returns => { type => 'null' },
+        code => sub {
+            my ($param) = @_;
+
+            my $private = $split_private_params->($param, $info->{private}, $param->{name});
+
+            eval {
+                PVE::Notify::lock_config(sub {
+                    my $config = PVE::Notify::read_config();
+                    my $method = "add_${type}_endpoint";
+
+                    $config->$method($param, $private);
+
+                    PVE::Notify::write_config($config);
+                });
+            };
+
+            raise_api_error($@) if $@;
+            return;
+        },
+    });
+
+    __PACKAGE__->register_method({
+        name => "update_${type}_endpoint",
+        path => "endpoints/$type/{name}",
+        protected => 1,
+        method => 'PUT',
+        description => "Update existing $label endpoint",
+        permissions => $modify_permissions,
+        parameters => {
+            additionalProperties => 0,
+            properties => {
+                %{ make_properties_optional($properties) },
+                delete => {
+                    type => 'array',
+                    items => {
+                        type => 'string',
+                        format => 'pve-configid',
+                    },
+                    optional => 1,
+                    description => 'A list of settings you want to delete.',
+                },
+                digest => get_standard_option('pve-config-digest'),
+            },
+        },
+        returns => { type => 'null' },
+        code => sub {
+            my ($param) = @_;
+
+            my $name = extract_param($param, 'name');
+            my $delete = extract_param($param, 'delete');
+            my $digest = extract_param($param, 'digest');
+            my $private = $split_private_params->($param, $info->{private});
+
+            eval {
+                PVE::Notify::lock_config(sub {
+                    my $config = PVE::Notify::read_config();
+                    my $method = "update_${type}_endpoint";
+
+                    $config->$method($name, $param, $private, $delete, $digest);
+
+                    PVE::Notify::write_config($config);
+                });
+            };
+
+            raise_api_error($@) if $@;
+            return;
+        },
+    });
+
+    __PACKAGE__->register_method({
+        name => "delete_${type}_endpoint",
+        protected => 1,
+        path => "endpoints/$type/{name}",
+        method => 'DELETE',
+        description => "Remove $label endpoint",
+        permissions => {
+            check => ['perm', '/mapping/notifications', ['Mapping.Modify']],
+        },
+        parameters => {
+            additionalProperties => 0,
+            properties => {
+                name => {
+                    type => 'string',
+                    format => 'pve-configid',
+                },
+            },
+        },
+        returns => { type => 'null' },
+        code => sub {
+            my ($param) = @_;
+            my $name = extract_param($param, 'name');
+
+            eval {
+                PVE::Notify::lock_config(sub {
+                    my $config = PVE::Notify::read_config();
+                    my $method = "delete_${type}_endpoint";
+                    $config->$method($name);
+                    PVE::Notify::write_config($config);
+                });
+            };
+
+            raise_api_error($@) if $@;
+            return;
+        },
+    });
+}
 
 my $smtp_properties = {
     name => {
