@@ -2113,6 +2113,7 @@ Ext.define('PVE.Utils', {
             cephsetflags: ['', gettext('Change global Ceph flags')],
             clustercreate: ['', gettext('Create Cluster')],
             clusterjoin: ['', gettext('Join Cluster')],
+            clusteradd: ['', gettext('Add Node')],
             dircreate: [gettext('Directory Storage'), gettext('Create')],
             dirremove: [gettext('Directory'), gettext('Remove')],
             download: [gettext('File'), gettext('Download')],

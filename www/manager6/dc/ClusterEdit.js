@@ -403,3 +403,258 @@ Ext.define('PVE.ClusterJoinNodeWindow', {
         },
     ],
 });
+
+Ext.define('PVE.ClusterAddNodeWindow', {
+    extend: 'Proxmox.window.Edit',
+    xtype: 'pveClusterAddNodeWindow',
+
+    title: gettext('Add Node'),
+    width: 600,
+
+    method: 'POST',
+    url: '/cluster/config/add-node',
+
+    isCreate: true,
+    submitText: gettext('Add'),
+    showTaskViewer: true,
+
+    onlineHelp: 'pvecm_join_node_to_cluster',
+
+    viewModel: {
+        data: {
+            checkedNode: '',
+            info: null,
+        },
+        formulas: {
+            nodeText: (get) => {
+                let info = get('info');
+                return info
+                    ? `${info.nodename} (${info.version ?? Proxmox.Utils.unknownText})`
+                    : '';
+            },
+            errorText: (get) =>
+                (get('info')?.errors ?? [])
+                    .map(
+                        (err) =>
+                            `<i class="fa fa-exclamation-triangle warning"></i> ${Ext.htmlEncode(err)}`,
+                    )
+                    .join('<br>'),
+        },
+    },
+
+    controller: {
+        xclass: 'Ext.app.ViewController',
+
+        control: {
+            'field[name=address]': {
+                change: 'onAddressChange',
+            },
+            'field[name=password]': {
+                change: 'invalidate',
+            },
+            'field[name=fingerprint]': {
+                change: 'invalidate',
+            },
+        },
+
+        onAddressChange: function () {
+            let me = this;
+            me.invalidate();
+            me.lookup('fingerprint').setValue('');
+            if (!me.fingerprintTask) {
+                me.fingerprintTask = new Ext.util.DelayedTask(me.loadFingerprint, me);
+            }
+            me.fingerprintTask.delay(500);
+        },
+
+        // the fingerprint is shown before the password is sent, so that it can be verified
+        loadFingerprint: function () {
+            let me = this;
+            let field = me.lookup('address');
+            let address = field.getValue();
+            if (!address || !field.isValid()) {
+                return;
+            }
+            Proxmox.Utils.API2Request({
+                url: '/cluster/config/check-node',
+                method: 'POST',
+                params: { address },
+                success: function (response) {
+                    if (field.getValue() === address && !me.getView().destroyed) {
+                        me.lookup('fingerprint').setValue(response.result.data.fingerprint);
+                    }
+                },
+                failure: function (response) {
+                    if (field.getValue() === address && !me.getView().destroyed) {
+                        field.markInvalid(response.htmlStatus);
+                    }
+                },
+            });
+        },
+
+        invalidate: function () {
+            let me = this;
+            let vm = me.getViewModel();
+            me.lookup('check').setDisabled(
+                ['address', 'password', 'fingerprint'].some((ref) => !me.lookup(ref).getValue()),
+            );
+            vm.set('checkedNode', '');
+            vm.set('info', null);
+            me.lookup('links').removeAll();
+        },
+
+        onCheck: function () {
+            let me = this;
+            let view = me.getView();
+            let params = {
+                address: me.lookup('address').getValue(),
+                password: me.lookup('password').getValue(),
+                fingerprint: me.lookup('fingerprint').getValue(),
+            };
+            Proxmox.Utils.API2Request({
+                url: '/cluster/config/check-node',
+                method: 'POST',
+                params,
+                waitMsgTarget: view,
+                success: function (response) {
+                    let info = response.result.data;
+                    let vm = me.getViewModel();
+                    me.setLinks(info, params.address);
+                    vm.set('info', info);
+                    vm.set('checkedNode', info.errors.length ? '' : info.nodename);
+                },
+                failure: function (response) {
+                    Ext.Msg.alert(gettext('Error'), response.htmlStatus);
+                },
+            });
+        },
+
+        setLinks: function (info, address) {
+            let me = this;
+            let container = me.lookup('links');
+            container.removeAll();
+
+            let addresses = info.addresses ?? [];
+            let known = (addr) => addresses.some((a) => a.address === addr);
+            let fallback = [info.ip, address].find((addr) => addr && known(addr));
+
+            for (const id of info.links ?? []) {
+                container.add({
+                    xtype: 'combobox',
+                    name: `link${id}`,
+                    fieldLabel: `Link ${id}`,
+                    labelWidth: 120,
+                    queryMode: 'local',
+                    store: {
+                        fields: ['address', 'iface'],
+                        data: addresses,
+                    },
+                    valueField: 'address',
+                    displayField: 'address',
+                    listConfig: {
+                        itemTpl: '{address} ({iface})',
+                    },
+                    editable: true,
+                    allowBlank: false,
+                    value: id === info.links[0] ? fallback : undefined,
+                });
+            }
+        },
+    },
+
+    submit: function () {
+        // reloading the cluster configuration may produce temporary auth failures
+        PVE.Utils.silenceAuthFailures = true;
+        this.callParent();
+    },
+
+    taskDone: function () {
+        delete PVE.Utils.silenceAuthFailures;
+    },
+
+    items: [
+        {
+            xtype: 'inputpanel',
+            column1: [
+                {
+                    xtype: 'proxmoxtextfield',
+                    reference: 'address',
+                    name: 'address',
+                    fieldLabel: gettext('Address'),
+                    labelWidth: 120,
+                    allowBlank: false,
+                    vtype: 'DnsOrIp',
+                },
+            ],
+            column2: [
+                {
+                    xtype: 'textfield',
+                    reference: 'password',
+                    name: 'password',
+                    inputType: 'password',
+                    fieldLabel: gettext('Password'),
+                    allowBlank: false,
+                },
+            ],
+            columnB: [
+                {
+                    xtype: 'textfield',
+                    reference: 'fingerprint',
+                    name: 'fingerprint',
+                    fieldLabel: gettext('Fingerprint'),
+                    labelWidth: 120,
+                    allowBlank: false,
+                },
+                {
+                    xtype: 'button',
+                    reference: 'check',
+                    margin: '0 0 5 125',
+                    text: gettext('Check'),
+                    handler: 'onCheck',
+                    disabled: true,
+                },
+                {
+                    xtype: 'displayfield',
+                    fieldLabel: gettext('Node'),
+                    labelWidth: 120,
+                    bind: {
+                        value: '{nodeText}',
+                        hidden: '{!info}',
+                    },
+                },
+                {
+                    xtype: 'displayfield',
+                    labelWidth: 120,
+                    bind: {
+                        value: '{errorText}',
+                        hidden: '{!errorText}',
+                    },
+                },
+                {
+                    xtype: 'fieldcontainer',
+                    reference: 'links',
+                    fieldLabel: gettext('Cluster Network'),
+                    labelWidth: 120,
+                    layout: 'anchor',
+                    defaults: {
+                        anchor: '100%',
+                        hideLabel: false,
+                    },
+                    bind: {
+                        hidden: '{!checkedNode}',
+                    },
+                },
+                {
+                    // only allow adding a successfully checked node
+                    xtype: 'textfield',
+                    hidden: true,
+                    submitValue: false,
+                    allowBlank: false,
+                    bind: {
+                        value: '{checkedNode}',
+                    },
+                },
+            ],
+        },
+    ],
+});
