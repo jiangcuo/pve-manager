@@ -21,6 +21,9 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         if (values.useCustom && values.file) {
             ai.file = values.file;
         }
+        if (values.rdp) {
+            ai.rdp = 1;
+        }
         for (const key of me.textKeys) {
             let value = values[key]?.trim();
             if (value) {
@@ -42,6 +45,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             enabled: PVE.Parser.parseBoolean(ai.enabled, false),
             type: ai.type || '__default__',
             useCustom: !!ai.file,
+            rdp: PVE.Parser.parseBoolean(ai.rdp, false),
         };
         for (const key of me.textKeys) {
             data[key] = ai[key] ?? '';
@@ -146,6 +150,12 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             fieldLabel: gettext('Product Key'),
             emptyText: Proxmox.Utils.noneText,
             regex: /^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){4}$/,
+        },
+        {
+            xtype: 'proxmoxcheckbox',
+            name: 'rdp',
+            fieldLabel: gettext('Remote Desktop'),
+            uncheckedValue: 0,
         },
     ],
 });

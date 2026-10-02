@@ -78,6 +78,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             show('autoinstallTimezone', enabled);
             show('autoinstallEdition', enabled && isWindows);
             show('autoinstallProductKey', enabled && isWindows);
+            show('autoinstallRdp', enabled && isWindows);
 
             // the VirtIO drivers are added to the unattended installation
             let enableSecondCD = me.lookup('enableSecondCD');
@@ -151,6 +152,9 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
             if (values.autoinstall_productkey) {
                 autoinstall.productkey = values.autoinstall_productkey.trim();
             }
+            if (values.autoinstall_rdp) {
+                autoinstall.rdp = 1;
+            }
             values.autoinstall = PVE.Parser.printPropertyString(autoinstall, 'enabled');
         }
         delete values.autoinstall_enabled;
@@ -158,6 +162,7 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
         delete values.autoinstall_timezone;
         delete values.autoinstall_edition;
         delete values.autoinstall_productkey;
+        delete values.autoinstall_rdp;
         return values;
     },
 
@@ -324,6 +329,14 @@ Ext.define('PVE.qemu.OSTypeInputPanel', {
                     fieldLabel: gettext('Product Key'),
                     emptyText: Proxmox.Utils.noneText,
                     regex: /^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){4}$/,
+                    hidden: true,
+                    disabled: true,
+                },
+                {
+                    xtype: 'proxmoxcheckbox',
+                    reference: 'autoinstallRdp',
+                    name: 'autoinstall_rdp',
+                    fieldLabel: gettext('Remote Desktop'),
                     hidden: true,
                     disabled: true,
                 },
