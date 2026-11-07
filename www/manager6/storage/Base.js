@@ -52,25 +52,58 @@ Ext.define('PVE.panel.StorageBase', {
             },
         );
 
+        const addAdvancedWidget = (widget) => {
+            me.advancedColumn1 = me.advancedColumn1 || [];
+            me.advancedColumn2 = me.advancedColumn2 || [];
+            if (me.advancedColumn2.length < me.advancedColumn1.length) {
+                me.advancedColumn2.unshift(widget);
+            } else {
+                me.advancedColumn1.unshift(widget);
+            }
+        };
+
         const qemuImgStorageTypes = ['dir', 'btrfs', 'nfs', 'cifs', 'glusterfs'];
 
         if (qemuImgStorageTypes.includes(me.type)) {
-            const preallocSelector = {
+            addAdvancedWidget({
                 xtype: 'pvePreallocationSelector',
                 name: 'preallocation',
                 fieldLabel: gettext('Preallocation'),
                 allowBlank: false,
                 deleteEmpty: !me.isCreate,
                 value: '__default__',
-            };
+            });
+        }
 
-            me.advancedColumn1 = me.advancedColumn1 || [];
-            me.advancedColumn2 = me.advancedColumn2 || [];
-            if (me.advancedColumn2.length < me.advancedColumn1.length) {
-                me.advancedColumn2.unshift(preallocSelector);
-            } else {
-                me.advancedColumn1.unshift(preallocSelector);
+        const externalStorageManagedSnapshotSupport = ['dir', 'nfs', 'cifs', 'lvm'];
+
+        if (externalStorageManagedSnapshotSupport.includes(me.type)) {
+            addAdvancedWidget({
+                xtype: 'proxmoxcheckbox',
+                name: 'snapshot-as-volume-chain',
+                boxLabel: gettext('Allow Snapshots as Volume-Chain'),
+                deleteEmpty: !me.isCreate,
+                // can only allow to enable this on creation for storages that previously already
+                // supported qcow2 to avoid ambiguity with existing volumes.
+                disabled: !me.isCreate && me.type !== 'lvm',
+                checked: false,
+            });
+
+            me.advancedColumnB = me.advancedColumnB || [];
+            if (me.type === 'lvm') {
+                me.advancedColumnB.unshift({
+                    xtype: 'displayfield',
+                    name: 'external-snapshot-hint-lvm',
+                    userCls: 'pmx-hint',
+                    value: gettext('Keep Snapshots as Volume-Chain enabled if qcow2 images exist!'),
+                });
             }
+            me.advancedColumnB.unshift({
+                xtype: 'displayfield',
+                name: 'external-snapshot-hint',
+                userCls: 'pmx-hint',
+                value: gettext('Snapshots as Volume-Chain are a technology preview.'),
+            });
         }
 
         me.callParent();
