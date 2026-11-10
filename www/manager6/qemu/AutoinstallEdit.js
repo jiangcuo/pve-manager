@@ -84,8 +84,8 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             me.down('field[name=cidomainpassword]').setEmptyText(gettext('unchanged'));
         }
 
-        me.updateOsFields(PVE.Utils.is_windows(values.ostype));
-        me.loadIsoEditions(values);
+        me.vmOstype = values.ostype;
+        me.isoInfo = undefined;
 
         if (ai.file) {
             let storage = ai.file.split(':')[0];
@@ -95,13 +95,27 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         }
 
         me.callParent([data]);
+
+        me.updateTypeFields();
+        me.detectIso(values);
     },
 
-    // only show the options of the installer matching the guest OS, hidden fields keep their
-    // values, so nothing gets lost when the OS type changes later
-    updateOsFields: function (isWindows) {
+    // the installer the backend uses, it defaults to the one of the guest OS type
+    effectiveType: function () {
         let me = this;
-        me.down('field[name=type]').setHidden(isWindows);
+        let type = me.down('field[name=type]').getValue();
+        if (type && type !== '__default__') {
+            return type;
+        }
+        return PVE.Utils.is_windows(me.vmOstype) ? 'windows' : 'kickstart';
+    },
+
+    // only show the options of the selected installer, hidden fields keep their values, so
+    // nothing gets lost when switching the installer back
+    updateTypeFields: function () {
+        let me = this;
+        let type = me.effectiveType();
+        let isWindows = type === 'windows';
         for (const name of [
             'edition',
             'productkey',
@@ -113,10 +127,43 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         ]) {
             me.down(`field[name=${name}]`).setHidden(!isWindows);
         }
+
+        // show what was detected on the attached installation ISO
+        let hint = me.lookup('isoHint');
+        let info = me.isoInfo;
+        if (!info) {
+            hint.setHidden(true);
+            return;
+        }
+        let name = [info.name, info.version, info.arch].filter((v) => v).join(' ');
+        let text = Ext.String.format(gettext('Detected on the ISO: {0}'), name || info.type);
+        let warning;
+        if (!info.installer) {
+            warning = gettext('The unattended installation does not support this ISO.');
+        } else if (info.installer !== type) {
+            warning = Ext.String.format(
+                gettext('The ISO needs the installer type {0}.'),
+                me.typeNames[info.installer] ?? info.installer,
+            );
+        }
+        text = Ext.htmlEncode(text);
+        if (warning) {
+            let icon = '<i class="fa fa-exclamation-triangle warning"></i>';
+            text += `<br>${icon} ${Ext.htmlEncode(warning)}`;
+        }
+        hint.setValue(text);
+        hint.setHidden(false);
     },
 
-    // offer the images of the attached Windows installation ISO as editions
-    loadIsoEditions: function (values) {
+    typeNames: {
+        windows: 'Windows',
+        kickstart: 'Kickstart',
+        ubuntu: 'Ubuntu',
+    },
+
+    // detect the attached installation ISO: select its installer if none was selected yet and
+    // offer the images of a Windows ISO as editions
+    detectIso: function (values) {
         let me = this;
 
         let isos = [];
@@ -140,10 +187,19 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
                 method: 'GET',
                 params: { volume: volid },
                 success: function (response) {
-                    let images = response.result.data.images ?? [];
-                    if (!images.length) {
+                    let info = response.result.data;
+                    // skip other ISOs, e.g. the VirtIO drivers
+                    if (!info || info.type === 'unknown') {
                         next();
-                    } else if (!me.destroyed) {
+                        return;
+                    }
+                    if (me.destroyed) {
+                        return;
+                    }
+                    me.isoInfo = info;
+
+                    let images = info.images ?? [];
+                    if (images.length) {
                         // the property string cannot hold ',', ';' or '=', select those by index
                         me.down('field[name=edition]').setStore(
                             images.map((image) =>
@@ -151,6 +207,18 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
                             ),
                         );
                     }
+
+                    // the default depends on the guest OS type only, e.g. it is kickstart for
+                    // an Ubuntu ISO
+                    let typeField = me.down('field[name=type]');
+                    if (
+                        info.installer &&
+                        typeField.getValue() === '__default__' &&
+                        me.effectiveType() !== info.installer
+                    ) {
+                        typeField.setValue(info.installer);
+                    }
+                    me.updateTypeFields();
                 },
                 failure: () => next(),
             });
@@ -176,6 +244,17 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
                 ['kickstart', 'Kickstart'],
                 ['ubuntu', 'Ubuntu'],
             ],
+            listeners: {
+                change: function (field) {
+                    field.up('inputpanel').updateTypeFields();
+                },
+            },
+        },
+        {
+            xtype: 'displayfield',
+            reference: 'isoHint',
+            submitValue: false,
+            hidden: true,
         },
         {
             xtype: 'proxmoxcheckbox',
