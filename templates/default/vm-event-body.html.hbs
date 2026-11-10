@@ -1,0 +1,15 @@
+<html>
+    <body>
+        VM {{vmid}} ({{name}}) on node '{{hostname}}' reported event '{{event}}'.<br/><br/>
+
+        {{#if details}}
+        Details:<br/>
+        <pre>
+{{details}}
+        </pre>
+        {{/if}}
+        {{#if screenshot}}
+        Screenshot (on node '{{hostname}}'): {{screenshot}}<br/>
+        {{/if}}
+    </body>
+</html>

@@ -11,6 +11,9 @@ NOTIFICATION_TEMPLATES=					\
 	default/package-updates-subject.txt.hbs		\
 	default/package-updates-body.txt.hbs		\
 	default/package-updates-body.html.hbs		\
+	default/vm-event-subject.txt.hbs		\
+	default/vm-event-body.txt.hbs			\
+	default/vm-event-body.html.hbs			\
 
 all:
 

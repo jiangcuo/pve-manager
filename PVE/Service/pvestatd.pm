@@ -332,6 +332,30 @@ sub update_qemu_status {
     PVE::ExtMetric::transactions_finish($transactions);
 
     PVE::PullMetric::update($pull_txn, 'qemu', $vmstatus, $ctime);
+
+    eval { broadcast_qemu_heartbeat(); };
+    syslog('err', "qemu heartbeat status error: $@") if $@;
+}
+
+# broadcast the per-VM guest state tracked by qmeventd (vmid => heartbeat)
+sub broadcast_qemu_heartbeat {
+    my $vms = eval {
+        require PVE::QemuServer::Events;
+        PVE::QemuServer::Events::query_status(2);
+    };
+    if ($@) {
+        # qmeventd not running or too old, clear stale values
+        PVE::Cluster::broadcast_node_kv("heartbeat", undef);
+        return;
+    }
+
+    my $map = {};
+    for my $vmid (keys %$vms) {
+        my $hb = $vms->{$vmid}->{heartbeat};
+        $map->{$vmid} = $hb if defined($hb);
+    }
+
+    PVE::Cluster::broadcast_node_kv("heartbeat", encode_json($map));
 }
 
 sub remove_stale_lxc_consoles {

@@ -437,7 +437,14 @@ __PACKAGE__->register_method({
                     type => 'boolean',
                     optional => 1,
                     default => 0,
-                }
+                },
+                heartbeat => {
+                    description => "Guest state reported by qmeventd: disabled, booting, ok,"
+                        . " lost, no-response, hang, crashed, paused or stopping."
+                        . " (for running type 'qemu')",
+                    type => 'string',
+                    optional => 1,
+                },
             },
         },
     },
@@ -488,6 +495,8 @@ __PACKAGE__->register_method({
         if (!$param->{type} || $param->{type} eq 'vm') {
             my $prop_list = [qw(lock tags uuid arch pxvditemplate snapshot)];
             my $props = PVE::Cluster::get_guest_config_properties($prop_list);
+            my $heartbeat_kv = PVE::Cluster::get_node_kv("heartbeat");
+            my $heartbeat = {};
 
             for my $vmid (sort keys %$idlist) {
 
@@ -550,6 +559,14 @@ __PACKAGE__->register_method({
 			$entry->{maxmem} = $vmconf->{memory} ;
 			$entry->{pxvditemplate} = $vmconf->{pxvditemplate} ;
 		}
+
+                if ($entry->{type} eq 'qemu' && $entry->{status} eq 'running') {
+                    my $node = $data->{node};
+                    $heartbeat->{$node} //= eval { decode_json($heartbeat_kv->{$node} // '{}') } // {};
+                    if (defined(my $hb = $heartbeat->{$node}->{$vmid})) {
+                        $entry->{heartbeat} = $hb;
+                    }
+                }
 
                 # get ha status
                 if (my $hatype = $hatypemap->{ $entry->{type} }) {
