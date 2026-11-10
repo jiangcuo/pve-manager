@@ -82,6 +82,7 @@ Ext.define(
                     {
                         xtype: 'button',
                         text: gettext('Download from URL'),
+                        hidden: me.useDownloadUrlButton === false,
                         disabled: !me.enableDownloadUrlButton,
                         handler: function () {
                             Ext.create('PVE.window.DownloadUrlToStorage', {

@@ -26,6 +26,57 @@ Ext.define('PVE.qemu.CreateWizard', {
 
     subject: gettext('Virtual Machine'),
 
+    // unattended installation: add the cloud-init drive that carries the installation file and
+    // boot from disk first, so the installer does not start again after the installation.
+    // Linux uses SCSI, Windows SATA, as Windows Setup has no VirtIO SCSI driver.
+    setupAutoinstall: function (values) {
+        if (!values.autoinstall) {
+            return;
+        }
+        let bus = PVE.Utils.is_windows(values.ostype) ? 'sata' : 'scsi';
+        let freeSlot = function () {
+            let slot;
+            PVE.Utils.forEachBus([bus], (type, id) => {
+                if (!values[type + id]) {
+                    slot = type + id;
+                    return false; // abort loop
+                }
+                return undefined;
+            });
+            return slot;
+        };
+
+        let disk, cdrom;
+        PVE.Utils.forEachBus(['ide', 'scsi', 'virtio', 'sata', 'nvme'], (type, id) => {
+            let confId = type + id;
+            if (!values[confId]) {
+                return undefined;
+            }
+            if (values[confId].match(/media=cdrom/)) {
+                if (confId !== 'ide0') {
+                    cdrom ??= confId;
+                }
+            } else {
+                disk ??= confId;
+            }
+            return undefined;
+        });
+
+        if (cdrom && !cdrom.startsWith(bus)) {
+            let slot = freeSlot();
+            values[slot] = values[cdrom];
+            delete values[cdrom];
+            cdrom = slot;
+        }
+
+        if (disk) {
+            let storage = values[disk].split(':')[0];
+            values[freeSlot()] = `${storage}:cloudinit`;
+        }
+
+        values.boot = `order=${[disk, cdrom].filter((id) => id).join(';')}`;
+    },
+
     // fot the special case that we have 2 cdrom drives
     //
     // emulates part of the backend bootorder logic, but includes all cdrom drives since the backend
@@ -33,24 +84,30 @@ Ext.define('PVE.qemu.CreateWizard', {
     calculateBootOrder: function (values) {
         // user selected windows + second cdrom
         if (values.ide0 && values.ide0.match(/media=cdrom/)) {
-            let disk;
-            PVE.Utils.forEachBus(['ide', 'scsi', 'virtio', 'sata','nvme'], (type, id) => {
+            let disk, cdrom;
+            PVE.Utils.forEachBus(['ide', 'scsi', 'virtio', 'sata', 'nvme'], (type, id) => {
                 let confId = type + id;
                 if (!values[confId]) {
                     return undefined;
                 }
                 if (values[confId].match(/media=cdrom/)) {
-                    return undefined;
+                    if (confId !== 'ide0') {
+                        cdrom ??= confId;
+                    }
+                } else {
+                    disk ??= confId;
                 }
-                disk = confId;
-                return false; // abort loop
+                return undefined;
             });
 
             let order = [];
             if (disk) {
                 order.push(disk);
             }
-            order.push('ide2', 'ide0'); // ide2 is the install ISO and should be first
+            if (cdrom) {
+                order.push(cdrom); // the install ISO, should be before the driver ISO
+            }
+            order.push('ide0');
             if (values.net0) {
                 order.push('net0');
             }
@@ -195,24 +252,39 @@ Ext.define('PVE.qemu.CreateWizard', {
         },
         {
             xtype: 'container',
-            layout: 'hbox',
-            defaults: {
-                flex: 1,
-                padding: '0 10',
-            },
+            layout: 'anchor',
+            // the unattended installation options do not fit without scrolling
+            scrollable: 'y',
             title: gettext('OS'),
             items: [
                 {
-                    xtype: 'pveQemuCDInputPanel',
-                    bind: {
-                        nodename: '{nodename}',
+                    xtype: 'container',
+                    layout: 'hbox',
+                    defaults: {
+                        flex: 1,
+                        padding: '0 10',
                     },
-                    confid: 'scsi2',
-                    insideWizard: true,
+                    items: [
+                        {
+                            xtype: 'pveQemuCDInputPanel',
+                            bind: {
+                                nodename: '{nodename}',
+                            },
+                            confid: 'scsi2',
+                            insideWizard: true,
+                        },
+                        {
+                            xtype: 'pveQemuOSTypePanel',
+                            insideWizard: true,
+                            bind: {
+                                nodename: '{nodename}',
+                            },
+                        },
+                    ],
                 },
                 {
-                    xtype: 'pveQemuOSTypePanel',
-                    insideWizard: true,
+                    xtype: 'pveQemuAutoinstallWizardPanel',
+                    padding: '0 10',
                     bind: {
                         nodename: '{nodename}',
                     },
@@ -273,6 +345,12 @@ Ext.define('PVE.qemu.CreateWizard', {
             ],
             dockedItems: [
                 {
+                    xtype: 'displayfield',
+                    reference: 'archWarning',
+                    dock: 'bottom',
+                    hidden: true,
+                },
+                {
                     xtype: 'proxmoxcheckbox',
                     name: 'start',
                     dock: 'bottom',
@@ -286,15 +364,33 @@ Ext.define('PVE.qemu.CreateWizard', {
                     var kv = wizard.getValues();
                     var data = [];
 
+                    wizard.setupAutoinstall(kv);
                     let boot = wizard.calculateBootOrder(kv);
                     if (boot) {
                         kv.boot = boot;
                     }
+                    if (kv.autoinstall) {
+                        panel.down('field[name=start]').setValue(true);
+                    }
+
+                    let warning = wizard
+                        .down('pveQemuAutoinstallWizardPanel')
+                        .getController().archWarning;
+                    let archWarning = panel.down('displayfield[reference=archWarning]');
+                    archWarning.setValue(
+                        warning
+                            ? `<i class="fa fa-exclamation-triangle warning"></i> ${Ext.htmlEncode(warning)}`
+                            : '',
+                    );
+                    archWarning.setHidden(!warning);
 
                     Ext.Object.each(kv, function (key, value) {
                         if (key === 'delete') {
                             // ignore
                             return;
+                        }
+                        if (key === 'cipassword' || key === 'cidomainpassword') {
+                            value = '**********';
                         }
                         data.push({ key: key, value: value });
                     });
@@ -320,6 +416,7 @@ Ext.define('PVE.qemu.CreateWizard', {
                     kv.name = PVE.Utils.guestNameToAscii(kv.name);
                 }
 
+                wizard.setupAutoinstall(kv);
                 let boot = wizard.calculateBootOrder(kv);
                 if (boot) {
                     kv.boot = boot;

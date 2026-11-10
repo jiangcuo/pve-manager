@@ -134,6 +134,10 @@ Ext.define('PVE.storage.Browser', {
                     itemId: 'contentSnippets',
                     content: 'snippets',
                     pluginType: plugin,
+                    enableUploadButton: !!caps.storage['Datastore.Allocate'],
+                    useUploadButton: true,
+                    useDownloadUrlButton: false,
+                    useDownloadButton: true,
                 });
             }
             if (contents.includes('import')) {

@@ -75,6 +75,18 @@ Ext.define('PVE.qemu.CloudInit', {
         '-',
         {
             xtype: 'button',
+            itemId: 'previewbtn',
+            text: gettext('Show Autoinstall'),
+            disabled: true,
+            handler: function () {
+                let view = this.up('grid');
+                Ext.create('PVE.qemu.AutoinstallPreview', {
+                    pveSelNode: view.pveSelNode,
+                });
+            },
+        },
+        {
+            xtype: 'button',
             itemId: 'savebtn',
             text: gettext('Regenerate Image'),
             handler: function () {
@@ -118,6 +130,12 @@ Ext.define('PVE.qemu.CloudInit', {
         let caps = Ext.state.Manager.get('GuiCap');
         let canRegenerateImage = !!caps.vms['VM.Config.Cloudinit'];
         me.down('#savebtn').setDisabled(!found || !canRegenerateImage);
+
+        let aiRecord = records.find((record) => record.data.key === 'autoinstall');
+        let aiValue = aiRecord ? (aiRecord.data.pending ?? aiRecord.data.value) : '';
+        let autoinstall = PVE.Parser.parsePropertyString(aiValue ?? '', 'enabled');
+        let autoinstallEnabled = PVE.Parser.parseBoolean(autoinstall?.enabled, false);
+        me.down('#previewbtn').setDisabled(!found || !autoinstallEnabled);
 
         me.setDisabled(!found);
         if (!found) {
@@ -268,6 +286,41 @@ Ext.define('PVE.qemu.CloudInit', {
                     }
                 },
                 defaultValue: '',
+            },
+            autoinstall: {
+                header: gettext('Autoinstall'),
+                iconCls: 'fa fa-magic',
+                defaultValue: '',
+                editor: caps_ci ? 'PVE.qemu.AutoinstallEdit' : undefined,
+                renderer: function (value) {
+                    let ai = PVE.Parser.parsePropertyString(value ?? '', 'enabled') ?? {};
+                    if (!PVE.Parser.parseBoolean(ai.enabled, false)) {
+                        return Proxmox.Utils.disabledText;
+                    }
+                    let text = [ai.type || Proxmox.Utils.defaultText];
+                    if (ai.file) {
+                        text.push(ai.file);
+                    }
+                    return Ext.String.htmlEncode(text.join(', '));
+                },
+            },
+            cidomain: {
+                header: gettext('Domain'),
+                iconCls: 'fa fa-sitemap',
+                defaultValue: '',
+                editor: caps_ci ? 'PVE.qemu.AutoinstallEdit' : undefined,
+                renderer: function (value) {
+                    return Ext.String.htmlEncode(value || Proxmox.Utils.noneText);
+                },
+            },
+            cidomainuser: {
+                visible: false,
+            },
+            cidomainpassword: {
+                visible: false,
+            },
+            cidomainou: {
+                visible: false,
             },
             ciupgrade: {
                 header: gettext('Upgrade packages'),
