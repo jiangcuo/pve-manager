@@ -767,6 +767,7 @@ __PACKAGE__->register_method({
     name => 'changelog',
     path => 'changelog',
     method => 'GET',
+    protected => 1,
     description => "Get package changelogs.",
     permissions => {
         check => ['perm', '/nodes/{node}', ['Sys.Modify']],
