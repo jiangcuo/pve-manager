@@ -50,13 +50,6 @@ Ext.define('PVE.node.Subscription', {
                 Ext.create('Proxmox.window.TaskProgress', {
                     autoShow: true,
                     upid: upid,
-                    taskDone: function (success) {
-                        if (success) {
-                            Proxmox.Utils.downloadAsFile(
-                                `/api2/json/nodes/${me.nodename}/report?upid=${encodeURIComponent(upid)}`,
-                            );
-                        }
-                    },
                 });
             },
         });
