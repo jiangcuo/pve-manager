@@ -25,6 +25,16 @@ my $prepare = sub {
         my $uid = getpwnam('www-data') || die "getpwnam failed - $!\n";
         chown($uid, $gid, $rundir);
     }
+
+    # Create the accept lock before the daemon drops privileges.
+    my $lock = "/var/lock/spiceproxy.lck";
+    my $gid = getgrnam('www-data') || die "getgrnam failed - $!\n";
+    my $uid = getpwnam('www-data') || die "getpwnam failed - $!\n";
+    if (open(my $fh, '>>', $lock)) {
+        close($fh);
+        chown($uid, $gid, $lock);
+        chmod(0644, $lock);
+    }
 };
 
 PVE::Service::spiceproxy->run_cli_handler(prepare => $prepare);

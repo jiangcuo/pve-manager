@@ -7,6 +7,7 @@ use POSIX;
 use File::stat ();
 use IO::File;
 use File::Basename;
+use Digest::SHA qw(sha1 sha1_hex);
 
 use LWP::UserAgent;
 
@@ -27,11 +28,17 @@ use PVE::API2Tools;
 use JSON;
 use PVE::JSONSchema qw(get_standard_option);
 
-use AptPkg::Cache;
-use AptPkg::PkgRecords;
-use AptPkg::System;
+my $have_aptpkg = eval {
+    require AptPkg::Cache;
+    require AptPkg::PkgRecords;
+    require AptPkg::System;
+    1;
+};
+my $have_apt_backend = $have_aptpkg && -x '/usr/bin/apt-get' && -e '/var/lib/dpkg/status';
+my $have_rpm_backend = -x '/usr/bin/rpm' && -x '/usr/bin/dnf';
 
 my $get_apt_cache = sub {
+    die "APT backend not available on this system\n" if !$have_apt_backend;
 
     my $apt_cache = AptPkg::Cache->new() || die "unable to initialize AptPkg::Cache\n";
 
@@ -119,6 +126,328 @@ my $assemble_pkginfo = sub {
     return $data;
 };
 
+my $rpm_format_evr = sub {
+    my ($epoch, $version, $release) = @_;
+
+    my $evr = $version;
+    $evr .= "-$release" if defined($release) && $release ne '';
+
+    return $evr if !defined($epoch) || $epoch eq '' || $epoch eq '0' || $epoch eq '(none)';
+
+    return "$epoch:$evr";
+};
+
+my $run_command_capture = sub {
+    my ($cmd, %param) = @_;
+
+    my $output = "";
+    my $rc = PVE::Tools::run_command(
+        $cmd,
+        %param,
+        outfunc => sub {
+            my ($line) = @_;
+            $output .= "$line\n";
+        },
+    );
+
+    return wantarray ? ($rc, $output) : $output;
+};
+
+my $rpm_installed_packages = sub {
+    my $output = $run_command_capture->([
+        'rpm',
+        '-qa',
+        '--qf',
+        '%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SUMMARY}\n',
+    ]);
+
+    my $installed = {};
+
+    for my $line (split(/\n/, $output)) {
+        next if $line !~ /\S/;
+
+        my ($name, $epoch, $version, $release, $arch, $summary) = split(/\t/, $line, 6);
+        next if !defined($name) || $name eq '';
+
+        my $res = {
+            Package => $name,
+            Title => $summary // $name,
+            Description => $summary // '',
+            Origin => 'rpm',
+            Section => 'rpm',
+            Arch => $arch // '',
+            Priority => 'optional',
+            Version => $rpm_format_evr->($epoch, $version, $release),
+            OldVersion => $rpm_format_evr->($epoch, $version, $release),
+            CurrentState => 'Installed',
+        };
+
+        push $installed->{$name}->@*, $res;
+    }
+
+    return $installed;
+};
+
+my $rpm_lookup_installed = sub {
+    my ($installed, $name, $arch) = @_;
+
+    my $pkgs = $installed->{$name} || return undef;
+    for my $pkg ($pkgs->@*) {
+        return $pkg if defined($arch) && $pkg->{Arch} eq $arch;
+    }
+
+    return $pkgs->[0];
+};
+
+my $list_available_rpm_update = sub {
+    my $installed = $rpm_installed_packages->();
+    my $output = $run_command_capture->([
+        'dnf',
+        '-q',
+        'repoquery',
+        '--upgrades',
+        '--qf',
+        '%{name}\t%{epoch}\t%{version}\t%{release}\t%{arch}\t%{repoid}\t%{summary}',
+    ]);
+
+    my $pkglist = [];
+
+    for my $line (split(/\n/, $output)) {
+        next if $line !~ /\S/;
+
+        my ($name, $epoch, $version, $release, $arch, $repoid, $summary) = split(/\t/, $line, 7);
+        next if !defined($name) || $name eq '';
+
+        my $current = $rpm_lookup_installed->($installed, $name, $arch);
+        my $candidate = $rpm_format_evr->($epoch, $version, $release);
+
+        push @$pkglist, {
+            Package => $name,
+            Title => $summary // $name,
+            Description => $summary // '',
+            Origin => $repoid // 'rpm',
+            Section => 'rpm',
+            Arch => $arch // '',
+            Priority => 'optional',
+            Version => $candidate,
+            OldVersion => $current ? $current->{OldVersion} : 'unknown',
+        };
+    }
+
+    return $pkglist;
+};
+
+my $rpm_db_mtime = sub {
+    my $mtime = 0;
+
+    for my $path (
+        '/var/lib/rpm/Packages.db',
+        '/var/lib/rpm/Index.db',
+        '/usr/lib/sysimage/rpm/rpmdb.sqlite',
+        '/usr/lib/sysimage/rpm/Packages.db',
+        '/usr/lib/sysimage/rpm/Index.db',
+    ) {
+        if (my $st = File::stat::stat($path)) {
+            $mtime = $st->mtime if $st->mtime > $mtime;
+        }
+    }
+
+    return $mtime;
+};
+
+my $dnf_cache_mtime = sub {
+    my $mtime = 0;
+
+    for my $path ('/var/cache/dnf', '/var/lib/dnf') {
+        if (my $st = File::stat::stat($path)) {
+            $mtime = $st->mtime if $st->mtime > $mtime;
+        }
+    }
+
+    return $mtime;
+};
+
+my $rpm_repo_files = sub {
+    return [sort grep { -f $_ } glob('/etc/yum.repos.d/*.repo')];
+};
+
+my $parse_rpm_repo_file = sub {
+    my ($path, $content) = @_;
+
+    my $repos = [];
+    my $current;
+
+    my $finish = sub {
+        return if !$current;
+
+        my $uri = $current->{baseurl} // $current->{metalink} // $current->{mirrorlist} // '';
+        my @uris = grep { $_ ne '' } split(/\s+/, $uri);
+        my $enabled = !defined($current->{enabled}) || $current->{enabled} =~ m/^(?:1|yes|true)$/i;
+
+        my $repo = {
+            Types => ['deb'],
+            URIs => \@uris,
+            Suites => [$current->{id}],
+            FileType => 'list',
+            Enabled => $enabled ? JSON::true : JSON::false,
+            Comment => $current->{name} // $current->{id},
+        };
+
+        my @options;
+        for my $key (qw(gpgcheck repo_gpgcheck module_hotfixes priority cost)) {
+            push @options, { Key => $key, Values => [$current->{$key}] } if defined($current->{$key});
+        }
+        $repo->{Options} = \@options if scalar(@options);
+
+        push @$repos, $repo;
+    };
+
+    for my $line (split(/\n/, $content)) {
+        $line =~ s/^\s+|\s+$//g;
+        next if $line eq '' || $line =~ /^#/ || $line =~ /^;/;
+
+        if ($line =~ /^\[([^\]]+)\]$/) {
+            $finish->();
+            $current = { id => $1 };
+            next;
+        }
+
+        next if !$current;
+        next if $line !~ /^([^=]+?)\s*=\s*(.*)$/;
+
+        my ($key, $value) = (lc($1), $2);
+        $key =~ s/^\s+|\s+$//g;
+        $current->{$key} = $value;
+    }
+
+    $finish->();
+
+    return $repos;
+};
+
+my $rpm_repositories = sub {
+    my $files = [];
+    my $errors = [];
+    my $infos = [];
+    my @digests;
+
+    for my $path ($rpm_repo_files->()->@*) {
+        my $content = eval { PVE::Tools::file_get_contents($path) };
+        if (my $err = $@) {
+            push @$errors, { path => $path, error => "$err" };
+            next;
+        }
+
+        my $digest = sha1($content);
+        push @digests, $digest;
+
+        my $repos = eval { $parse_rpm_repo_file->($path, $content) };
+        if (my $err = $@) {
+            push @$errors, { path => $path, error => "$err" };
+            next;
+        }
+
+        for my $i (0 .. $#$repos) {
+            my $repo = $repos->[$i];
+            my $origin = 'RPM';
+            my $uri = join(' ', $repo->{URIs}->@*);
+            if ($uri =~ /(?:pxvirt|lierfang)/i || ($repo->{Comment} // '') =~ /(?:pxvirt|lierfang)/i) {
+                $origin = 'Lierfang';
+            } elsif ($uri =~ /openeuler/i || ($repo->{Comment} // '') =~ /openeuler/i) {
+                $origin = 'openEuler';
+            }
+
+            push @$infos, {
+                path => $path,
+                index => "$i",
+                kind => 'origin',
+                message => $origin,
+            };
+        }
+
+        push @$files, {
+            path => $path,
+            'file-type' => 'list',
+            repositories => $repos,
+            digest => [unpack('C*', $digest)],
+        };
+    }
+
+    return {
+        files => $files,
+        errors => $errors,
+        digest => sha1_hex(join('', @digests)),
+        infos => $infos,
+        'standard-repos' => [],
+    };
+};
+
+my $change_rpm_repository = sub {
+    my ($path, $index, $enabled) = @_;
+
+    die "invalid repository path\n" if $path !~ m|^/etc/yum\.repos\.d/[^/]+\.repo$|;
+    die "repository file '$path' does not exist\n" if !-f $path;
+
+    my $content = PVE::Tools::file_get_contents($path);
+    my @lines = split(/\n/, $content, -1);
+    pop @lines if scalar(@lines) && $lines[-1] eq '';
+
+    my @sections;
+    for (my $i = 0; $i < @lines; $i++) {
+        if ($lines[$i] =~ /^\s*\[([^\]]+)\]\s*$/) {
+            push @sections, { start => $i, id => $1 };
+            $sections[-2]->{end} = $i - 1 if @sections > 1;
+        }
+    }
+    $sections[-1]->{end} = $#lines if @sections;
+
+    my $section = $sections[$index] // die "repository index '$index' not found in '$path'\n";
+    my $wanted = defined($enabled) && int($enabled) ? 1 : 0;
+    my $done = 0;
+
+    for my $i (($section->{start} + 1) .. $section->{end}) {
+        if ($lines[$i] =~ /^\s*enabled\s*=/i) {
+            $lines[$i] = "enabled=$wanted";
+            $done = 1;
+            last;
+        }
+    }
+
+    splice(@lines, $section->{start} + 1, 0, "enabled=$wanted") if !$done;
+
+    PVE::Tools::file_set_contents($path, join("\n", @lines) . "\n");
+};
+
+my $rpm_package_versions = sub {
+    my ($list, $installed) = @_;
+
+    $installed //= $rpm_installed_packages->();
+
+    my (undef, undef, $kernel_release) = POSIX::uname();
+    my $pvever = PVE::pvecfg::version_text();
+    my $seen = {};
+    my $pkglist = [];
+
+    for my $pkgname (@$list) {
+        next if $seen->{$pkgname}++;
+
+        my $res = $rpm_lookup_installed->($installed, $pkgname, undef);
+        next if !$res;
+
+        $res = { $res->%* };
+
+        if ($pkgname eq 'pve-manager') {
+            $res->{ManagerVersion} = $pvever;
+        } elsif ($pkgname eq 'proxmox-ve') {
+            $res->{RunningKernel} = $kernel_release;
+        }
+
+        push @$pkglist, $res;
+    }
+
+    return $pkglist;
+};
+
 # we try to cache results
 my $pve_pkgstatus_fn = "/var/lib/pve-manager/pkgupdates";
 my $read_cached_pkgstatus = sub {
@@ -136,6 +465,22 @@ my $update_pve_pkgstatus = sub {
     my $notify_status = { map { $_->{Package} => $_->{NotifyStatus} } $oldpkglist->@* };
 
     my $pkglist = [];
+
+    if (!$have_apt_backend) {
+        die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
+
+        $pkglist = $list_available_rpm_update->();
+
+        foreach my $pi (@$pkglist) {
+            if (my $ns = $notify_status->{ $pi->{Package} }) {
+                $pi->{NotifyStatus} = $ns if $ns eq $pi->{Version};
+            }
+        }
+
+        PVE::Tools::file_set_contents($pve_pkgstatus_fn, encode_json($pkglist));
+
+        return $pkglist;
+    }
 
     my $cache = &$get_apt_cache();
     my $policy = $cache->policy;
@@ -170,7 +515,7 @@ my $update_pve_pkgstatus = sub {
                 }
                 $req = $d->{TargetPkg} if !$req;
 
-                if (!($d->{CompType} & AptPkg::Dep::Or)) {
+                if (!($d->{CompType} & ($have_aptpkg ? AptPkg::Dep::Or() : 0))) {
                     if (!$found && $req) { # New required Package
                         my $tpname = $req->{Name};
                         my $tpinfo = $pkgrecords->lookup($tpname);
@@ -226,12 +571,25 @@ __PACKAGE__->register_method({
         my ($param) = @_;
 
         if (my $st1 = File::stat::stat($pve_pkgstatus_fn)) {
-            my $st2 = File::stat::stat("/var/cache/apt/pkgcache.bin");
-            my $st3 = File::stat::stat("/var/lib/dpkg/status");
+            if (!$have_apt_backend) {
+                die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
 
-            if ($st2 && $st3 && $st2->mtime <= $st1->mtime && $st3->mtime <= $st1->mtime) {
-                if (my $data = &$read_cached_pkgstatus()) {
-                    return $data;
+                my $rpm_mtime = $rpm_db_mtime->();
+                my $dnf_mtime = $dnf_cache_mtime->();
+
+                if ($rpm_mtime <= $st1->mtime && $dnf_mtime <= $st1->mtime) {
+                    if (my $data = &$read_cached_pkgstatus()) {
+                        return $data;
+                    }
+                }
+            } else {
+                my $st2 = File::stat::stat("/var/cache/apt/pkgcache.bin");
+                my $st3 = File::stat::stat("/var/lib/dpkg/status");
+
+                if ($st2 && $st3 && $st2->mtime <= $st1->mtime && $st3->mtime <= $st1->mtime) {
+                    if (my $data = &$read_cached_pkgstatus()) {
+                        return $data;
+                    }
                 }
             }
         }
@@ -286,23 +644,56 @@ __PACKAGE__->register_method({
         my $realcmd = sub {
             my $upid = shift;
 
-            # setup proxy for apt
+            if (!$have_apt_backend) {
+                die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
 
-            my $aptconf = "// no proxy configured\n";
-            if ($dcconf->{http_proxy}) {
-                $aptconf = "Acquire::http::Proxy \"$dcconf->{http_proxy}\";\n";
-            }
-            my $aptcfn = "/etc/apt/apt.conf.d/76pveproxy";
-            PVE::Tools::file_set_contents($aptcfn, $aptconf);
+                if ($dcconf->{http_proxy}) {
+                    local $ENV{http_proxy} = $dcconf->{http_proxy};
+                    local $ENV{https_proxy} = $dcconf->{http_proxy};
 
-            my $cmd = ['apt-get', 'update'];
+                    print "starting dnf makecache --refresh\n" if !$param->{quiet};
 
-            print "starting apt-get update\n" if !$param->{quiet};
+                    if ($param->{quiet}) {
+                        PVE::Tools::run_command(
+                            ['dnf', '-y', 'makecache', '--refresh'],
+                            outfunc => sub { },
+                            errfunc => sub { },
+                        );
+                    } else {
+                        PVE::Tools::run_command(['dnf', '-y', 'makecache', '--refresh']);
+                    }
+                } else {
+                    print "starting dnf makecache --refresh\n" if !$param->{quiet};
 
-            if ($param->{quiet}) {
-                PVE::Tools::run_command($cmd, outfunc => sub { }, errfunc => sub { });
+                    if ($param->{quiet}) {
+                        PVE::Tools::run_command(
+                            ['dnf', '-y', 'makecache', '--refresh'],
+                            outfunc => sub { },
+                            errfunc => sub { },
+                        );
+                    } else {
+                        PVE::Tools::run_command(['dnf', '-y', 'makecache', '--refresh']);
+                    }
+                }
             } else {
-                PVE::Tools::run_command($cmd);
+                # setup proxy for apt
+
+                my $aptconf = "// no proxy configured\n";
+                if ($dcconf->{http_proxy}) {
+                    $aptconf = "Acquire::http::Proxy \"$dcconf->{http_proxy}\";\n";
+                }
+                my $aptcfn = "/etc/apt/apt.conf.d/76pveproxy";
+                PVE::Tools::file_set_contents($aptcfn, $aptconf);
+
+                my $cmd = ['apt-get', 'update'];
+
+                print "starting apt-get update\n" if !$param->{quiet};
+
+                if ($param->{quiet}) {
+                    PVE::Tools::run_command($cmd, outfunc => sub { }, errfunc => sub { });
+                } else {
+                    PVE::Tools::run_command($cmd);
+                }
             }
 
             my $pkglist = &$update_pve_pkgstatus();
@@ -405,11 +796,24 @@ __PACKAGE__->register_method({
 
         my $pkgname = $param->{name};
 
-        my $cmd = ['apt-get', 'changelog', '-qq', '--'];
-        if (my $version = $param->{version}) {
-            push @$cmd, "$pkgname=$version";
+        my $cmd;
+        if (!$have_apt_backend) {
+            die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
+
+            $cmd = ['dnf', '-q', 'repoquery', '--changelogs'];
+            if (my $version = $param->{version}) {
+                my $pkgquery = $version =~ /^[^-]+-\S+$/ ? "$pkgname-$version" : $pkgname;
+                push @$cmd, $pkgquery;
+            } else {
+                push @$cmd, $pkgname;
+            }
         } else {
-            push @$cmd, "$pkgname";
+            $cmd = ['apt-get', 'changelog', '-qq', '--'];
+            if (my $version = $param->{version}) {
+                push @$cmd, "$pkgname=$version";
+            } else {
+                push @$cmd, "$pkgname";
+            }
         }
 
         my $output = "";
@@ -627,6 +1031,11 @@ __PACKAGE__->register_method({
     code => sub {
         my ($param) = @_;
 
+        if (!$have_apt_backend) {
+            die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
+            return $rpm_repositories->();
+        }
+
         return Proxmox::RS::APT::Repositories::repositories("pve");
     },
 });
@@ -662,6 +1071,9 @@ __PACKAGE__->register_method({
     },
     code => sub {
         my ($param) = @_;
+
+        die "adding standard APT repositories is not supported on RPM systems\n"
+            if !$have_apt_backend;
 
         Proxmox::RS::APT::Repositories::add_repository(
             $param->{handle}, "pve", $param->{digest},
@@ -716,6 +1128,13 @@ __PACKAGE__->register_method({
         my $enabled = $param->{enabled};
         $options->{enabled} = int($enabled) if defined($enabled);
 
+        if (!$have_apt_backend) {
+            die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
+
+            $change_rpm_repository->($param->{path}, int($param->{index}), $enabled);
+            return;
+        }
+
         Proxmox::RS::APT::Repositories::change_repository(
             $param->{path},
             int($param->{index}),
@@ -750,24 +1169,32 @@ __PACKAGE__->register_method({
     code => sub {
         my ($param) = @_;
 
-        my $cache = &$get_apt_cache();
-        my $policy = $cache->policy;
-        my $pkgrecords = $cache->packages();
-
         # order most important things first
         my @list = qw(proxmox-ve pve-manager);
 
-        my $aptver = $AptPkg::System::_system->versioning();
-        my $byver = sub {
-            $aptver->compare(
-                $cache->{$b}->{CurrentVer}->{VerStr},
-                $cache->{$a}->{CurrentVer}->{VerStr},
-            );
-        };
-        push @list,
-            sort $byver
-            grep { /^(?:pve|proxmox)-kernel-/ && $cache->{$_}->{CurrentState} eq 'Installed' }
-            keys %$cache;
+        my $installed;
+        if (!$have_apt_backend) {
+            die "neither APT nor RPM package backend is available\n" if !$have_rpm_backend;
+
+            $installed = $rpm_installed_packages->();
+            push @list,
+                sort
+                grep { /^(?:pve|proxmox)-kernel-/ }
+                keys $installed->%*;
+        } else {
+            my $cache = &$get_apt_cache();
+            my $aptver = $AptPkg::System::_system->versioning();
+            my $byver = sub {
+                $aptver->compare(
+                    $cache->{$b}->{CurrentVer}->{VerStr},
+                    $cache->{$a}->{CurrentVer}->{VerStr},
+                );
+            };
+            push @list,
+                sort $byver
+                grep { /^(?:pve|proxmox)-kernel-/ && $cache->{$_}->{CurrentState} eq 'Installed' }
+                keys %$cache;
+        }
 
         my @opt_pack = qw(
             amd64-microcode
@@ -841,6 +1268,14 @@ __PACKAGE__->register_method({
 
         # add the rest ordered by name, easier to find for humans
         push @list, (sort @pkgs, @opt_pack);
+
+        if (!$have_apt_backend) {
+            return $rpm_package_versions->(\@list, $installed);
+        }
+
+        my $cache = &$get_apt_cache();
+        my $policy = $cache->policy;
+        my $pkgrecords = $cache->packages();
 
         my (undef, undef, $kernel_release) = POSIX::uname();
         my $pvever = PVE::pvecfg::version_text();
