@@ -85,7 +85,10 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         }
 
         me.vmOstype = values.ostype;
-        me.isoInfo = undefined;
+        me.loadedType = data.type;
+        me.autoSelectedType = undefined;
+        me.isos = undefined;
+        me.iso = undefined;
 
         if (ai.file) {
             let storage = ai.file.split(':')[0];
@@ -130,13 +133,24 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
 
         // show what was detected on the attached installation ISO
         let hint = me.lookup('isoHint');
-        let info = me.isoInfo;
-        if (!info) {
-            hint.setHidden(true);
+        let icon = '<i class="fa fa-exclamation-triangle warning"></i>';
+        if (!me.isos) {
+            hint.setHidden(true); // still detecting, or the detection is not available
             return;
         }
+        if (!me.iso) {
+            let text = gettext('No installation ISO detected, attach one as CD/DVD drive.');
+            hint.setValue(`${icon} ${Ext.htmlEncode(text)}`);
+            hint.setHidden(false);
+            return;
+        }
+        let info = me.iso.info;
         let name = [info.name, info.version, info.arch].filter((v) => v).join(' ');
-        let text = Ext.String.format(gettext('Detected on the ISO: {0}'), name || info.type);
+        let text = Ext.String.format(
+            gettext('Detected on {0}: {1}'),
+            `${me.iso.key} (${me.iso.volid})`,
+            name || info.type,
+        );
         let warning;
         if (!info.installer) {
             warning = gettext('The unattended installation does not support this ISO.');
@@ -148,7 +162,6 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         }
         text = Ext.htmlEncode(text);
         if (warning) {
-            let icon = '<i class="fa fa-exclamation-triangle warning"></i>';
             text += `<br>${icon} ${Ext.htmlEncode(warning)}`;
         }
         hint.setValue(text);
@@ -161,69 +174,103 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         ubuntu: 'Ubuntu',
     },
 
-    // detect the attached installation ISO: select its installer if none was selected yet and
-    // offer the images of a Windows ISO as editions
-    detectIso: function (values) {
+    // detect all attached ISOs, the installation ISOs are offered for selection if there are
+    // more than one, in boot order, as the first one is the one that is booted
+    detectIso: async function (values) {
         let me = this;
 
-        let isos = [];
+        let order = (values.boot ?? '').match(/(?:^|,)order=([^,]*)/)?.[1]?.split(';') ?? [];
+        let rank = (key) => (order.includes(key) ? order.indexOf(key) : order.length);
+
+        let drives = [];
         for (const [key, value] of Object.entries(values)) {
             if (!/^(?:ide|sata|scsi)\d+$/.test(key)) {
                 continue;
             }
             let drive = PVE.Parser.parseQemuDrive(key, value);
             if (drive?.media === 'cdrom' && /^[^:]+:iso\/.+\.iso$/i.test(drive.file)) {
-                isos.push(drive.file);
+                drives.push({ key, volid: drive.file });
             }
         }
+        drives.sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key));
 
-        let next = function () {
-            let volid = isos.shift();
-            if (!volid || me.destroyed) {
-                return;
-            }
-            Proxmox.Utils.API2Request({
-                url: `/nodes/${me.nodename}/storage/${volid.split(':')[0]}/iso-info`,
-                method: 'GET',
-                params: { volume: volid },
-                success: function (response) {
-                    let info = response.result.data;
-                    // skip other ISOs, e.g. the VirtIO drivers
-                    if (!info || info.type === 'unknown') {
-                        next();
-                        return;
-                    }
-                    if (me.destroyed) {
-                        return;
-                    }
-                    me.isoInfo = info;
+        let results = await Promise.all(
+            drives.map(async (drive) => {
+                try {
+                    let { result } = await Proxmox.Async.api2({
+                        url: `/nodes/${me.nodename}/storage/${drive.volid.split(':')[0]}/iso-info`,
+                        method: 'GET',
+                        params: { volume: drive.volid },
+                    });
+                    return { ...drive, info: result.data };
+                } catch (_error) {
+                    return undefined;
+                }
+            }),
+        );
+        if (me.destroyed) {
+            return;
+        }
 
-                    let images = info.images ?? [];
-                    if (images.length) {
-                        // the property string cannot hold ',', ';' or '=', select those by index
-                        me.down('field[name=edition]').setStore(
-                            images.map((image) =>
-                                /[,;=]/.test(image.name) ? `${image.index}` : image.name,
-                            ),
-                        );
-                    }
+        if (drives.length && results.every((iso) => !iso)) {
+            return; // the detection is not available, e.g. pxvirt-isoinfo is missing
+        }
+        // skip other ISOs, e.g. the VirtIO drivers
+        me.isos = results.filter((iso) => iso?.info && iso.info.type !== 'unknown');
 
-                    // the default depends on the guest OS type only, e.g. it is kickstart for
-                    // an Ubuntu ISO
-                    let typeField = me.down('field[name=type]');
-                    if (
-                        info.installer &&
-                        typeField.getValue() === '__default__' &&
-                        me.effectiveType() !== info.installer
-                    ) {
-                        typeField.setValue(info.installer);
-                    }
-                    me.updateTypeFields();
-                },
-                failure: () => next(),
-            });
-        };
-        next();
+        let selector = me.lookup('isoDevice');
+        selector.getStore().setData(
+            me.isos.map((iso) => ({ key: iso.key, text: `${iso.key}: ${iso.volid}` })),
+        );
+        selector.setHidden(me.isos.length < 2);
+        if (me.isos.length) {
+            selector.setValue(me.isos[0].key); // applies it with the change listener
+        } else {
+            me.applyIso(undefined);
+        }
+    },
+
+    // offer the images of a Windows ISO as editions and select the installer of the ISO
+    applyIso: function (key) {
+        let me = this;
+
+        me.iso = me.isos?.find((iso) => iso.key === key);
+        let info = me.iso?.info ?? {};
+
+        // the property string cannot hold ',', ';' or '=', select those by index
+        let names = (info.images ?? []).map((image) =>
+            /[,;=]/.test(image.name) ? `${image.index}` : image.name,
+        );
+        me.down('field[name=edition]').setStore(
+            names.length ? names : PVE.Utils.windows_editions(),
+        );
+
+        me.updateAutoType();
+        me.updateTypeFields();
+    },
+
+    // select the installer of the ISO if none was selected yet, only with the unattended
+    // installation enabled, so that just opening the window does not change the config
+    updateAutoType: function () {
+        let me = this;
+        let typeField = me.down('field[name=type]');
+        let installer = me.iso?.info?.installer;
+
+        // undo the installer selected before, e.g. for another ISO
+        if (me.autoSelectedType && typeField.getValue() === me.autoSelectedType) {
+            typeField.setValue(me.loadedType);
+            me.autoSelectedType = undefined;
+        }
+        // the default depends on the guest OS type only, e.g. it is kickstart for an Ubuntu ISO
+        if (
+            me.down('field[name=enabled]').getValue() &&
+            installer &&
+            typeField.getValue() === '__default__' &&
+            me.effectiveType() !== installer
+        ) {
+            typeField.setValue(installer);
+            me.autoSelectedType = installer;
+        }
     },
 
     column1: [
@@ -232,6 +279,11 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             name: 'enabled',
             fieldLabel: gettext('Enabled'),
             uncheckedValue: 0,
+            listeners: {
+                change: function (field) {
+                    field.up('inputpanel').updateAutoType();
+                },
+            },
         },
         {
             xtype: 'proxmoxKVComboBox',
@@ -247,6 +299,26 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             listeners: {
                 change: function (field) {
                     field.up('inputpanel').updateTypeFields();
+                },
+            },
+        },
+        {
+            xtype: 'combobox',
+            reference: 'isoDevice',
+            isFormField: false,
+            fieldLabel: gettext('ISO'),
+            hidden: true,
+            editable: false,
+            queryMode: 'local',
+            valueField: 'key',
+            displayField: 'text',
+            store: {
+                fields: ['key', 'text'],
+                data: [],
+            },
+            listeners: {
+                change: function (field, value) {
+                    field.up('inputpanel').applyIso(value);
                 },
             },
         },
