@@ -779,7 +779,7 @@ __PACKAGE__->register_method({
             node => get_standard_option('pve-node'),
             name => {
                 description => "Package name.",
-                pattern => qr/[a-z0-9][-+.a-z0-9:]+/,
+                pattern => qr/[a-zA-Z0-9][-+._a-zA-Z0-9:]+/,
                 type => 'string',
             },
             version => {
