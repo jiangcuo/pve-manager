@@ -73,8 +73,13 @@ sub get_service_list {
 
     return $static_service_list if $static_service_list;
 
+    # the raft cluster backend does not use corosync
+    my $backend =
+        PVE::Cluster->can('get_cluster_backend') ? PVE::Cluster::get_cluster_backend() : undef;
+
     my $list = {};
     foreach my $name (@$service_name_list) {
+        next if $name eq 'corosync' && ($backend // '') eq 'raft';
         my $ss = eval { $get_full_service_state->($name) };
         warn $@ if $@;
         next if !$ss;

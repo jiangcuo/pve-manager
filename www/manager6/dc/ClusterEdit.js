@@ -25,6 +25,32 @@ Ext.define('PVE.ClusterCreateWindow', {
                 name: 'clustername',
             },
             {
+                xtype: 'proxmoxKVComboBox',
+                fieldLabel: gettext('Backend'),
+                name: 'backend',
+                value: 'corosync',
+                comboItems: [
+                    ['corosync', 'Corosync'],
+                    ['raft', 'Raft'],
+                ],
+                listeners: {
+                    change: function (field, value) {
+                        // raft nodes use a single address, redundancy comes from a bond
+                        let editor = field.up('inputpanel').down('pveCorosyncLinkEditor');
+                        let raft = value === 'raft';
+                        editor.getViewModel().set('maxLinkCount', raft ? 1 : 8);
+                        editor.setInfoText(
+                            raft
+                                ? gettext('Raft uses one address per node, use a bond for redundancy.')
+                                : gettext(
+                                      'Multiple links are used as failover, lower numbers have higher priority.',
+                                  ),
+                        );
+                        editor.setDefaultLinks();
+                    },
+                },
+            },
+            {
                 xtype: 'fieldcontainer',
                 fieldLabel: gettext('Cluster Network'),
                 items: [

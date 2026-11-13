@@ -294,6 +294,18 @@ sub check_storage_health {
 sub check_cluster_corosync {
     print_header("CHECKING CLUSTER HEALTH/SETTINGS");
 
+    my $backend =
+        PVE::Cluster->can('get_cluster_backend') ? PVE::Cluster::get_cluster_backend() : undef;
+    if (($backend // '') eq 'raft') {
+        $log_systemd_unit_state->('pve-cluster.service');
+        if (PVE::Cluster::check_cfs_quorum(1)) {
+            log_pass("Cluster Filesystem is quorate (raft backend).");
+        } else {
+            log_fail("Cluster Filesystem readonly, lost quorum?!");
+        }
+        return;
+    }
+
     if (!PVE::Corosync::check_conf_exists(1)) {
         log_skip("standalone node.");
         return;

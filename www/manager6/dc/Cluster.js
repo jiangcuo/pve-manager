@@ -36,6 +36,7 @@ Ext.define('PVE.ClusterAdministration', {
         parent: null,
         data: {
             totem: {},
+            backend: '',
             nodelist: [],
             preferred_node: {
                 name: '',
@@ -89,6 +90,7 @@ Ext.define('PVE.ClusterAdministration', {
                         return;
                     }
                     vm.set('totem', data.totem);
+                    vm.set('backend', data.backend === 'raft' ? 'Raft' : 'Corosync');
                     vm.set('isInCluster', !!data.totem.cluster_name);
                     vm.set('nodelist', data.nodelist);
 
@@ -193,6 +195,15 @@ Ext.define('PVE.ClusterAdministration', {
                     fieldLabel: gettext('Config Version'),
                     bind: {
                         value: '{totem.config_version}',
+                        hidden: '{!isInCluster}',
+                    },
+                    flex: 1,
+                },
+                {
+                    xtype: 'displayfield',
+                    fieldLabel: gettext('Backend'),
+                    bind: {
+                        value: '{backend}',
                         hidden: '{!isInCluster}',
                     },
                     flex: 1,
