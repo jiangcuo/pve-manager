@@ -109,12 +109,6 @@ Ext.define('PVE.qemu.CDInputPanel', {
                     submitValue: false,
                     hidden: true,
                 },
-                {
-                    xtype: 'proxmoxcheckbox',
-                    name: 'autoinstall_enabled',
-                    submitValue: false,
-                    boxLabel: gettext('Unattended installation'),
-                },
             );
         }
 

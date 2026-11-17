@@ -1,4 +1,4 @@
-// unattended installation in the create wizard, the optional fields are advanced options
+// unattended installation in the create wizard, part of the advanced options of the OS tab
 Ext.define('PVE.qemu.AutoinstallWizardPanel', {
     extend: 'Proxmox.panel.InputPanel',
     alias: 'widget.pveQemuAutoinstallWizardPanel',
@@ -9,6 +9,9 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         xclass: 'Ext.app.ViewController',
 
         control: {
+            'checkbox[reference=enabled]': {
+                change: 'update',
+            },
             'field[name=autoinstall_type]': {
                 change: 'update',
             },
@@ -36,7 +39,6 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
 
             let iso = wizard.down('pveQemuCDInputPanel pveIsoSelector');
             iso.on('change', me.onIsoChange, me);
-            me.enabledField().on('change', me.onEnabledChange, me);
             for (const name of ['osbase', 'ostype']) {
                 wizard.down(`pveQemuOSTypePanel field[name=${name}]`).on('change', me.update, me);
             }
@@ -46,8 +48,12 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             me.update();
         },
 
-        enabledField: function () {
-            return this.wizard.down('pveQemuCDInputPanel field[name=autoinstall_enabled]');
+        // the unattended installation is only used with the advanced options shown
+        isEnabled: function () {
+            let enabled = this.lookup('enabled');
+            return (
+                !!this.getView().advancedVisible && !enabled.isDisabled() && !!enabled.getValue()
+            );
         },
 
         ostype: function () {
@@ -128,17 +134,12 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             me.update();
         },
 
-        onEnabledChange: function () {
-            this.update();
-        },
-
         onStorageChange: function (field, value) {
             this.lookup('file').setStorage(value);
         },
 
         update: function () {
             let me = this;
-            let view = me.getView();
             if (!me.wizard) {
                 return;
             }
@@ -156,20 +157,17 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             if (info && info.type !== 'unknown' && !info.installer) {
                 supported = false; // detected an OS without unattended installation support
             }
-            let enabledField = me.enabledField();
+            let enabledField = me.lookup('enabled');
             if (!supported) {
                 enabledField.setValue(false);
             }
-            enabledField.setHidden(!supported);
+            enabledField.setDisabled(!supported);
+            me.lookup('unsupportedHint').setHidden(supported);
 
-            let enabled = supported && !!enabledField.getValue();
+            let enabled = me.isEnabled();
             let custom = enabled && !!me.lookup('useCustom').getValue();
-            // the domain fields are required advanced fields, which must not block the wizard
-            // while hidden, so only join the domain with the advanced options shown
-            let join =
-                enabled && isWindows && view.advancedVisible && !!me.lookup('join').getValue();
+            let join = enabled && isWindows && !!me.lookup('join').getValue();
 
-            view.setHidden(!enabled);
             let show = (reference, visible) => {
                 let field = me.lookup(reference);
                 field.setHidden(!visible);
@@ -180,7 +178,6 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             me.lookup('typeHint').setHidden(!enabled || isWindows || detected);
             show('user', enabled);
             show('password', enabled);
-            show('passwordConfirm', enabled);
             show('timezone', enabled);
             show('useCustom', enabled);
             show('storage', custom);
@@ -193,13 +190,6 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             show('domainUser', join);
             show('domainPassword', join);
             show('domainOU', join);
-
-            // the VirtIO drivers are added to the unattended installation
-            let secondCD = me.wizard.down('pveQemuOSTypePanel checkbox[reference=enableSecondCD]');
-            if (enabled) {
-                secondCD.setValue(false);
-            }
-            secondCD.setHidden(enabled || !isWindows);
 
             me.updateArchWarning();
         },
@@ -257,7 +247,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
     },
 
     onGetValues: function (values) {
-        if (!this.getController().enabledField()?.getValue()) {
+        if (!this.getController().isEnabled()) {
             return {};
         }
 
@@ -301,11 +291,27 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         return params;
     },
 
-    // the required options are regular options, so that they cannot end up hidden behind the
-    // advanced checkbox and block the wizard
-    column1: [
+    // everything is an advanced option, the regular part of the panel stays empty
+    items: [],
+
+    advancedColumn1: [
+        {
+            xtype: 'proxmoxcheckbox',
+            labelWidth: 140,
+            reference: 'enabled',
+            isFormField: false,
+            fieldLabel: gettext('Unattended Install'),
+        },
+        {
+            xtype: 'displayfield',
+            reference: 'unsupportedHint',
+            submitValue: false,
+            hidden: true,
+            value: gettext('Not supported for the selected ISO or guest OS.'),
+        },
         {
             xtype: 'proxmoxKVComboBox',
+            labelWidth: 140,
             reference: 'type',
             name: 'autoinstall_type',
             fieldLabel: gettext('Installer'),
@@ -327,6 +333,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'user',
             name: 'ciuser',
             fieldLabel: gettext('User'),
@@ -334,6 +341,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'password',
             name: 'cipassword',
             inputType: 'password',
@@ -342,60 +350,8 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
             minLength: 5,
         },
         {
-            xtype: 'textfield',
-            reference: 'passwordConfirm',
-            inputType: 'password',
-            fieldLabel: gettext('Confirm password'),
-            submitValue: false,
-            validator: function (value) {
-                let password = this.up('inputpanel').lookup('password').getValue();
-                return value === password ? true : gettext('Passwords do not match');
-            },
-        },
-    ],
-
-    advancedColumn1: [
-        {
-            xtype: 'combo',
-            reference: 'timezone',
-            name: 'autoinstall_timezone',
-            fieldLabel: gettext('Time zone'),
-            queryMode: 'local',
-            store: Ext.create('Proxmox.data.TimezoneStore'),
-            displayField: 'zone',
-            valueField: 'zone',
-            editable: true,
-            anyMatch: true,
-            forceSelection: true,
-            allowBlank: true,
-            emptyText: Proxmox.Utils.defaultText,
-        },
-        {
-            xtype: 'proxmoxcheckbox',
-            reference: 'useCustom',
-            isFormField: false,
-            fieldLabel: gettext('Custom File'),
-        },
-        {
-            xtype: 'pveStorageSelector',
-            reference: 'storage',
-            isFormField: false,
-            fieldLabel: gettext('Storage'),
-            storageContent: 'snippets',
-            autoSelect: true,
-        },
-        {
-            xtype: 'pveFileSelector',
-            reference: 'file',
-            name: 'autoinstall_file',
-            fieldLabel: gettext('Snippet'),
-            storageContent: 'snippets',
-        },
-    ],
-
-    advancedColumn2: [
-        {
             xtype: 'combobox',
+            labelWidth: 140,
             reference: 'edition',
             name: 'autoinstall_edition',
             fieldLabel: gettext('Edition'),
@@ -411,6 +367,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'productkey',
             name: 'autoinstall_productkey',
             fieldLabel: gettext('Product Key'),
@@ -419,18 +376,64 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'proxmoxcheckbox',
+            labelWidth: 140,
             reference: 'rdp',
             name: 'autoinstall_rdp',
             fieldLabel: gettext('Remote Desktop'),
         },
         {
             xtype: 'proxmoxcheckbox',
+            labelWidth: 140,
             reference: 'join',
             isFormField: false,
             fieldLabel: gettext('Join Domain'),
         },
+    ],
+
+    advancedColumn2: [
+        {
+            xtype: 'combo',
+            labelWidth: 140,
+            reference: 'timezone',
+            name: 'autoinstall_timezone',
+            fieldLabel: gettext('Time zone'),
+            queryMode: 'local',
+            store: Ext.create('Proxmox.data.TimezoneStore'),
+            displayField: 'zone',
+            valueField: 'zone',
+            editable: true,
+            anyMatch: true,
+            forceSelection: true,
+            allowBlank: true,
+            emptyText: Proxmox.Utils.defaultText,
+        },
+        {
+            xtype: 'proxmoxcheckbox',
+            labelWidth: 140,
+            reference: 'useCustom',
+            isFormField: false,
+            fieldLabel: gettext('Custom File'),
+        },
+        {
+            xtype: 'pveStorageSelector',
+            labelWidth: 140,
+            reference: 'storage',
+            isFormField: false,
+            fieldLabel: gettext('Storage'),
+            storageContent: 'snippets',
+            autoSelect: true,
+        },
+        {
+            xtype: 'pveFileSelector',
+            labelWidth: 140,
+            reference: 'file',
+            name: 'autoinstall_file',
+            fieldLabel: gettext('Snippet'),
+            storageContent: 'snippets',
+        },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'domain',
             name: 'cidomain',
             fieldLabel: gettext('Domain'),
@@ -438,6 +441,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'domainUser',
             name: 'cidomainuser',
             fieldLabel: gettext('Domain User'),
@@ -445,6 +449,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'domainPassword',
             name: 'cidomainpassword',
             inputType: 'password',
@@ -453,6 +458,7 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         },
         {
             xtype: 'textfield',
+            labelWidth: 140,
             reference: 'domainOU',
             name: 'cidomainou',
             fieldLabel: 'OU',
@@ -463,11 +469,10 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
     initComponent: function () {
         let me = this;
         me.callParent();
-        // everything is shown once the unattended installation is enabled
-        me.query('field:not(displayfield)').forEach((field) => {
+        // the fields are shown once the unattended installation is enabled
+        me.query('field:not(displayfield):not([reference=enabled])').forEach((field) => {
             field.setHidden(true);
             field.setDisabled(true);
         });
-        me.setHidden(true);
     },
 });
