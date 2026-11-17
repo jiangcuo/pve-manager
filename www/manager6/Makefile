@@ -62,6 +62,7 @@ JSSRC= 							\
 	form/PreallocationSelector.js			\
 	form/PrivilegesSelector.js			\
 	form/QemuBiosSelector.js			\
+	form/RdpEnhancementSelector.js		\
 	form/SDNControllerSelector.js			\
 	form/SDNZoneSelector.js				\
 	form/SDNVnetSelector.js				\

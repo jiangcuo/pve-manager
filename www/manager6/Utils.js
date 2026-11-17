@@ -606,6 +606,35 @@ Ext.define('PVE.Utils', {
             return output.join(', ');
         },
 
+        render_rdp_enhancements: function (values) {
+            let props = PVE.Parser.parsePropertyString(values);
+            if (Ext.Object.isEmpty(props)) {
+                return Proxmox.Utils.noneText;
+            }
+
+            let output = [];
+            if (props.encoder) {
+                output.push(gettext('Encoder') + ': ' + props.encoder);
+            }
+            if (props.encodernode) {
+                output.push(gettext('Encoder Node') + ': ' + props.encodernode);
+            }
+            if (props.maxfps) {
+                output.push(gettext('Max FPS') + ': ' + props.maxfps);
+            }
+            if (props.bitrate) {
+                output.push(gettext('Bitrate') + ': ' + props.bitrate + ' Mbit/s');
+            }
+            if (
+                props.resizeonconnect !== undefined &&
+                !PVE.Parser.parseBoolean(props.resizeonconnect)
+            ) {
+                output.push(gettext('Resize on Connect') + ': ' + Proxmox.Utils.noText);
+            }
+
+            return output.join(', ');
+        },
+
         // fixme: auto-generate this
         // for now, please keep in sync with PVE::Tools::kvmkeymaps
         kvm_keymaps: {

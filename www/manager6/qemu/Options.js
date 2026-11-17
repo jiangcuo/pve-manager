@@ -361,6 +361,21 @@ Ext.define('PVE.qemu.Options', {
                       }
                     : undefined,
             },
+            rdp_enhancements: {
+                header: gettext('RDP Enhancements'),
+                defaultValue: false,
+                renderer: PVE.Utils.render_rdp_enhancements,
+                editor: caps.vms['VM.Config.Options']
+                    ? {
+                          xtype: 'proxmoxWindowEdit',
+                          subject: gettext('RDP Enhancements'),
+                          items: {
+                              xtype: 'pveRdpEnhancementSelector',
+                              name: 'rdp_enhancements',
+                          },
+                      }
+                    : undefined,
+            },
             vmstatestorage: {
                 header: gettext('VM State storage'),
                 defaultValue: '',

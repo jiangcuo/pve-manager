@@ -36,6 +36,7 @@ Ext.define('PVE.qemu.DisplayInputPanel', {
                 }
             },
             isVNC: (get) => get('clipboard') === 'vnc',
+            isVirGL: (get) => get('type') === 'virtio-gl',
             hideDefaultHint: (get) => get('isVNC') || get('matchNonGUIOption'),
             hideVNCHint: (get) => !get('isVNC') || get('matchNonGUIOption'),
         },
@@ -78,6 +79,18 @@ Ext.define('PVE.qemu.DisplayInputPanel', {
     ],
 
     advancedItems: [
+        {
+            xtype: 'proxmoxtextfield',
+            name: 'rendernode',
+            deleteEmpty: false,
+            emptyText: gettext('Automatic'),
+            fieldLabel: gettext('Render Node'),
+            regex: /^(auto|renderD\d+)$/,
+            regexText: 'renderD<N>',
+            bind: {
+                disabled: '{!isVirGL}',
+            },
+        },
         {
             xtype: 'proxmoxKVComboBox',
             name: 'clipboard',
