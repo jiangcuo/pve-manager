@@ -118,6 +118,10 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
                 : null;
             me.lookup('type').setValue(installer);
 
+            let environment = me.lookup('environment');
+            environment.setStore(PVE.Utils.autoinstall_environments(info));
+            environment.setValue('');
+
             // offer the images of the ISO, or the editions matching the selected Windows version
             let edition = me.lookup('edition');
             let images = info.images ?? [];
@@ -174,6 +178,8 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
                 field.setDisabled(!visible);
             };
             show('type', enabled && !isWindows);
+            let kickstart = enabled && !isWindows && me.lookup('type').getValue() === 'kickstart';
+            show('environment', kickstart && !!info?.environments?.length);
             let detected = ['kickstart', 'ubuntu'].includes(info?.installer);
             me.lookup('typeHint').setHidden(!enabled || isWindows || detected);
             show('user', enabled);
@@ -255,6 +261,9 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
         if (values.autoinstall_type) {
             autoinstall.type = values.autoinstall_type;
         }
+        if (values.autoinstall_environment) {
+            autoinstall.environment = values.autoinstall_environment;
+        }
         if (values.autoinstall_file) {
             autoinstall.file = values.autoinstall_file;
         }
@@ -321,6 +330,19 @@ Ext.define('PVE.qemu.AutoinstallWizardPanel', {
                 ['kickstart', 'Kickstart'],
                 ['ubuntu', 'Ubuntu'],
             ],
+        },
+        {
+            xtype: 'combobox',
+            labelWidth: 140,
+            reference: 'environment',
+            name: 'autoinstall_environment',
+            fieldLabel: gettext('Environment'),
+            queryMode: 'local',
+            editable: false,
+            valueField: 'field1',
+            displayField: 'field2',
+            store: PVE.Utils.autoinstall_environments(),
+            value: '',
         },
         {
             xtype: 'displayfield',

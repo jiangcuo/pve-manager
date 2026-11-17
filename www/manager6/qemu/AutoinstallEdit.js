@@ -7,7 +7,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
 
     onlineHelp: 'qm_cloud_init',
 
-    textKeys: ['timezone', 'edition', 'productkey'],
+    textKeys: ['timezone', 'edition', 'productkey', 'environment'],
 
     onGetValues: function (values) {
         let me = this;
@@ -97,6 +97,11 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             data.file = ai.file;
         }
 
+        me.loadedEnvironment = data.environment;
+        me.down('field[name=environment]').setStore(
+            PVE.Utils.autoinstall_environments(undefined, data.environment),
+        );
+
         me.callParent([data]);
 
         me.updateTypeFields();
@@ -130,6 +135,7 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         ]) {
             me.down(`field[name=${name}]`).setHidden(!isWindows);
         }
+        me.down('field[name=environment]').setHidden(type !== 'kickstart');
 
         // show what was detected on the attached installation ISO
         let hint = me.lookup('isoHint');
@@ -244,6 +250,11 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
         me.down('field[name=edition]').setStore(
             names.length ? names : PVE.Utils.windows_editions(),
         );
+
+        let environment = me.down('field[name=environment]');
+        let value = environment.getValue();
+        environment.setStore(PVE.Utils.autoinstall_environments(info, me.loadedEnvironment));
+        environment.setValue(value);
 
         me.updateAutoType();
         me.updateTypeFields();
@@ -385,6 +396,17 @@ Ext.define('PVE.qemu.AutoinstallInputPanel', {
             forceSelection: true,
             allowBlank: true,
             emptyText: Proxmox.Utils.defaultText,
+        },
+        {
+            xtype: 'combobox',
+            name: 'environment',
+            fieldLabel: gettext('Environment'),
+            queryMode: 'local',
+            editable: false,
+            valueField: 'field1',
+            displayField: 'field2',
+            store: PVE.Utils.autoinstall_environments(),
+            value: '',
         },
         {
             xtype: 'combobox',

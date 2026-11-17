@@ -92,6 +92,23 @@ Ext.define('PVE.Utils', {
         },
 
         // image names on the Windows installation media, for the unattended installation
+        // kickstart environment groups detected on an ISO as [id, name] for a combobox, the
+        // first entry installs the core group only
+        autoinstall_environments: function (info, current) {
+            let lang = Ext.util.Cookies.get('PVELangCookie') || 'en';
+            let items = [['', `${Proxmox.Utils.defaultText} (core)`]];
+            for (const env of info?.environments ?? []) {
+                let names = env.names ?? {};
+                let name = names[lang] ?? names[lang.split('_')[0]] ?? env.name;
+                items.push([env.id, name]);
+            }
+            // keep a configured environment the ISO does not offer, e.g. another ISO is attached
+            if (current && !items.some(([id]) => id === current)) {
+                items.push([current, current]);
+            }
+            return items;
+        },
+
         windows_editions: function (ostype) {
             let editions = [];
             let add = function (versions, names) {
