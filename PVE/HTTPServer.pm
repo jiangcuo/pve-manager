@@ -71,6 +71,8 @@ sub auth_handler {
         ($rel_uri eq '/access/domains' && $method eq 'GET')
         || ($rel_uri eq '/access/ticket' && ($method eq 'GET' || $method eq 'POST'))
         || ($rel_uri eq '/access/vncticket' && $method eq 'POST')
+        # the rdpproxy ticket stands in for the login, so that RDP clients can connect
+        || ($rel_uri =~ m|^/nodes/[^/]+/qemu/\d+/rdpwebsocket$| && $method eq 'GET')
         || ($rel_uri eq '/access/openid/login' && $method eq 'POST')
         || ($rel_uri eq '/access/openid/auth-url' && $method eq 'POST')
     ) {

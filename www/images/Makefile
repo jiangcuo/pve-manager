@@ -29,6 +29,9 @@ all:
 # xtermjs.png is a cropped version of the logo found on
 # https://github.com/xtermjs/xterm.js
 
+# vds-connect.png is rendered from tools/vds-connect/packaging/icons/vds-connect.svg
+# of https://github.com/jiangcuo/vds
+
 GNOME_IMAGES = 			\
 	checked.png		\
 	unchecked.png 		\
@@ -51,6 +54,7 @@ IMAGES = $(GNOME_IMAGES)	\
 	tigervnc.png		\
 	novnc.png		\
 	xtermjs.png		\
+	vds-connect.png		\
 	favicon.ico		\
 	snapshot.png		\
 	computer-on.png		\

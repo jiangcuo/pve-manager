@@ -299,6 +299,7 @@
 .pve-itype-icon-tigervnc,
 .pve-itype-icon-novnc,
 .pve-itype-icon-xtermjs,
+.pve-itype-icon-vds-connect,
 .pve-itype-icon-display,
 .pve-itype-icon-network,
 .pve-itype-icon-network-server,
@@ -416,6 +417,10 @@
 
 .pve-itype-icon-xtermjs {
     background-image: url(../images/xtermjs.png);
+}
+
+.pve-itype-icon-vds-connect {
+    background-image: url(../images/vds-connect.png);
 }
 
 .pve-itype-icon-usb {

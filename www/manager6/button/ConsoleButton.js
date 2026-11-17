@@ -85,6 +85,17 @@ Ext.define('PVE.button.ConsoleButton', {
             },
         },
         {
+            itemId: 'rdpmenu',
+            text: 'RDP',
+            type: 'rdp',
+            iconCls: 'pve-itype-icon-vds-connect',
+            hidden: true,
+            handler: function (button) {
+                let view = this.up('button');
+                view.openConsole(button.type);
+            },
+        },
+        {
             text: 'xterm.js',
             itemId: 'xtermjs',
             iconCls: 'pve-itype-icon-xtermjs',
@@ -104,5 +115,7 @@ Ext.define('PVE.button.ConsoleButton', {
         }
 
         me.callParent();
+
+        me.down('#rdpmenu').setVisible(me.consoleType === 'kvm');
     },
 });

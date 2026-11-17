@@ -1482,6 +1482,8 @@ Ext.define('PVE.Utils', {
                     throw `unknown spice viewer type '${consoleType}'`;
                 }
                 PVE.Utils.openSpiceViewer(url, params);
+            } else if (viewer === 'rdp' && consoleType === 'kvm') {
+                PVE.Utils.openRdpViewer(vmid, nodename);
             } else {
                 throw `unknown viewer type '${viewer}'`;
             }
@@ -1528,47 +1530,47 @@ Ext.define('PVE.Utils', {
             }
         },
 
+        downloadWithName: function (uri, name) {
+            var link = Ext.DomHelper.append(document.body, {
+                tag: 'a',
+                href: uri,
+                css: 'display:none;visibility:hidden;height:0px;',
+            });
+
+            // Note: we need to tell Android, AppleWebKit and Chrome
+            // the correct file name extension
+            // but we do not set 'download' tag for other environments, because
+            // It can have strange side effects (additional user prompt on firefox)
+            if (navigator.userAgent.match(/Android|AppleWebKit|Chrome/i)) {
+                link.download = name;
+            }
+
+            if (link.fireEvent) {
+                link.fireEvent('onclick');
+            } else {
+                let evt = document.createEvent('MouseEvents');
+                evt.initMouseEvent(
+                    'click',
+                    true,
+                    true,
+                    window,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    false,
+                    false,
+                    false,
+                    0,
+                    null,
+                );
+                link.dispatchEvent(evt);
+            }
+        },
+
         openSpiceViewer: function (url, params) {
-            var downloadWithName = function (uri, name) {
-                var link = Ext.DomHelper.append(document.body, {
-                    tag: 'a',
-                    href: uri,
-                    css: 'display:none;visibility:hidden;height:0px;',
-                });
-
-                // Note: we need to tell Android, AppleWebKit and Chrome
-                // the correct file name extension
-                // but we do not set 'download' tag for other environments, because
-                // It can have strange side effects (additional user prompt on firefox)
-                if (navigator.userAgent.match(/Android|AppleWebKit|Chrome/i)) {
-                    link.download = name;
-                }
-
-                if (link.fireEvent) {
-                    link.fireEvent('onclick');
-                } else {
-                    let evt = document.createEvent('MouseEvents');
-                    evt.initMouseEvent(
-                        'click',
-                        true,
-                        true,
-                        window,
-                        1,
-                        0,
-                        0,
-                        0,
-                        0,
-                        false,
-                        false,
-                        false,
-                        false,
-                        0,
-                        null,
-                    );
-                    link.dispatchEvent(evt);
-                }
-            };
-
             Proxmox.Utils.API2Request({
                 url: url,
                 params: params,
@@ -1584,7 +1586,42 @@ Ext.define('PVE.Utils', {
                     );
                     let spiceDownload =
                         'data:application/x-virt-viewer;charset=UTF-8,' + encodeURIComponent(raw);
-                    downloadWithName(spiceDownload, 'pve-spice.vv');
+                    PVE.Utils.downloadWithName(spiceDownload, 'pve-spice.vv');
+                },
+            });
+        },
+
+        openRdpViewer: function (vmid, nodename) {
+            let path = `/nodes/${nodename}/qemu/${vmid}`;
+            Proxmox.Utils.API2Request({
+                url: `${path}/rdpproxy`,
+                params: { websocket: 1 },
+                method: 'POST',
+                failure: function (response, opts) {
+                    Ext.Msg.alert('Error', response.htmlStatus);
+                },
+                success: function (response, opts) {
+                    let res = response.result.data;
+                    let query = Ext.Object.toQueryString({
+                        port: res.port,
+                        rdpticket: res.ticket,
+                        authid: res.user,
+                    });
+                    let cfg = {
+                        transport: 'websocket',
+                        url: `wss://${window.location.host}/api2/json${path}/rdpwebsocket?${query}`,
+                        username: res.username,
+                        password: res.password,
+                        ws_fingerprint: res['ws-fingerprint'],
+                        rdp_fingerprint: res.fingerprint,
+                    };
+                    let raw = Object.entries(cfg).reduce(
+                        (acc, [k, v]) => acc + `${k}=${v}\n`,
+                        '[vds]\n',
+                    );
+                    let rdpDownload =
+                        'data:application/x-vds;charset=UTF-8,' + encodeURIComponent(raw);
+                    PVE.Utils.downloadWithName(rdpDownload, 'pve-rdp.vds');
                 },
             });
         },
@@ -2207,6 +2244,7 @@ Ext.define('PVE.Utils', {
             qmstop: ['VM', gettext('Stop')],
             qmsuspend: ['VM', gettext('Hibernate')],
             qmtemplate: ['VM', gettext('Convert to template')],
+            rdpproxy: ['VM', gettext('Console') + ' (RDP)'],
             resize: ['VM/CT', gettext('Resize')],
             reloadnetworkall: ['', gettext('Reload network configuration on all nodes')],
             sosreport: [gettext('System Report'), gettext('Generate')],
